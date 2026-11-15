@@ -50,6 +50,7 @@ public:
 
     //== GUI -> audio requests (lock free)
     void clickChord (int chordIndex)   { pendingChordClick.store (chordIndex); }
+    void releaseChord (int chordIndex) { pendingChordRelease.store (chordIndex); }   // mouse up (matters when HOLD is off)
     void pluckString (int visualIndex) { pendingPlucks.fetch_or (1u << (unsigned) visualIndex); }
 
     //== audio -> GUI state
@@ -92,9 +93,9 @@ private:
     double sr = 44100.0;
 
     // chord state (audio thread)
-    std::atomic<int> pendingChordClick { -1 };
+    std::atomic<int> pendingChordClick { -1 }, pendingChordRelease { -1 };
     std::atomic<std::uint32_t> pendingPlucks { 0 };
-    int latchedChord = -1, holdChord = -1;
+    int latchedChord = -1, holdChord = -1, deferredRelease = -1;
     int rootHeldMask = 0, lastRoot = -1, typeHeldStack[16] {}, numTypesHeld = 0;
     int sounding = -1;
     std::vector<int> tones;

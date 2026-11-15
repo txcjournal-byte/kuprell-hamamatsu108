@@ -66,7 +66,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     fl ("strumFeel", "Strum Feel", 0.0f, 1.0f, 0.62f, pct);
     fl ("strumSpeed", "Strum Speed", 4.0f, 80.0f, 22.0f, [] (float v, int) { return String (roundToInt (v)) + " ms"; }, 20.0f);
 
-    layout.add (std::make_unique<AudioParameterBool> (ParameterID { "hold", 1 }, "Hold", false));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { "hold", 1 }, "Hold", true));
     layout.add (std::make_unique<AudioParameterInt> (ParameterID { "keyRoot", 1 }, "Key", 0, 11, 0,
                                                      AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int) { return String (chords::rootName (v)); })));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "keyMode", 1 }, "Key Mode", StringArray { "Major", "Minor" }, 0));
@@ -317,12 +317,19 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
 
     // GUI requests
+    // chord buttons: HOLD on = click toggles the chord; HOLD off = chord sounds while the button is held
+    const bool holdOn = param (apvts, "hold") > 0.5f;
+    // a release is applied one block later, so even a very short click strums once
+    if (deferredRelease >= 0 && ! holdOn && deferredRelease == latchedChord)
+        latchedChord = -1;
+    deferredRelease = -1;
     const int click = pendingChordClick.exchange (-1);
     if (click >= 0)
     {
         holdChord = -1;
-        latchedChord = (click == latchedChord && rootHeldMask == 0) ? -1 : click;
+        latchedChord = (holdOn && click == latchedChord && rootHeldMask == 0) ? -1 : click;
     }
+    deferredRelease = pendingChordRelease.exchange (-1);
 
     for (const auto meta : midi)
         handleMidi (meta.getMessage(), meta.samplePosition);

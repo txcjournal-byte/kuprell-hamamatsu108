@@ -8,7 +8,7 @@ Elektronická drnkací harfa: 108 akordů, Live Strum a šest zvukových modelů
 ## Stav: krok 2 – akordy, harfa, Live Strum
 
 - **Nástroj v okně PLAY:** kovový panel, dřevěné bočnice, stříbrný ovládací pult, tyrkysová světla. Statické části se kreslí jednou do mezipaměti, takže okno se neseká.
-- **108 akordových kláves** (12 tónin × 9 typů). Klik akord zapne, druhý klik ho vypne. Akordy v tónině mají tyrkysovou kontrolku.
+- **108 akordových kláves** (12 tónin × 9 typů). HOLD zapnutý: klik akord zapne, druhý klik ho vypne. HOLD vypnutý: akord hraje, jen dokud držíš tlačítko nebo klávesu. Akordy v tónině mají tyrkysovou kontrolku.
 - **Strumplate:** 26 strun, svítí při drnknutí. Myší se po nich dá přejet.
 - **Live Strum:** po zapnutí akordu plugin drnká sám, s proměnlivou silou, rychlostí a časováním. Synchronizace s tempem DAW, rychlost 1/2 až 1/16 (RATE), FEEL (volnost ruky), SPEED (rychlost přejetí strun). OFF drnkání vypne.
 - **10 barev harfy** (knob VOICE): Classic Chime, Celesta, Vibes, Glass, Pluck, Flute, Marimba, Steel, E-Piano, Strings. Vše syntézou.

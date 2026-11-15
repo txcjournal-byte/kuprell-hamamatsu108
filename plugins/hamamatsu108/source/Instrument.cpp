@@ -556,6 +556,7 @@ namespace hama
 
         void mouseUp (const juce::MouseEvent&) override
         {
+            if (pressed >= 0) processor.releaseChord (pressed);
             pressed = -1;
             repaint();
         }
