@@ -15,7 +15,7 @@ Elektronická drnkací harfa: 108 akordů, Live Strum a šest zvukových modelů
 - **Pult:** HARP (Tone, Decay, Range), VIBRATO (Rate, Depth), FX (Chorus, Delay, Reverb), MASTER. CHORD, BASS a MACROS jsou zatím zašedlé (krok 3 a 4).
 - **KEY** (klik vybere tóninu), **TRANSPOSE** ±12, **HOLD**, LED měřák OUT.
 - **MIDI (názvy not jako ve FL Studiu):** C2–B2 volí základní tón akordu, C3–G#3 typ (C3 dur, C#3 moll, D3 7, D#3 maj7, E3 m7, F3 dim, F#3 aug, G3 sus4, G#3 add9). Všechny ostatní noty hrají harfu přesně v napsané výšce (každá nota zní jinak).
-- **MIDI CAPTURE:** všechno, co harfa zahraje (Live Strum, strumplate i klaviatura), se zachytává. Displej MIDI CAPTURE stačí myší přetáhnout do playlistu nebo Piano rollu FL Studia a vznikne MIDI klip. Pauza delší než 4 s začne nový záznam, pravé tlačítko ho smaže.
+- **MIDI CAPTURE:** zachytává noty, které plugin vytvoří sám (Live Strum, strumplate). Noty z Piano rollu a klaviatury nezachytává, ty má FL. Displej MIDI CAPTURE stačí myší přetáhnout do playlistu nebo Piano rollu FL Studia a vznikne MIDI klip. Pauza delší než 4 s začne nový záznam, pravé tlačítko ho smaže.
 - **Ovládání knobů:** tah myší, kolečko, dvojklik = výchozí hodnota, pravé tlačítko = Reset / zadat hodnotu, Ctrl + tah = jemně. Stavová lišta ukazuje, na co sahám.
 - **Okno** se poprvé otevře tak velké, aby se vešlo na obrazovku, jde zmenšit na 50 % a zvětšit na 200 %. Velikost se ukládá s projektem.
 

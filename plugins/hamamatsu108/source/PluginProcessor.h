@@ -59,7 +59,8 @@ public:
     std::atomic<int> voicesInUse { 0 };
     std::atomic<double> hostBpm { 120.0 };
 
-    // every note the harp plays (strums, plate, keyboard), for "drag MIDI to the DAW"
+    // notes the plugin creates itself (Live Strum, strum plate), for "drag MIDI to the DAW".
+    // Notes coming in from the host are not captured: the DAW already has them.
     struct CapturedNote { double seconds; int note; float velocity; };
     juce::AbstractFifo captureFifo { 2048 };
     std::array<CapturedNote, 2048> captureBuffer {};
@@ -73,7 +74,7 @@ public:
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
-    struct NoteEvent { int delay; int note; float velocity; int visual; };
+    struct NoteEvent { int delay; int note; float velocity; int visual; bool capture; };
 
     void handleMidi (const juce::MidiMessage&, int samplePos);
     void updateTones (int chordIndex, int transpose, int rangeOctaves);

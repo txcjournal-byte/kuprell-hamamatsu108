@@ -205,7 +205,7 @@ void Hamamatsu108Processor::scheduleNote (int delay, int toneIndex, float veloci
     if (numEvents >= (int) events.size() || tones.empty()) return;
     toneIndex = juce::jlimit (0, (int) tones.size() - 1, toneIndex);
     const int visual = tones.size() > 1 ? juce::roundToInt ((float) toneIndex * (numStrings - 1) / (float) (tones.size() - 1)) : numStrings / 2;
-    events[(size_t) numEvents++] = { juce::jmax (0, delay), tones[(size_t) toneIndex], juce::jlimit (0.05f, 1.0f, velocity), visual };
+    events[(size_t) numEvents++] = { juce::jmax (0, delay), tones[(size_t) toneIndex], juce::jlimit (0.05f, 1.0f, velocity), visual, true };
 }
 
 void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity)
@@ -221,7 +221,7 @@ void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity)
     }
     else
         visual = juce::jlimit (0, numStrings - 1, (note - 48) * (numStrings - 1) / 48);
-    events[(size_t) numEvents++] = { juce::jmax (0, delay), juce::jlimit (0, 127, note), juce::jlimit (0.05f, 1.0f, velocity), visual };
+    events[(size_t) numEvents++] = { juce::jmax (0, delay), juce::jlimit (0, 127, note), juce::jlimit (0.05f, 1.0f, velocity), visual, false };
 }
 
 // one hand gesture across the strings, with human variation driven by Feel
@@ -402,6 +402,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             if (events[(size_t) e].delay < start + len)
             {
                 startVoice (events[(size_t) e].note, events[(size_t) e].velocity);
+                if (events[(size_t) e].capture)
                 {
                     const auto scope = captureFifo.write (1);
                     const CapturedNote cn { (double) (sampleClock + start) / sr, events[(size_t) e].note, events[(size_t) e].velocity };
