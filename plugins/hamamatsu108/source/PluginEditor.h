@@ -2,33 +2,22 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "PluginProcessor.h"
+#include "Instrument.h"
 #include "KuprellLookAndFeel.h"
 #include "KuprellTopBar.h"
 
-// Placeholder for the instrument area. In step 2 it is replaced by the 3D instrument.
-class SkeletonStage : public juce::Component
+// Status bar: what you are touching, plus voices and zoom.
+class StatusBar : public juce::Component
 {
 public:
-    SkeletonStage() { addAndMakeVisible (backdrop); }
-    void setActivity (int lastNote, int heldNotes, float level);
-    void setMessage (const juce::String& text);
+    static constexpr int height = 28;
+    void setText (const juce::String& name, const juce::String& value);
+    void setInfo (int voices, int zoomPercent);
     void paint (juce::Graphics&) override;
-    void paintOverChildren (juce::Graphics&) override;
-    void resized() override;
 
 private:
-    // static backdrop, cached as an image so the 30 Hz updates only redraw small areas
-    struct Backdrop : public juce::Component
-    {
-        Backdrop() { setBufferedToImage (true); setInterceptsMouseClicks (false, false); }
-        void paint (juce::Graphics&) override;
-    };
-
-    Backdrop backdrop;
-    juce::Rectangle<int> displayArea, messageArea, meterArea;
-    int note = -1, held = 0;
-    float meter = 0.0f;
-    juce::String message { "Play your MIDI keyboard: you should hear a soft test chime." };
+    juce::String name { "Click a chord button to start" }, value;
+    int voices = 0, zoom = 100;
 };
 
 class Hamamatsu108Editor : public juce::AudioProcessorEditor, private juce::Timer
@@ -53,8 +42,9 @@ private:
     kuprell::LookAndFeel lookAndFeel;   // declared first, destroyed last
     juce::Component content;            // drawn at 1280 x 820 and scaled as a whole (50-200 %)
     kuprell::TopBar topBar { "Hamamatsu 108" };
-    SkeletonStage stage;
-    juce::TooltipWindow tooltips { this, 600 };
+    hama::InstrumentView instrument;
+    StatusBar status;
+    juce::TooltipWindow tooltips { this, 700 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Hamamatsu108Editor)
 };

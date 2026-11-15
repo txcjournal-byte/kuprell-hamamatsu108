@@ -16,7 +16,8 @@ juce_add_plugin(Hamamatsu108
 
 target_sources(Hamamatsu108 PRIVATE
     source/PluginProcessor.cpp
-    source/PluginEditor.cpp)
+    source/PluginEditor.cpp
+    source/Instrument.cpp)
 
 target_include_directories(Hamamatsu108 PRIVATE source)
 

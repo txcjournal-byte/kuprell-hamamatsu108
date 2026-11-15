@@ -1,13 +1,24 @@
 #pragma once
 
 #include <juce_audio_utils/juce_audio_utils.h>
+#include <juce_dsp/juce_dsp.h>
 #include <atomic>
+#include <array>
+#include "Chords.h"
+#include "HarpVoice.h"
 
-// Kuprell Hamamatsu 108 - step 1 (skeleton).
-// The real engine arrives in step 2; for now a soft test chime confirms that MIDI and audio work.
+// Kuprell Hamamatsu 108 - step 2: 108 chords, strum plate, Live Strum, harp voices, basic FX.
 class Hamamatsu108Processor : public juce::AudioProcessor
 {
 public:
+    static constexpr int numStrings = 26;       // strings drawn on the strum plate
+    static constexpr int numVoices = 48;
+
+    // MIDI zones (fixed in step 2; editable in Settings later)
+    static constexpr int rootZoneLow = 24, rootZoneHigh = 35;    // C1 - B1: chord root
+    static constexpr int typeZoneLow = 36, typeZoneHigh = 44;    // C2 - G#2: chord type
+    static constexpr int strumZoneLow = 48, strumZoneHigh = 84;  // C3 - C6: strum plate
+
     Hamamatsu108Processor();
     ~Hamamatsu108Processor() override = default;
 
@@ -24,7 +35,7 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 2.0; }
+    double getTailLengthSeconds() const override { return 4.0; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -37,19 +48,68 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
 
-    // read by the editor (GUI thread), written on the audio thread
-    std::atomic<int> lastNote { -1 };
-    std::atomic<int> heldNotes { 0 };
-    std::atomic<float> outputLevel { 0.0f };
+    //== GUI -> audio requests (lock free)
+    void clickChord (int chordIndex)   { pendingChordClick.store (chordIndex); }
+    void pluckString (int visualIndex) { pendingPlucks.fetch_or (1u << (unsigned) visualIndex); }
+
+    //== audio -> GUI state
+    std::atomic<int> activeChord { -1 };          // chord sounding now (-1 = none)
+    std::atomic<std::uint32_t> stringFlashes { 0 }; // strings plucked since the GUI last looked
+    std::atomic<float> meterLeft { 0.0f }, meterRight { 0.0f };
+    std::atomic<int> voicesInUse { 0 };
 
     // last editor width in pixels (0 = not set yet), saved with the project
     std::atomic<int> editorWidth { 0 };
 
+    static const juce::StringArray& strumModeNames();
+    static const juce::StringArray& strumRateNames();
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
-    juce::Synthesiser synth;
-    juce::SmoothedValue<float> masterGain;
+    struct NoteEvent { int delay; int note; float velocity; int visual; };
+
+    void handleMidi (const juce::MidiMessage&, int samplePos);
+    void updateTones (int chordIndex, int transpose, int rangeOctaves);
+    void scheduleStrum (int offset, bool down);
+    void scheduleNote (int delay, int toneIndex, float velocity);
+    void startVoice (int note, float velocity);
+    int resolveChord() const;
+
+    harp::Settings voiceSettings;
+    std::array<harp::Voice, numVoices> voices;
+    std::array<NoteEvent, 512> events {};
+    int numEvents = 0;
+    juce::Random rng;
+    double sr = 44100.0;
+
+    // chord state (audio thread)
+    std::atomic<int> pendingChordClick { -1 };
+    std::atomic<std::uint32_t> pendingPlucks { 0 };
+    int latchedChord = -1, holdChord = -1;
+    int rootHeldMask = 0, lastRoot = -1, typeHeldStack[16] {}, numTypesHeld = 0;
+    int sounding = -1;
+    std::vector<int> tones;
+    int tonesChord = -2, tonesTranspose = 0, tonesRange = 0;
+
+    // strum clock
+    double samplesToNextStrum = 0.0;
+    juce::int64 strumCount = 0;
+    int samplesSinceTrigger = 1 << 30;
+    bool wasStrumming = false;
+
+    // vibrato
+    float vibPhase = 0.0f;
+    std::vector<float> pitchMul;
+
+    // FX
+    juce::dsp::Chorus<float> chorus;
+    juce::Reverb reverb;
+    juce::AudioBuffer<float> delayBuffer;
+    int delayWrite = 0;
+    float delayLpL = 0.0f, delayLpR = 0.0f;
+    juce::SmoothedValue<float> masterGain, chorusMix, delayMix, reverbMix;
+    double bpm = 120.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Hamamatsu108Processor)
 };
