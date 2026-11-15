@@ -136,22 +136,8 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
         }
         else
         {
-            // melodic note: snap to the nearest chord tone (prefer upwards), or play as written
-            int pitch = n;
-            if (! tones.empty())
-            {
-                int best = tones.front(), bestD = 1000;
-                for (int t : tones)
-                {
-                    // compare pitch classes so notes outside the plate range still follow the chord
-                    for (int oct = -48; oct <= 48; oct += 12)
-                    {
-                        const int cand = t + oct, d = std::abs (cand - n) * 2 - (cand >= n ? 1 : 0);
-                        if (cand >= 0 && cand < 128 && d < bestD) { bestD = d; best = cand; }
-                    }
-                }
-                pitch = best;
-            }
+            // melodic note: plays exactly the written pitch (like any pro instrument)
+            const int pitch = n;
             schedulePitch (samplePos, pitch, m.getFloatVelocity());
         }
     }

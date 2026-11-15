@@ -17,7 +17,7 @@ public:
     // MIDI zones (fixed for now; editable in Settings later). FL Studio names: C2-B2, C3-G#3, A3 and up.
     static constexpr int rootZoneLow = 24, rootZoneHigh = 35;    // chord root
     static constexpr int typeZoneLow = 36, typeZoneHigh = 44;    // chord type
-    // every other note plays the harp: snapped to the chord when one is on, as written when not
+    // every other note plays the harp at exactly its written pitch
 
     Hamamatsu108Processor();
     ~Hamamatsu108Processor() override = default;
