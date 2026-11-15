@@ -83,6 +83,7 @@ Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
         constrainer->setFixedAspectRatio ((double) baseWidth / (double) baseHeight);
 
     const int w = initialWidth();
+    intendedWidth = w;
     setSize (w, juce::roundToInt (w * (double) baseHeight / (double) baseWidth));
     startTimerHz (10);
 }
@@ -114,6 +115,7 @@ int Hamamatsu108Editor::initialWidth() const
 void Hamamatsu108Editor::setZoom (double scale)
 {
     const int w = juce::roundToInt (baseWidth * scale);
+    intendedWidth = w;
     setSize (w, juce::roundToInt (w * (double) baseHeight / (double) baseWidth));
     audioProcessor.editorWidth.store (w);
 }
@@ -169,6 +171,14 @@ void Hamamatsu108Editor::resized()
 
 void Hamamatsu108Editor::timerCallback()
 {
+    // some hosts (FL Studio) shrink the window while opening it: put our size back once it is on screen
+    if (sizeFixes < 4 && intendedWidth > 0 && isShowing()
+        && juce::Time::getMillisecondCounter() - openedAt < 4000 && std::abs (getWidth() - intendedWidth) > 4)
+    {
+        ++sizeFixes;
+        setSize (intendedWidth, juce::roundToInt (intendedWidth * (double) baseHeight / (double) baseWidth));
+    }
+
     status.setInfo (audioProcessor.voicesInUse.load(), juce::roundToInt (100.0 * getWidth() / baseWidth));
 }
 

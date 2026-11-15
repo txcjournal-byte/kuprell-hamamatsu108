@@ -39,6 +39,7 @@ private:
     void setZoom (double scale);
 
     juce::uint32 openedAt = juce::Time::getMillisecondCounter();
+    int intendedWidth = 0, sizeFixes = 0;
     void say (const juce::String& text);
 
     Hamamatsu108Processor& audioProcessor;
