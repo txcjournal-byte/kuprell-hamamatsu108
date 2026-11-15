@@ -35,6 +35,10 @@ public:
 private:
     void timerCallback() override;
     int initialWidth() const;
+    void showSettingsMenu();
+    void setZoom (double scale);
+
+    juce::uint32 openedAt = juce::Time::getMillisecondCounter();
     void say (const juce::String& text);
 
     Hamamatsu108Processor& audioProcessor;

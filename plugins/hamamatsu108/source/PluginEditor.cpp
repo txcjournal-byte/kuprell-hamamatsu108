@@ -71,7 +71,7 @@ Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
     topBar.onUndo          = [this] { say ("Undo / Redo arrives in step 6."); };
     topBar.onRedo          = topBar.onUndo;
     topBar.onHelp          = [this] { say ("Help mode arrives in step 6."); };
-    topBar.onSettings      = [this] { say ("Settings (skins, window size, MIDI zones) arrive in step 6."); };
+    topBar.onSettings      = [this] { showSettingsMenu(); };
     topBar.onEdit          = [this] { say ("The EDIT pages arrive in steps 3 and 4."); };
     topBar.onLogoClicked   = [this] { say ("About window arrives in step 6."); };
 
@@ -95,8 +95,9 @@ Hamamatsu108Editor::~Hamamatsu108Editor()
 
 int Hamamatsu108Editor::initialWidth() const
 {
+    // a size the user chose (ignore tiny values a host may have forced during setup)
     const int saved = audioProcessor.editorWidth.load();
-    if (saved > 0)
+    if (saved >= juce::roundToInt (baseWidth * 0.6))
         return juce::jlimit (juce::roundToInt (baseWidth * minScale), juce::roundToInt (baseWidth * maxScale), saved);
 
     // first open: 100 % if it fits, otherwise as big as fits on the screen
@@ -110,6 +111,42 @@ int Hamamatsu108Editor::initialWidth() const
     return juce::roundToInt (baseWidth * scale);
 }
 
+void Hamamatsu108Editor::setZoom (double scale)
+{
+    const int w = juce::roundToInt (baseWidth * scale);
+    setSize (w, juce::roundToInt (w * (double) baseHeight / (double) baseWidth));
+    audioProcessor.editorWidth.store (w);
+}
+
+void Hamamatsu108Editor::showSettingsMenu()
+{
+    juce::PopupMenu zoom;
+    const int current = juce::roundToInt (100.0 * getWidth() / baseWidth);
+    for (int pct : { 50, 60, 70, 75, 80, 85, 90, 100, 110, 125, 150, 175, 200 })
+        zoom.addItem (pct, juce::String (pct) + " %", true, std::abs (pct - current) <= 1);
+
+    juce::PopupMenu m;
+    m.addSectionHeader ("Settings");
+    m.addSubMenu ("Window size", zoom);
+    m.addItem (1000, "Fit to screen");
+    m.addSeparator();
+    m.addItem (2000, "Skins, MIDI zones, tuning: step 6", false);
+
+    juce::Component::SafePointer<Hamamatsu108Editor> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options().withMousePosition(), [safe] (int r)
+    {
+        if (safe == nullptr || r <= 0) return;
+        if (r == 1000)
+        {
+            safe->audioProcessor.editorWidth.store (0);
+            const int w = safe->initialWidth();
+            safe->setZoom ((double) w / baseWidth);
+        }
+        else if (r <= 200)
+            safe->setZoom (r / 100.0);
+    });
+}
+
 void Hamamatsu108Editor::paint (juce::Graphics& g)
 {
     g.fillAll (colours::window);
@@ -118,7 +155,9 @@ void Hamamatsu108Editor::paint (juce::Graphics& g)
 void Hamamatsu108Editor::resized()
 {
     const float scale = (float) getWidth() / (float) baseWidth;
-    audioProcessor.editorWidth.store (getWidth());
+    // remember only sizes the user picks, not the host's sizing while the window opens
+    if (juce::Time::getMillisecondCounter() - openedAt > 1500)
+        audioProcessor.editorWidth.store (getWidth());
 
     content.setTransform (juce::AffineTransform::scale (scale));
     content.setBounds (0, 0, baseWidth, baseHeight);
