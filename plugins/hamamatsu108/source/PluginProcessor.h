@@ -42,6 +42,9 @@ public:
     std::atomic<int> heldNotes { 0 };
     std::atomic<float> outputLevel { 0.0f };
 
+    // last editor width in pixels (0 = not set yet), saved with the project
+    std::atomic<int> editorWidth { 0 };
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 

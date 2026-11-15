@@ -149,7 +149,9 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
 void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
 {
-    if (auto xml = apvts.copyState().createXml())
+    auto state = apvts.copyState();
+    state.setProperty ("uiWidth", editorWidth.load(), nullptr);
+    if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
 
@@ -157,7 +159,11 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (apvts.state.getType()))
-            apvts.replaceState (juce::ValueTree::fromXml (*xml));
+        {
+            auto state = juce::ValueTree::fromXml (*xml);
+            editorWidth.store ((int) state.getProperty ("uiWidth", 0));
+            apvts.replaceState (state);
+        }
 }
 
 juce::AudioProcessorEditor* Hamamatsu108Processor::createEditor()
