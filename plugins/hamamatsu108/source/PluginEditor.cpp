@@ -44,8 +44,8 @@ void StatusBar::paint (juce::Graphics& g)
     g.setColour (colours::textFaint);
     g.drawText ("Zoom " + juce::String (zoom) + " %", r.removeFromRight (80), juce::Justification::centredRight, false);
     g.drawText ("Voices " + juce::String (voices) + " / " + juce::String (Hamamatsu108Processor::numVoices), r.removeFromRight (110), juce::Justification::centredRight, false);
-    g.drawText (juce::String::fromUTF8 ("MIDI: C1\xe2\x80\x93" "B1 root \xc2\xb7 C2\xe2\x80\x93G#2 type \xc2\xb7 C3\xe2\x80\x93" "C6 strum"),
-                r.removeFromRight (300), juce::Justification::centredRight, false);
+    g.drawText (juce::String::fromUTF8 ("Keys (FL): C2\xe2\x80\x93" "B2 root \xc2\xb7 C3\xe2\x80\x93G#3 type \xc2\xb7 rest plays the harp"),
+                r.removeFromRight (340), juce::Justification::centredRight, false);
 }
 
 //==============================================================================
@@ -99,12 +99,12 @@ int Hamamatsu108Editor::initialWidth() const
     if (saved > 0)
         return juce::jlimit (juce::roundToInt (baseWidth * minScale), juce::roundToInt (baseWidth * maxScale), saved);
 
-    // first open: 100 % if it fits, otherwise as big as fits (about 90 % of the screen height)
+    // first open: 100 % if it fits, otherwise as big as fits on the screen
     double scale = 1.0;
     if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
     {
         const auto area = display->userArea;
-        scale = juce::jmin (1.0, (area.getHeight() - 40) * 0.95 / baseHeight, area.getWidth() * 0.95 / baseWidth);
+        scale = juce::jmin (1.0, (area.getHeight() - 150) / (double) baseHeight, area.getWidth() * 0.9 / baseWidth);
     }
     scale = juce::jmax (0.6, std::floor (scale * 20.0) / 20.0);   // round down to 5 % steps
     return juce::roundToInt (baseWidth * scale);

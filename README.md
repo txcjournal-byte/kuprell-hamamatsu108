@@ -14,7 +14,8 @@ Elektronická drnkací harfa: 108 akordů, Live Strum a šest zvukových modelů
 - **10 barev harfy** (knob VOICE): Classic Chime, Celesta, Vibes, Glass, Pluck, Flute, Marimba, Steel, E-Piano, Strings. Vše syntézou.
 - **Pult:** HARP (Tone, Decay, Range), VIBRATO (Rate, Depth), FX (Chorus, Delay, Reverb), MASTER. CHORD, BASS a MACROS jsou zatím zašedlé (krok 3 a 4).
 - **KEY** (klik vybere tóninu), **TRANSPOSE** ±12, **HOLD**, LED měřák OUT.
-- **MIDI:** C1–B1 volí základní tón akordu, C2–G#2 typ (C2 dur, C#2 moll, D2 7, D#2 maj7, E2 m7, F2 dim, F#2 aug, G2 sus4, G#2 add9), C3–C6 hraje struny strumplate.
+- **MIDI (názvy not jako ve FL Studiu):** C2–B2 volí základní tón akordu, C3–G#3 typ (C3 dur, C#3 moll, D3 7, D#3 maj7, E3 m7, F3 dim, F#3 aug, G3 sus4, G#3 add9). Všechny ostatní noty hrají harfu: když hraje akord, noty se přichytí k jeho tónům, jinak zní tak, jak jsou napsané.
+- **MIDI CAPTURE:** všechno, co harfa zahraje (Live Strum, strumplate i klaviatura), se zachytává. Displej MIDI CAPTURE stačí myší přetáhnout do playlistu nebo Piano rollu FL Studia a vznikne MIDI klip. Pauza delší než 4 s začne nový záznam, pravé tlačítko ho smaže.
 - **Ovládání knobů:** tah myší, kolečko, dvojklik = výchozí hodnota, pravé tlačítko = Reset / zadat hodnotu, Ctrl + tah = jemně. Stavová lišta ukazuje, na co sahám.
 - **Okno** se poprvé otevře tak velké, aby se vešlo na obrazovku, jde zmenšit na 50 % a zvětšit na 200 %. Velikost se ukládá s projektem.
 
@@ -30,7 +31,8 @@ Elektronická drnkací harfa: 108 akordů, Live Strum a šest zvukových modelů
 2. Otoč VOICE a poslechni si všech 10 barev.
 3. Přejeď myší po strumplate.
 4. Pusť přehrávání ve FL: drnkání sedí do tempa. Zkus RATE, FEEL, SPEED.
-5. Zahraj z klaviatury: C1–B1 + C2–G#2 akordy, C3–C6 struny.
+5. Zahraj z klaviatury nebo Piano rollu: C2–B2 + C3–G#3 akordy, ostatní noty harfa.
+7. Zahraj něco Live Strumem a přetáhni displej MIDI CAPTURE do FL Studia.
 6. Pravé tlačítko na knobu, dvojklik na knobu, kolečko myši.
 
 ## Sestavení (automaticky)

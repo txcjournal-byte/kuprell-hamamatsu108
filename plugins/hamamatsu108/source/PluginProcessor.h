@@ -14,10 +14,10 @@ public:
     static constexpr int numStrings = 26;       // strings drawn on the strum plate
     static constexpr int numVoices = 48;
 
-    // MIDI zones (fixed in step 2; editable in Settings later)
-    static constexpr int rootZoneLow = 24, rootZoneHigh = 35;    // C1 - B1: chord root
-    static constexpr int typeZoneLow = 36, typeZoneHigh = 44;    // C2 - G#2: chord type
-    static constexpr int strumZoneLow = 48, strumZoneHigh = 84;  // C3 - C6: strum plate
+    // MIDI zones (fixed for now; editable in Settings later). FL Studio names: C2-B2, C3-G#3, A3 and up.
+    static constexpr int rootZoneLow = 24, rootZoneHigh = 35;    // chord root
+    static constexpr int typeZoneLow = 36, typeZoneHigh = 44;    // chord type
+    // every other note plays the harp: snapped to the chord when one is on, as written when not
 
     Hamamatsu108Processor();
     ~Hamamatsu108Processor() override = default;
@@ -57,6 +57,12 @@ public:
     std::atomic<std::uint32_t> stringFlashes { 0 }; // strings plucked since the GUI last looked
     std::atomic<float> meterLeft { 0.0f }, meterRight { 0.0f };
     std::atomic<int> voicesInUse { 0 };
+    std::atomic<double> hostBpm { 120.0 };
+
+    // every note the harp plays (strums, plate, keyboard), for "drag MIDI to the DAW"
+    struct CapturedNote { double seconds; int note; float velocity; };
+    juce::AbstractFifo captureFifo { 2048 };
+    std::array<CapturedNote, 2048> captureBuffer {};
 
     // last editor width in pixels (0 = not set yet), saved with the project
     std::atomic<int> editorWidth { 0 };
@@ -73,6 +79,7 @@ private:
     void updateTones (int chordIndex, int transpose, int rangeOctaves);
     void scheduleStrum (int offset, bool down);
     void scheduleNote (int delay, int toneIndex, float velocity);
+    void schedulePitch (int delay, int note, float velocity);
     void startVoice (int note, float velocity);
     int resolveChord() const;
 
@@ -110,6 +117,7 @@ private:
     float delayLpL = 0.0f, delayLpR = 0.0f;
     juce::SmoothedValue<float> masterGain, chorusMix, delayMix, reverbMix;
     double bpm = 120.0;
+    juce::int64 sampleClock = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Hamamatsu108Processor)
 };

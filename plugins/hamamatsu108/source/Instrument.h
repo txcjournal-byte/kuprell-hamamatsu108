@@ -12,7 +12,7 @@ namespace hama
     // geometry of the instrument in stage coordinates (stage = 1280 x 740 at 100 %)
     namespace geo
     {
-        constexpr int bodyX = 80, bodyY = 34, bodyW = 1120, panelH = 588, frontH = 40, cheekW = 42;
+        constexpr int bodyX = 80, bodyY = 16, bodyW = 1120, panelH = 588, frontH = 40, cheekW = 42;
         constexpr int innerX = bodyX + cheekW + 20, innerW = bodyW - 2 * cheekW - 40;
         constexpr int rearY = bodyY + 16, rearH = 58;
         constexpr int labelY = rearY + rearH + 14;
@@ -29,6 +29,7 @@ namespace hama
     class ChordPad;
     class StrumPlate;
     class VoiceModule;
+    class MidiCapture;
 
     class InstrumentView : public juce::Component, private juce::Timer
     {
@@ -51,6 +52,7 @@ namespace hama
         std::unique_ptr<ChordPad> pad;
         std::unique_ptr<StrumPlate> plate;
         std::unique_ptr<VoiceModule> module;
+        std::unique_ptr<MidiCapture> capture;
         juce::OwnedArray<kuprell::Knob> deckKnobs;
         juce::Array<juce::Rectangle<int>> groupBounds;
 

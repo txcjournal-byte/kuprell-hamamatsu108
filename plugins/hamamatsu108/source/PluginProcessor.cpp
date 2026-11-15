@@ -134,11 +134,25 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
         {
             if (numTypesHeld < 16) typeHeldStack[numTypesHeld++] = n - typeZoneLow;
         }
-        else if (n >= strumZoneLow && n <= strumZoneHigh && ! tones.empty())
+        else
         {
-            const int visual = juce::roundToInt ((float) (n - strumZoneLow) * (numStrings - 1) / (float) (strumZoneHigh - strumZoneLow));
-            const int tone = juce::roundToInt ((float) visual * (float) (tones.size() - 1) / (float) (numStrings - 1));
-            scheduleNote (samplePos, tone, m.getFloatVelocity());
+            // melodic note: snap to the nearest chord tone (prefer upwards), or play as written
+            int pitch = n;
+            if (! tones.empty())
+            {
+                int best = tones.front(), bestD = 1000;
+                for (int t : tones)
+                {
+                    // compare pitch classes so notes outside the plate range still follow the chord
+                    for (int oct = -48; oct <= 48; oct += 12)
+                    {
+                        const int cand = t + oct, d = std::abs (cand - n) * 2 - (cand >= n ? 1 : 0);
+                        if (cand >= 0 && cand < 128 && d < bestD) { bestD = d; best = cand; }
+                    }
+                }
+                pitch = best;
+            }
+            schedulePitch (samplePos, pitch, m.getFloatVelocity());
         }
     }
     else if (m.isNoteOff())
@@ -191,7 +205,9 @@ void Hamamatsu108Processor::updateTones (int chordIndex, int transpose, int rang
     if (chordIndex < 0) return;
 
     const int mask = chords::pitchClassMask (chordIndex, transpose);
-    const int low = 60 - 6 * rangeOctaves;
+    // never below C3 (MIDI 48), so recorded strums never land in the chord zones
+    static const int lows[] = { 60, 60, 54, 48, 48 };
+    const int low = lows[juce::jlimit (1, 4, rangeOctaves)];
     const int high = low + 12 * rangeOctaves;
     for (int n = low; n <= high; ++n)
         if (mask & (1 << (n % 12)))
@@ -204,6 +220,22 @@ void Hamamatsu108Processor::scheduleNote (int delay, int toneIndex, float veloci
     toneIndex = juce::jlimit (0, (int) tones.size() - 1, toneIndex);
     const int visual = tones.size() > 1 ? juce::roundToInt ((float) toneIndex * (numStrings - 1) / (float) (tones.size() - 1)) : numStrings / 2;
     events[(size_t) numEvents++] = { juce::jmax (0, delay), tones[(size_t) toneIndex], juce::jlimit (0.05f, 1.0f, velocity), visual };
+}
+
+void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity)
+{
+    if (numEvents >= (int) events.size()) return;
+    int visual = numStrings / 2;
+    if (! tones.empty())
+    {
+        int bestIdx = 0;
+        for (int i = 0; i < (int) tones.size(); ++i)
+            if (std::abs (tones[(size_t) i] - note) < std::abs (tones[(size_t) bestIdx] - note)) bestIdx = i;
+        visual = tones.size() > 1 ? juce::roundToInt ((float) bestIdx * (numStrings - 1) / (float) (tones.size() - 1)) : numStrings / 2;
+    }
+    else
+        visual = juce::jlimit (0, numStrings - 1, (note - 48) * (numStrings - 1) / 48);
+    events[(size_t) numEvents++] = { juce::jmax (0, delay), juce::jlimit (0, 127, note), juce::jlimit (0.05f, 1.0f, velocity), visual };
 }
 
 // one hand gesture across the strings, with human variation driven by Feel
@@ -384,6 +416,12 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             if (events[(size_t) e].delay < start + len)
             {
                 startVoice (events[(size_t) e].note, events[(size_t) e].velocity);
+                {
+                    const auto scope = captureFifo.write (1);
+                    const CapturedNote cn { (double) (sampleClock + start) / sr, events[(size_t) e].note, events[(size_t) e].velocity };
+                    if (scope.blockSize1 > 0) captureBuffer[(size_t) scope.startIndex1] = cn;
+                    else if (scope.blockSize2 > 0) captureBuffer[(size_t) scope.startIndex2] = cn;
+                }
                 flashes |= 1u << (unsigned) events[(size_t) e].visual;
                 events[(size_t) e] = events[(size_t) --numEvents];
             }
@@ -396,6 +434,8 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     }
 
     for (int e = 0; e < numEvents; ++e) events[(size_t) e].delay -= numSamples;
+    sampleClock += numSamples;
+    hostBpm.store (bpm);
     if (flashes != 0) stringFlashes.fetch_or (flashes);
 
     int inUse = 0;

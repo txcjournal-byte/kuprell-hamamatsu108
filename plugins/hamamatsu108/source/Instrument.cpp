@@ -340,8 +340,7 @@ namespace hama
             }
             g.setFont (spaced (11.0f, false, 0.45f));
             g.setColour (engrave);
-            g.drawText (juce::String::fromUTF8 ("HAMAMATSU 108  \xc2\xb7  ELECTRONIC STRUM HARP"),
-                        juce::Rectangle<float> (tx, (float) rearY + 36.0f, 420.0f, 14.0f), juce::Justification::centredLeft, false);
+            g.drawText ("HAMAMATSU 108", juce::Rectangle<float> (tx, (float) rearY + 36.0f, 240.0f, 14.0f), juce::Justification::centredLeft, false);
 
             // model display (models arrive in step 4)
             auto disp = juce::Rectangle<float> ((float) (innerX + innerW - 230 - 46), (float) rearY + 6.0f, 230.0f, 46.0f);
@@ -886,6 +885,142 @@ namespace hama
         bool hold = false, minor = false;
     };
 
+
+    //==========================================================================
+    // Everything the harp plays is captured; drag this pad into the DAW to get it as a MIDI clip.
+    class MidiCapture : public juce::Component, public juce::SettableTooltipClient
+    {
+    public:
+        explicit MidiCapture (Hamamatsu108Processor& p) : processor (p)
+        {
+            setTooltip (juce::String::fromUTF8 ("MIDI capture \xc2\xb7 everything you play is recorded here. Drag it into the FL Studio playlist or piano roll. Right-click: clear."));
+            setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+        }
+
+        static juce::Rectangle<int> area() { return { geo::innerX + 500, geo::rearY + 6, 190, 46 }; }
+
+        void update()
+        {
+            const int ready = processor.captureFifo.getNumReady();
+            bool changed = false;
+            if (ready > 0)
+            {
+                const auto scope = processor.captureFifo.read (ready);
+                auto take = [this] (int start, int size)
+                {
+                    for (int i = 0; i < size; ++i)
+                    {
+                        const auto n = processor.captureBuffer[(size_t) (start + i)];
+                        if (! notes.empty() && n.seconds - notes.back().seconds > 4.0)
+                            notes.clear();   // a pause of 4 s starts a new take
+                        if (notes.size() < 8000) notes.push_back (n);
+                    }
+                };
+                take (scope.startIndex1, scope.blockSize1);
+                take (scope.startIndex2, scope.blockSize2);
+                lastActivity = juce::Time::getMillisecondCounterHiRes();
+                changed = true;
+            }
+            const bool nowLive = juce::Time::getMillisecondCounterHiRes() - lastActivity < 250.0;
+            if (changed || nowLive != live) { live = nowLive; repaint(); }
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat().reduced (1.0f);
+            g.setColour (juce::Colours::white.withAlpha (0.12f));
+            g.fillRoundedRectangle (r.expanded (1.0f), 10.0f);
+            drawDisplay (g, r, 9.0f);
+            if (hover || dragging)
+            {
+                g.setColour (colours::accent.withAlpha (0.6f));
+                g.drawRoundedRectangle (r, 9.0f, 1.5f);
+            }
+
+            drawLed (g, juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ r.getX() + 14.0f, r.getY() + 14.0f }), live);
+            auto text = r.reduced (26.0f, 5.0f).withTrimmedLeft (-2.0f);
+            g.setFont (LookAndFeel::monoFont (11.0f));
+            glowText (g, "MIDI CAPTURE", text.removeFromTop (17.0f), juce::Justification::centredLeft, 0.7f);
+            g.setFont (LookAndFeel::monoFont (13.0f));
+            if (notes.empty())
+                glowText (g, "play, then drag", text, juce::Justification::centredLeft, 0.55f);
+            else
+            {
+                const double secs = notes.back().seconds - notes.front().seconds;
+                const double bars = secs * processor.hostBpm.load() / 240.0;
+                glowText (g, juce::String::fromUTF8 ("DRAG \xe2\x87\xa2 ") + juce::String ((int) notes.size()) + " notes " + juce::String (juce::jmax (1, (int) std::ceil (bars))) + " bar",
+                          text, juce::Justification::centredLeft);
+            }
+        }
+
+        void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
+        void mouseExit (const juce::MouseEvent&) override  { hover = false; repaint(); }
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            if (e.mods.isPopupMenu())
+            {
+                notes.clear();
+                repaint();
+            }
+        }
+
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            if (dragging || notes.empty() || e.mods.isPopupMenu() || e.getDistanceFromDragStart() < 6) return;
+            const auto file = writeMidiFile();
+            if (! file.existsAsFile()) return;
+            dragging = true;
+            juce::Component::SafePointer<MidiCapture> safe (this);
+            juce::DragAndDropContainer::performExternalDragDropOfFiles ({ file.getFullPathName() }, false, this,
+                                                                       [safe] { if (safe != nullptr) { safe->dragging = false; safe->repaint(); } });
+        }
+
+        void mouseUp (const juce::MouseEvent&) override { dragging = false; repaint(); }
+
+    private:
+        juce::File writeMidiFile() const
+        {
+            const double bpm = processor.hostBpm.load();
+            const int ppq = 960;
+            const double t0 = notes.front().seconds;
+            auto toTicks = [&] (double s) { return (s - t0) * bpm / 60.0 * ppq; };
+
+            juce::MidiMessageSequence seq;
+            seq.addEvent (juce::MidiMessage::tempoMetaEvent (juce::roundToInt (60000000.0 / bpm)), 0.0);
+            for (size_t i = 0; i < notes.size(); ++i)
+            {
+                const double on = toTicks (notes[i].seconds);
+                double off = on + ppq / 2.0;
+                for (size_t j = i + 1; j < notes.size(); ++j)
+                    if (notes[j].note == notes[i].note) { off = juce::jmin (off, toTicks (notes[j].seconds) - 1.0); break; }
+                const auto vel = (juce::uint8) juce::jlimit (1, 127, juce::roundToInt (notes[i].velocity * 127.0f));
+                seq.addEvent (juce::MidiMessage::noteOn (1, notes[i].note, vel), on);
+                seq.addEvent (juce::MidiMessage::noteOff (1, notes[i].note), juce::jmax (on + 1.0, off));
+            }
+            seq.updateMatchedPairs();
+            seq.sort();
+
+            juce::MidiFile mf;
+            mf.setTicksPerQuarterNote (ppq);
+            mf.addTrack (seq);
+
+            auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Kuprell Hamamatsu 108");
+            dir.createDirectory();
+            auto file = dir.getChildFile ("Hamamatsu 108 take " + juce::Time::getCurrentTime().formatted ("%H%M%S") + ".mid");
+            file.deleteFile();
+            juce::FileOutputStream out (file);
+            if (out.openedOk())
+                mf.writeTo (out);
+            return file;
+        }
+
+        Hamamatsu108Processor& processor;
+        std::vector<Hamamatsu108Processor::CapturedNote> notes;
+        double lastActivity = 0.0;
+        bool live = false, hover = false, dragging = false;
+    };
+
     //==========================================================================
     InstrumentView::InstrumentView (Hamamatsu108Processor& p) : processor (p)
     {
@@ -893,11 +1028,13 @@ namespace hama
         pad = std::make_unique<ChordPad> (p);
         plate = std::make_unique<StrumPlate> (p);
         module = std::make_unique<VoiceModule> (p);
+        capture = std::make_unique<MidiCapture> (p);
 
         addAndMakeVisible (*backdrop);
         addAndMakeVisible (*pad);
         addAndMakeVisible (*plate);
         addAndMakeVisible (*module);
+        addAndMakeVisible (*capture);
 
         module->onMessage = [this] (const juce::String& m) { if (onStatus) onStatus (m, {}); };
         for (auto* k : module->knobs)
@@ -943,6 +1080,7 @@ namespace hama
         pad->setBounds (geo::padArea());
         plate->setBounds (geo::plateArea());
         module->setBounds (geo::moduleArea());
+        capture->setBounds (MidiCapture::area());
 
         const auto groups = deckGroupBounds();
         int k = 0;
@@ -969,5 +1107,6 @@ namespace hama
         pad->update (chord, juce::roundToInt (plain (processor.apvts, "keyRoot")), plain (processor.apvts, "keyMode") > 0.5f);
         plate->update (processor.stringFlashes.exchange (0), chord);
         module->update (processor.meterLeft.load(), processor.meterRight.load(), chord);
+        capture->update();
     }
 }
