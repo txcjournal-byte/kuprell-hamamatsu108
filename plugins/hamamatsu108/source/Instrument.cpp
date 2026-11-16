@@ -51,11 +51,11 @@ namespace hama
         {
             if (on)
             {
-                g.setColour (colours::accent.withAlpha (0.35f));
+                g.setColour (th().accent.withAlpha (0.35f));
                 g.fillEllipse (r.expanded (r.getWidth() * 0.6f));
                 juce::ColourGradient led (juce::Colours::white, r.getX() + r.getWidth() * 0.4f, r.getY() + r.getHeight() * 0.35f,
-                                          colours::accentDeep, r.getRight(), r.getBottom(), true);
-                led.addColour (0.55, colours::accent);
+                                          th().deep, r.getRight(), r.getBottom(), true);
+                led.addColour (0.55, th().accent);
                 g.setGradientFill (led);
             }
             else
@@ -86,9 +86,9 @@ namespace hama
                 auto strip = juce::Rectangle<float> (16.0f, 3.0f).withCentre ({ cap.getCentreX(), cap.getY() + 9.0f });
                 if (lit)
                 {
-                    g.setColour (colours::accent.withAlpha (0.4f));
+                    g.setColour (th().accent.withAlpha (0.4f));
                     g.fillRoundedRectangle (strip.expanded (3.0f, 2.0f), 3.0f);
-                    g.setColour (colours::accent);
+                    g.setColour (th().accent);
                 }
                 else
                     g.setColour (juce::Colour (0xff24272b));
@@ -117,25 +117,25 @@ namespace hama
 
         void glowText (juce::Graphics& g, const juce::String& text, juce::Rectangle<float> r, juce::Justification j, float alpha = 1.0f)
         {
-            g.setColour (colours::accent.withAlpha (0.22f * alpha));
+            g.setColour (th().accent.withAlpha (0.22f * alpha));
             g.drawText (text, r.translated (0.0f, 0.6f), j, false);
-            g.setColour (colours::accentSoft.withAlpha (alpha));
+            g.setColour (th().soft.withAlpha (alpha));
             g.drawText (text, r, j, false);
         }
 
         // deck layout shared by the backdrop (engravings) and the knobs
         struct DeckKnob { const char* param; const char* label; int size; const char* soon; };
-        struct DeckGroup { const char* name; std::vector<DeckKnob> knobs; bool macro; };
+        struct DeckGroup { const char* name; std::vector<DeckKnob> knobs; bool macro; int selector = 0; };   // selector: 1 chord layer, 2 bass
 
         const std::vector<DeckGroup>& deckGroups()
         {
             static const std::vector<DeckGroup> g {
                 { "HARP",    { { "harpTone", "Tone", 36, nullptr }, { "harpDecay", "Decay", 36, nullptr }, { "harpRange", "Range", 36, nullptr } }, false },
-                { "CHORD",   { { nullptr, "Level", 36, "Chord layer arrives in step 3" }, { nullptr, "Filter", 36, "Chord layer arrives in step 3" } }, false },
-                { "BASS",    { { nullptr, "Level", 36, "Bass arrives in step 3" }, { nullptr, "Tone", 36, "Bass arrives in step 3" } }, false },
+                { "CHORD",   { { "chordLevel", "Level", 36, nullptr }, { "chordFilter", "Filter", 36, nullptr } }, false, 1 },
+                { "BASS",    { { "bassLevel", "Level", 36, nullptr }, { "bassTone", "Tone", 36, nullptr } }, false, 2 },
                 { "VIBRATO", { { "vibRate", "Rate", 36, nullptr }, { "vibDepth", "Depth", 36, nullptr } }, false },
                 { "FX",      { { "fxChorus", "Chorus", 36, nullptr }, { "fxDelay", "Delay", 36, nullptr }, { "fxReverb", "Reverb", 36, nullptr } }, false },
-                { "MACROS",  { { nullptr, "AGE", 44, "Macros arrive in step 4" }, { nullptr, "DREAM", 44, "Macros arrive in step 4" }, { nullptr, "WOBBLE", 44, "Macros arrive in step 4" } }, true },
+                { "MACROS",  { { "macroAge", "AGE", 44, nullptr }, { "macroDream", "DREAM", 44, nullptr }, { "macroWobble", "WOBBLE", 44, nullptr } }, true },
                 { "MASTER",  { { "master", "Volume", 48, nullptr } }, false },
             };
             return g;
@@ -301,11 +301,6 @@ namespace hama
             g.fillRect (r);
             g.setColour (juce::Colour (0xffc9ced4));
             g.fillRect (r.withHeight (2.0f));
-
-            g.setFont (spaced (9.0f, true, 0.3f));
-            g.setColour (juce::Colour (0xff7e858d));
-            g.drawText ("ELECTRONIC STRUM HARP", r, juce::Justification::centred, false);
-            g.drawText (juce::String::fromUTF8 ("MIDI \xc2\xb7 USB"), r.reduced (26.0f, 0.0f), juce::Justification::centredRight, false);
         }
 
         void paintRear (juce::Graphics& g)
@@ -430,19 +425,24 @@ namespace hama
             {
                 const auto& gr = deckGroups()[(size_t) i];
                 auto b = groups[i].toFloat();
+                if (gr.selector != 0) { drawSeparator (g, groups, i); continue; }
                 g.setFont (spaced (9.0f, true, 0.25f));
                 g.setColour (juce::Colours::white.withAlpha (0.6f));
                 g.drawText (gr.name, b.withHeight (12.0f).translated (0.0f, 1.0f), juce::Justification::centred, false);
-                g.setColour (gr.macro ? colours::accentDeep : juce::Colour (0xff3a3f46));
+                g.setColour (gr.macro ? th().deep : juce::Colour (0xff3a3f46));
                 g.drawText (gr.name, b.withHeight (12.0f), juce::Justification::centred, false);
-                if (i < groups.size() - 1)
-                {
-                    g.setColour (juce::Colours::black.withAlpha (0.12f));
-                    g.drawVerticalLine ((int) b.getRight(), b.getY() + 2.0f, b.getBottom() - 2.0f);
-                    g.setColour (juce::Colours::white.withAlpha (0.5f));
-                    g.drawVerticalLine ((int) b.getRight() + 1, b.getY() + 2.0f, b.getBottom() - 2.0f);
-                }
+                drawSeparator (g, groups, i);
             }
+        }
+
+        static void drawSeparator (juce::Graphics& g, const juce::Array<juce::Rectangle<int>>& groups, int i)
+        {
+            if (i >= groups.size() - 1) return;
+            const auto b = groups[i].toFloat();
+            g.setColour (juce::Colours::black.withAlpha (0.12f));
+            g.drawVerticalLine ((int) b.getRight(), b.getY() + 2.0f, b.getBottom() - 2.0f);
+            g.setColour (juce::Colours::white.withAlpha (0.5f));
+            g.drawVerticalLine ((int) b.getRight() + 1, b.getY() + 2.0f, b.getBottom() - 2.0f);
         }
 
         std::unique_ptr<juce::Drawable> logo;
@@ -517,11 +517,11 @@ namespace hama
             else
             {
                 b = b.withTrimmedTop (3.0f);
-                g.setColour (colours::accent.withAlpha (0.25f));
+                g.setColour (th().accent.withAlpha (0.25f));
                 g.fillRoundedRectangle (b.expanded (5.0f), 10.0f);
                 g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2e6f6a), 0.0f, b.getY(), juce::Colour (0xff1c4a47), 0.0f, b.getBottom(), false));
                 g.fillRoundedRectangle (b, 7.0f);
-                g.setColour (colours::accent);
+                g.setColour (th().accent);
                 g.drawRoundedRectangle (b.reduced (0.5f), 7.0f, 2.0f);
                 g.setColour (juce::Colours::white);
                 g.setFont (LookAndFeel::uiFont (10.0f, true));
@@ -532,9 +532,9 @@ namespace hama
             auto dot = juce::Rectangle<float> (4.0f, 4.0f).withPosition (b.getRight() - 8.0f, b.getY() + 3.0f);
             if (inKey)
             {
-                g.setColour (colours::accent.withAlpha (0.4f));
+                g.setColour (th().accent.withAlpha (0.4f));
                 g.fillEllipse (dot.expanded (2.0f));
-                g.setColour (colours::accent);
+                g.setColour (th().accent);
             }
             else
                 g.setColour (juce::Colours::black.withAlpha (0.35f));
@@ -628,7 +628,7 @@ namespace hama
             for (auto v : glow) sum += v;
             if (sum > 0.05f)
             {
-                juce::ColourGradient haze (colours::accent.withAlpha (juce::jmin (0.3f, sum * 0.04f)), gl.getCentreX(), gl.getCentreY() + 20.0f,
+                juce::ColourGradient haze (th().accent.withAlpha (juce::jmin (0.3f, sum * 0.04f)), gl.getCentreX(), gl.getCentreY() + 20.0f,
                                            juce::Colours::transparentBlack, gl.getCentreX() + 90.0f, gl.getCentreY() + 20.0f, true);
                 g.setGradientFill (haze);
                 g.fillRect (gl);
@@ -642,13 +642,13 @@ namespace hama
                 const float alpha = chordIndex >= 0 ? 0.32f + 0.68f * v : 0.16f + 0.84f * v;
                 if (v > 0.05f)
                 {
-                    g.setColour (colours::accent.withAlpha (0.35f * v));
+                    g.setColour (th().accent.withAlpha (0.35f * v));
                     g.fillRect (gl.getX() + 6.0f, y - 2.5f, gl.getWidth() - 12.0f, 5.0f);
                 }
-                juce::ColourGradient s (colours::accent.withAlpha (0.0f), gl.getX(), y, colours::accent.withAlpha (0.0f), gl.getRight(), y, false);
-                s.addColour (0.18, colours::accent.withAlpha (alpha));
-                s.addColour (0.5, colours::accentSoft.withAlpha (alpha));
-                s.addColour (0.82, colours::accent.withAlpha (alpha));
+                juce::ColourGradient s (th().accent.withAlpha (0.0f), gl.getX(), y, th().accent.withAlpha (0.0f), gl.getRight(), y, false);
+                s.addColour (0.18, th().accent.withAlpha (alpha));
+                s.addColour (0.5, th().soft.withAlpha (alpha));
+                s.addColour (0.82, th().accent.withAlpha (alpha));
                 g.setGradientFill (s);
                 g.fillRect (gl.getX(), y - 1.0f, gl.getWidth(), 2.0f);
             }
@@ -719,11 +719,12 @@ namespace hama
         explicit VoiceModule (Hamamatsu108Processor& p) : processor (p)
         {
             Knob::Style st;
-            st.labelHeight = 8.5f;
-            const char* ids[]    = { "harpVoice", "strumRate", "strumFeel", "strumSpeed" };
-            const char* labels[] = { "VOICE", "RATE", "FEEL", "SPEED" };
-            for (int i = 0; i < 4; ++i)
-                addAndMakeVisible (knobs.add (new Knob (processor.apvts, ids[i], labels[i], 28, st)));
+            st.labelHeight = 8.0f;
+            const char* ids[]    = { "harpVoice", "morph", "strumRate", "strumFeel", "strumSpeed", "arpPattern", "arpChance" };
+            const char* labels[] = { "VOICE", "MORPH", "RATE", "FEEL", "SPEED", "PATTERN", "CHANCE" };
+            for (int i = 0; i < 7; ++i)
+                addChildComponent (knobs.add (new Knob (processor.apvts, ids[i], labels[i], 24, st)));
+            for (int i = 0; i < 5; ++i) knobs[i]->setVisible (true);
         }
 
         juce::OwnedArray<Knob> knobs;
@@ -740,24 +741,41 @@ namespace hama
 
         void resized() override
         {
+            const float w = 192.0f / 5.0f;
             for (int i = 0; i < knobs.size(); ++i)
-                knobs[i]->setBounds (12 + i * 48, 60, 48, 66);
+            {
+                const int col = i < 5 ? i : i - 2;   // PATTERN / CHANCE take the places of FEEL / SPEED
+                knobs[i]->setBounds (juce::roundToInt (12.0f + col * w), 60, juce::roundToInt (w), 66);
+            }
         }
 
         void update (float levelL, float levelR, int chord)
         {
             auto& s = processor.apvts;
             const int newVoice = juce::roundToInt (plain (s, "harpVoice"));
+            const int newVoice2 = juce::roundToInt (plain (s, "harpVoice2"));
+            const bool newDual = plain (s, "dual") > 0.5f;
             const int newMode = juce::roundToInt (plain (s, "strumMode"));
             const int newRate = juce::roundToInt (plain (s, "strumRate"));
+            const int newPattern = juce::roundToInt (plain (s, "arpPattern"));
+            const int newBank = processor.memBank.load();
+            const int newStep = processor.memPlayStep.load();
             const bool newHold = plain (s, "hold") > 0.5f;
             const int newKey = juce::roundToInt (plain (s, "keyRoot"));
             const bool newMinor = plain (s, "keyMode") > 0.5f;
             const int newTr = juce::roundToInt (plain (s, "transpose"));
 
-            if (newVoice != voice || newMode != mode || newRate != rate || newHold != hold || newKey != key || newMinor != minor || newTr != transpose || chord != chordIndex)
+            if (newVoice != voice || newVoice2 != voice2 || newDual != dual || newMode != mode || newRate != rate || newPattern != pattern
+                || newBank != bank || newStep != step || newHold != hold || newKey != key || newMinor != minor || newTr != transpose || chord != chordIndex)
             {
-                voice = newVoice; mode = newMode; rate = newRate; hold = newHold; key = newKey; minor = newMinor; transpose = newTr; chordIndex = chord;
+                if (newMode != mode)
+                {
+                    const bool arp = newMode == 1;
+                    knobs[3]->setVisible (! arp); knobs[4]->setVisible (! arp);
+                    knobs[5]->setVisible (arp);   knobs[6]->setVisible (arp);
+                }
+                voice = newVoice; voice2 = newVoice2; dual = newDual; mode = newMode; rate = newRate; pattern = newPattern;
+                bank = newBank; step = newStep; hold = newHold; key = newKey; minor = newMinor; transpose = newTr; chordIndex = chord;
                 repaint();
             }
 
@@ -769,6 +787,12 @@ namespace hama
             }
         }
 
+        static juce::String shortVoice (int v)
+        {
+            static const char* n[] = { "CHIME", "CELESTA", "VIBES", "GLASS", "PLUCK", "FLUTE", "MARIMBA", "STEEL", "E-PIANO", "STRINGS" };
+            return n[juce::jlimit (0, 9, v)];
+        }
+
         void paint (juce::Graphics& g) override
         {
             // VFD
@@ -778,17 +802,25 @@ namespace hama
             g.setFont (LookAndFeel::monoFont (13.0f));
             auto l1 = lines.removeFromTop (16.0f);
             glowText (g, "VOICE", l1, juce::Justification::centredLeft);
-            glowText (g, harp::voiceNames()[voice].toUpperCase(), l1, juce::Justification::centredRight);
+            glowText (g, dual ? shortVoice (voice) + "+" + shortVoice (voice2) : harp::voiceNames()[voice].toUpperCase(), l1, juce::Justification::centredRight);
             auto l2 = lines.removeFromTop (16.0f);
-            glowText (g, "STRUM", l2, juce::Justification::centredLeft, 0.75f);
-            const juce::String strum = mode == 0 ? "LIVE " + Hamamatsu108Processor::strumRateNames()[rate]
-                                                 : Hamamatsu108Processor::strumModeNames()[mode].toUpperCase();
-            glowText (g, strum, l2, juce::Justification::centredRight, 0.75f);
+            const auto rateText = Hamamatsu108Processor::strumRateNames()[rate];
+            juce::String left = "STRUM", right;
+            switch (mode)
+            {
+                case 0: right = "LIVE " + rateText; break;
+                case 1: left = "ARP"; right = Hamamatsu108Processor::arpPatternNames()[pattern].toUpperCase().removeCharacters (" ") + " " + rateText; break;
+                case 2: left = "MEMO " + juce::String::charToString ((juce::juce_wchar) ('A' + bank));
+                        right = step >= 0 ? "STEP " + juce::String (step + 1) : juce::String ("EMPTY"); break;
+                default: right = "OFF"; break;
+            }
+            glowText (g, left, l2, juce::Justification::centredLeft, 0.75f);
+            glowText (g, right, l2, juce::Justification::centredRight, 0.75f);
 
-            drawHardButton (g, dualArea(), "DUAL", false, false, false);
+            drawHardButton (g, dualArea(), "DUAL", dual, true, false);
             drawHardButton (g, holdArea(), "HOLD", hold, true, false);
             for (int i = 0; i < 4; ++i)
-                drawHardButton (g, modeArea (i), Hamamatsu108Processor::strumModeNames()[i].toUpperCase(), mode == i, i == 0 || i == 3, true);
+                drawHardButton (g, modeArea (i), Hamamatsu108Processor::strumModeNames()[i].toUpperCase(), mode == i, true, true);
 
             g.setFont (spaced (9.0f, true, 0.2f));
             g.setColour (juce::Colour (0xff9aa0a7));
@@ -821,7 +853,7 @@ namespace hama
                     auto seg = juce::Rectangle<float> (m.getX() + i * (w + 2.0f), m.getY() + row * 8.0f, w, 5.0f);
                     if (i < lit)
                     {
-                        const auto c = i >= 13 ? colours::accentSoft : colours::accent;
+                        const auto c = i >= 13 ? th().soft : th().accent;
                         g.setColour (c.withAlpha (0.3f));
                         g.fillRoundedRectangle (seg.expanded (1.5f), 2.0f);
                         g.setColour (c);
@@ -838,7 +870,7 @@ namespace hama
             auto& s = processor.apvts;
             const auto p = e.position;
             if (holdArea().contains (p))       setParam (s, "hold", hold ? 0.0f : 1.0f);
-            else if (dualArea().contains (p))  message ("Dual (two harp voices at once) arrives in step 3.");
+            else if (dualArea().contains (p))  showDualMenu();
             else if (trDown().contains (p))    setParam (s, "transpose", (float) juce::jmax (-12, transpose - 1));
             else if (trUp().contains (p))      setParam (s, "transpose", (float) juce::jmin (12, transpose + 1));
             else if (keyArea().contains (p))   showKeyMenu();
@@ -846,8 +878,14 @@ namespace hama
                 for (int i = 0; i < 4; ++i)
                     if (modeArea (i).contains (p))
                     {
-                        if (i == 1 || i == 2) message (i == 1 ? "Arpeggio modes arrive in step 3." : "Chord Memory arrives in step 3.");
-                        else setParam (s, "strumMode", (float) i);
+                        if (i == mode && i == 1)      showArpMenu();
+                        else if (i == mode && i == 2) showMemoMenu();
+                        else
+                        {
+                            setParam (s, "strumMode", (float) i);
+                            if (i == 1) message ("ARP: arpeggio over the chord. PATTERN and CHANCE knobs, click ARP again for Regen.");
+                            if (i == 2) message ("MEMO: plays the chord sequence on the front rail. Press REC there and click chords to record.");
+                        }
                     }
         }
 
@@ -855,6 +893,48 @@ namespace hama
 
     private:
         void message (const juce::String& m) { if (onMessage) onMessage (m); }
+
+        void popup (juce::PopupMenu& m, juce::Rectangle<float> area, std::function<void (int)> f)
+        {
+            juce::Component::SafePointer<VoiceModule> safe (this);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (area.toNearestInt())),
+                             [safe, f] (int r) { if (safe != nullptr && r > 0) f (r); });
+        }
+
+        void showDualMenu()
+        {
+            juce::PopupMenu m;
+            m.addSectionHeader ("DUAL: a second harp voice (layer B). MORPH blends A and B.");
+            m.addItem (1, "Dual off", true, ! dual);
+            m.addSeparator();
+            for (int i = 0; i < harp::voiceNames().size(); ++i)
+                m.addItem (100 + i, "Layer B: " + harp::voiceNames()[i], true, dual && voice2 == i);
+            popup (m, dualArea(), [this] (int r)
+            {
+                if (r == 1) setParam (processor.apvts, "dual", 0.0f);
+                else { setParam (processor.apvts, "harpVoice2", (float) (r - 100)); setParam (processor.apvts, "dual", 1.0f); }
+            });
+        }
+
+        void showArpMenu()
+        {
+            juce::PopupMenu m;
+            const int regen = juce::roundToInt (plain (processor.apvts, "arpRegen"));
+            m.addSectionHeader ("Regen: the pattern changes itself every...");
+            for (int i = 0; i < Hamamatsu108Processor::arpRegenNames().size(); ++i)
+                m.addItem (1 + i, Hamamatsu108Processor::arpRegenNames()[i], true, regen == i);
+            popup (m, modeArea (1), [this] (int r) { setParam (processor.apvts, "arpRegen", (float) (r - 1)); });
+        }
+
+        void showMemoMenu()
+        {
+            juce::PopupMenu m;
+            const int len = juce::roundToInt (plain (processor.apvts, "memStep"));
+            m.addSectionHeader ("Each memory chord lasts...");
+            for (int i = 0; i < Hamamatsu108Processor::memStepNames().size(); ++i)
+                m.addItem (1 + i, Hamamatsu108Processor::memStepNames()[i], true, len == i);
+            popup (m, modeArea (2), [this] (int r) { setParam (processor.apvts, "memStep", (float) (r - 1)); });
+        }
 
         void showKeyMenu()
         {
@@ -866,12 +946,10 @@ namespace hama
                     sub.addItem (1 + mode2 * 12 + r, chords::rootName (r), true, r == key && (mode2 == 1) == minor);
                 menu.addSubMenu (mode2 == 0 ? "Major" : "Minor", sub);
             }
-            juce::Component::SafePointer<VoiceModule> safe (this);
-            menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (keyArea().toNearestInt())), [safe] (int r)
+            popup (menu, keyArea(), [this] (int r)
             {
-                if (safe == nullptr || r <= 0) return;
-                setParam (safe->processor.apvts, "keyRoot", (float) ((r - 1) % 12));
-                setParam (safe->processor.apvts, "keyMode", (float) ((r - 1) / 12));
+                setParam (processor.apvts, "keyRoot", (float) ((r - 1) % 12));
+                setParam (processor.apvts, "keyMode", (float) ((r - 1) / 12));
             });
         }
 
@@ -882,10 +960,9 @@ namespace hama
         }
 
         Hamamatsu108Processor& processor;
-        int voice = 0, mode = 0, rate = 2, key = 0, transpose = 0, chordIndex = -1, meterL = 0, meterR = 0;
-        bool hold = false, minor = false;
+        int voice = 0, voice2 = 9, mode = -1, rate = 2, pattern = 0, bank = 0, step = -1, key = 0, transpose = 0, chordIndex = -1, meterL = 0, meterR = 0;
+        bool hold = false, minor = false, dual = false;
     };
-
 
     //==========================================================================
     // Everything the harp plays is captured; drag this pad into the DAW to get it as a MIDI clip.
@@ -934,7 +1011,7 @@ namespace hama
             drawDisplay (g, r, 9.0f);
             if (hover || dragging)
             {
-                g.setColour (colours::accent.withAlpha (0.6f));
+                g.setColour (th().accent.withAlpha (0.6f));
                 g.drawRoundedRectangle (r, 9.0f, 1.5f);
             }
 
@@ -1022,6 +1099,278 @@ namespace hama
         bool live = false, hover = false, dragging = false;
     };
 
+
+    //==========================================================================
+    // Pill above a deck group: shows and picks the chord layer / bass type.
+    class GroupSelector : public juce::Component, public juce::SettableTooltipClient
+    {
+    public:
+        GroupSelector (Hamamatsu108Processor& p, int kindIn) : processor (p), kind (kindIn)
+        {
+            setTooltip (kind == 1 ? "Chord layer: sustained chord under the harp. Click to choose the sound and voicing."
+                                  : "Bass: plays the chord root. Click to choose the sound and pattern.");
+            setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        }
+
+        juce::String text() const
+        {
+            auto& s = processor.apvts;
+            if (kind == 1) return "CHORD  " + layers::chordTypeNames()[juce::roundToInt (plain (s, "chordType"))].toUpperCase();
+            const int t = juce::roundToInt (plain (s, "bassType"));
+            if (t == 0) return "BASS  OFF";
+            static const char* modes[] = { "ROOT", "R+5", "WALK" };
+            return "BASS  " + layers::bassTypeNames()[t].toUpperCase() + " " + modes[juce::jlimit (0, 2, juce::roundToInt (plain (s, "bassMode")))];
+        }
+
+        void update() { const auto t = text(); if (t != shown) { shown = t; repaint(); } }
+
+        void paint (juce::Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat().reduced (1.0f);
+            g.setColour (juce::Colour (0xff1a1c1f));
+            g.fillRoundedRectangle (r, 6.0f);
+            g.setColour (hover ? th().accent : juce::Colours::black);
+            g.drawRoundedRectangle (r, 6.0f, 1.0f);
+            const bool off = shown.endsWith ("OFF");
+            g.setFont (LookAndFeel::monoFont (10.5f));
+            g.setColour (off ? juce::Colour (0xff7e8187) : th().soft);
+            g.drawText (shown + juce::String::fromUTF8 (" \xe2\x96\xbe"), r, juce::Justification::centred, false);
+        }
+
+        void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
+        void mouseExit (const juce::MouseEvent&) override  { hover = false; repaint(); }
+
+        void mouseDown (const juce::MouseEvent&) override
+        {
+            auto& s = processor.apvts;
+            juce::PopupMenu m;
+            if (kind == 1)
+            {
+                const int t = juce::roundToInt (plain (s, "chordType")), v = juce::roundToInt (plain (s, "voicing"));
+                m.addSectionHeader ("Chord layer sound");
+                for (int i = 0; i < layers::chordTypeNames().size(); ++i) m.addItem (1 + i, layers::chordTypeNames()[i], true, t == i);
+                juce::PopupMenu inv;
+                for (int i = 0; i < layers::voicingNames().size(); ++i) inv.addItem (100 + i, layers::voicingNames()[i], true, v == i);
+                m.addSubMenu ("Voicing", inv);
+            }
+            else
+            {
+                const int t = juce::roundToInt (plain (s, "bassType")), md = juce::roundToInt (plain (s, "bassMode"));
+                m.addSectionHeader ("Bass sound");
+                for (int i = 0; i < layers::bassTypeNames().size(); ++i) m.addItem (1 + i, layers::bassTypeNames()[i], true, t == i);
+                juce::PopupMenu pat;
+                for (int i = 0; i < layers::bassModeNames().size(); ++i) pat.addItem (100 + i, layers::bassModeNames()[i], true, md == i);
+                m.addSubMenu ("Pattern", pat);
+            }
+            juce::Component::SafePointer<GroupSelector> safe (this);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int r)
+            {
+                if (safe == nullptr || r <= 0) return;
+                auto& st = safe->processor.apvts;
+                if (safe->kind == 1) setParam (st, r >= 100 ? "voicing" : "chordType", (float) (r >= 100 ? r - 100 : r - 1));
+                else                 setParam (st, r >= 100 ? "bassMode" : "bassType", (float) (r >= 100 ? r - 100 : r - 1));
+                safe->update();
+            });
+        }
+
+    private:
+        Hamamatsu108Processor& processor;
+        int kind;
+        juce::String shown;
+        bool hover = false;
+    };
+
+    //==========================================================================
+    // Chord Memory on the front edge: banks A-H, 16 steps, REC, LEN, DRAG.
+    class MemoryRail : public juce::Component, public juce::SettableTooltipClient
+    {
+    public:
+        explicit MemoryRail (Hamamatsu108Processor& p) : processor (p) {}
+
+        static juce::Rectangle<int> area() { return { geo::bodyX + geo::cheekW, geo::bodyY + geo::panelH, geo::bodyW - 2 * geo::cheekW, geo::frontH }; }
+
+        juce::Rectangle<float> bankArea (int b) const { return { 16.0f + b * 22.0f, 9.0f, 20.0f, 24.0f }; }
+        juce::Rectangle<float> stepArea (int i) const { return { 204.0f + i * 36.0f, 9.0f, 34.0f, 24.0f }; }
+        juce::Rectangle<float> recArea() const  { return { 790.0f, 8.0f, 48.0f, 26.0f }; }
+        juce::Rectangle<float> lenArea() const  { return { 844.0f, 9.0f, 60.0f, 24.0f }; }
+        juce::Rectangle<float> dragArea() const { return { 910.0f, 9.0f, 108.0f, 24.0f }; }
+
+        void update()
+        {
+            juce::String sig;
+            const int bank = processor.memBank.load();
+            sig << bank << ":" << processor.memLength[(size_t) bank].load() << ":" << processor.memPlayStep.load() << ":"
+                << (processor.memRecord.load() ? 1 : 0) << ":" << juce::roundToInt (plain (processor.apvts, "memStep"));
+            for (int i = 0; i < Hamamatsu108Processor::memSteps; ++i) sig << "," << processor.memChord (bank, i);
+            const bool blink = processor.memRecord.load() && (juce::Time::getMillisecondCounter() / 400) % 2 == 0;
+            sig << (blink ? "b" : "");
+            if (sig != lastSig) { lastSig = sig; repaint(); }
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            const int bank = processor.memBank.load();
+            const int len = processor.memLength[(size_t) bank].load();
+            const int playing = processor.memPlayStep.load();
+            const bool rec = processor.memRecord.load();
+
+            g.setFont (spaced (8.0f, true, 0.2f));
+            for (int b = 0; b < Hamamatsu108Processor::memBanks; ++b)
+            {
+                auto r = bankArea (b);
+                drawDisplay (g, r, 4.0f);
+                g.setFont (LookAndFeel::monoFont (12.0f));
+                const auto t = juce::String::charToString ((juce::juce_wchar) ('A' + b));
+                if (b == bank) glowText (g, t, r, juce::Justification::centred);
+                else { g.setColour (juce::Colour (processor.memLength[(size_t) b].load() > 0 ? 0xff9aa0a7 : 0xff4a4e54)); g.drawText (t, r, juce::Justification::centred, false); }
+            }
+
+            for (int i = 0; i < Hamamatsu108Processor::memSteps; ++i)
+            {
+                auto r = stepArea (i);
+                const int c = i < len ? processor.memChord (bank, i) : -1;
+                if (i == playing)
+                {
+                    g.setColour (th().accent.withAlpha (0.3f));
+                    g.fillRoundedRectangle (r.expanded (2.0f), 5.0f);
+                }
+                drawDisplay (g, r, 4.0f);
+                if (i == playing) { g.setColour (th().accent); g.drawRoundedRectangle (r, 4.0f, 1.5f); }
+                if (rec && i == len && (juce::Time::getMillisecondCounter() / 400) % 2 == 0)
+                { g.setColour (th().accent.withAlpha (0.8f)); g.drawRoundedRectangle (r.reduced (1.0f), 4.0f, 1.0f); }
+                g.setFont (LookAndFeel::monoFont (c >= 0 ? 10.5f : 9.0f));
+                if (c >= 0) glowText (g, chords::shortName (c), r, juce::Justification::centred, i == playing ? 1.0f : 0.8f);
+                else { g.setColour (juce::Colour (0xff3a3e44)); g.drawText (juce::String (i + 1), r, juce::Justification::centred, false); }
+            }
+
+            drawHardButton (g, recArea(), "REC", rec, true, false);
+            drawDisplay (g, lenArea(), 4.0f);
+            g.setFont (LookAndFeel::monoFont (10.5f));
+            glowText (g, Hamamatsu108Processor::memStepNames()[juce::roundToInt (plain (processor.apvts, "memStep"))].toUpperCase(), lenArea(), juce::Justification::centred, 0.8f);
+            drawDisplay (g, dragArea(), 4.0f);
+            glowText (g, juce::String::fromUTF8 ("DRAG MIDI \xe2\x87\xa2"), dragArea(), juce::Justification::centred, len > 0 ? 1.0f : 0.35f);
+        }
+
+        void mouseMove (const juce::MouseEvent& e) override
+        {
+            const auto p = e.position;
+            juce::String tip;
+            if (p.x < 200) tip = "Memory banks A-H: 8 chord sequences, saved with the project.";
+            else if (p.x < 784) tip = "Steps: click to hear a chord, right-click to delete. In MEMO mode they play in time.";
+            else if (recArea().contains (p)) tip = "REC: click chords (buttons or keyboard) to add them to this bank.";
+            else if (lenArea().contains (p)) tip = "How long each chord lasts (click to change).";
+            else if (dragArea().contains (p)) tip = "Drag this into FL Studio: the sequence as MIDI chords.";
+            setTooltip (tip);
+            setMouseCursor (dragArea().contains (p) ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::NormalCursor);
+        }
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            const auto p = e.position;
+            const int bank = processor.memBank.load();
+            for (int b = 0; b < Hamamatsu108Processor::memBanks; ++b)
+                if (bankArea (b).contains (p)) { processor.memBank.store (b); update(); return; }
+
+            for (int i = 0; i < Hamamatsu108Processor::memSteps; ++i)
+                if (stepArea (i).contains (p))
+                {
+                    const int c = processor.memChord (bank, i);
+                    if (e.mods.isPopupMenu())
+                    {
+                        juce::PopupMenu m;
+                        m.addItem (1, "Delete step " + juce::String (i + 1), c >= 0);
+                        m.addItem (2, "Clear bank " + juce::String::charToString ((juce::juce_wchar) ('A' + bank)));
+                        juce::Component::SafePointer<MemoryRail> safe (this);
+                        m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (stepArea (i).toNearestInt())), [safe, bank, i] (int r)
+                        {
+                            if (safe == nullptr) return;
+                            if (r == 1) safe->processor.memDelete (bank, i);
+                            if (r == 2) safe->processor.memClear (bank);
+                            safe->update();
+                        });
+                    }
+                    else if (c >= 0)
+                    {
+                        processor.clickChord (c);
+                        auditioned = c;
+                    }
+                    return;
+                }
+
+            if (recArea().contains (p))
+            {
+                const bool on = ! processor.memRecord.load();
+                if (on && processor.memLength[(size_t) bank].load() >= Hamamatsu108Processor::memSteps) processor.memClear (bank);
+                processor.memRecord.store (on);
+                update();
+            }
+            else if (lenArea().contains (p))
+            {
+                const int len = juce::roundToInt (plain (processor.apvts, "memStep"));
+                setParam (processor.apvts, "memStep", (float) ((len + 1) % Hamamatsu108Processor::memStepNames().size()));
+            }
+        }
+
+        void mouseUp (const juce::MouseEvent&) override
+        {
+            if (auditioned >= 0) { processor.releaseChord (auditioned); auditioned = -1; }
+            dragging = false;
+        }
+
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            if (dragging || ! dragArea().contains (e.mouseDownPosition) || e.getDistanceFromDragStart() < 6) return;
+            const auto file = writeMidi();
+            if (! file.existsAsFile()) return;
+            dragging = true;
+            juce::DragAndDropContainer::performExternalDragDropOfFiles ({ file.getFullPathName() }, false, this);
+        }
+
+    private:
+        juce::File writeMidi() const
+        {
+            const int bank = processor.memBank.load();
+            const int len = processor.memLength[(size_t) bank].load();
+            if (len == 0) return {};
+            const int ppq = 960;
+            const double stepTicks = Hamamatsu108Processor::memStepQuarters (juce::roundToInt (plain (processor.apvts, "memStep"))) * ppq;
+            const int transpose = juce::roundToInt (plain (processor.apvts, "transpose"));
+            const int inv = juce::roundToInt (plain (processor.apvts, "voicing"));
+
+            juce::MidiMessageSequence seq;
+            seq.addEvent (juce::MidiMessage::tempoMetaEvent (juce::roundToInt (60000000.0 / processor.hostBpm.load())), 0.0);
+            std::vector<int> prev;
+            for (int i = 0; i < len; ++i)
+            {
+                const int c = processor.memChord (bank, i);
+                if (c < 0) continue;
+                prev = chords::voicing (c, transpose, inv, prev);
+                for (int n : prev)
+                {
+                    seq.addEvent (juce::MidiMessage::noteOn (1, n, (juce::uint8) 96), i * stepTicks);
+                    seq.addEvent (juce::MidiMessage::noteOff (1, n), (i + 1) * stepTicks - 10.0);
+                }
+            }
+            seq.updateMatchedPairs();
+            seq.sort();
+            juce::MidiFile mf;
+            mf.setTicksPerQuarterNote (ppq);
+            mf.addTrack (seq);
+            auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Kuprell Hamamatsu 108");
+            dir.createDirectory();
+            auto file = dir.getChildFile ("Hamamatsu 108 memory " + juce::String::charToString ((juce::juce_wchar) ('A' + bank)) + ".mid");
+            file.deleteFile();
+            juce::FileOutputStream out (file);
+            if (out.openedOk()) mf.writeTo (out);
+            return file;
+        }
+
+        Hamamatsu108Processor& processor;
+        juce::String lastSig;
+        int auditioned = -1;
+        bool dragging = false;
+    };
+
     //==========================================================================
     InstrumentView::InstrumentView (Hamamatsu108Processor& p) : processor (p)
     {
@@ -1030,21 +1379,27 @@ namespace hama
         plate = std::make_unique<StrumPlate> (p);
         module = std::make_unique<VoiceModule> (p);
         capture = std::make_unique<MidiCapture> (p);
+        rail = std::make_unique<MemoryRail> (p);
+        chordSel = std::make_unique<GroupSelector> (p, 1);
+        bassSel = std::make_unique<GroupSelector> (p, 2);
 
         addAndMakeVisible (*backdrop);
         addAndMakeVisible (*pad);
         addAndMakeVisible (*plate);
         addAndMakeVisible (*module);
         addAndMakeVisible (*capture);
+        addAndMakeVisible (*rail);
+        addAndMakeVisible (*chordSel);
+        addAndMakeVisible (*bassSel);
 
         module->onMessage = [this] (const juce::String& m) { if (onStatus) onStatus (m, {}); };
         for (auto* k : module->knobs)
             k->onInteract = [this] (const Knob& kn) { if (onStatus) onStatus (kn.getDisplayName(), kn.getValueText()); };
 
         Knob::Style deck;
-        deck.ring = colours::accentDeep;
+        deck.ring = th().deep;
         deck.track = juce::Colours::black.withAlpha (0.18f);
-        deck.pointer = colours::accentDeep;
+        deck.pointer = th().deep;
         deck.label = juce::Colour (0xff22262b);
         deck.value = juce::Colour (0xff4a5058);
         deck.labelHeight = 10.0f;
@@ -1082,12 +1437,15 @@ namespace hama
         plate->setBounds (geo::plateArea());
         module->setBounds (geo::moduleArea());
         capture->setBounds (MidiCapture::area());
+        rail->setBounds (MemoryRail::area());
 
         const auto groups = deckGroupBounds();
         int k = 0;
         for (int gi = 0; gi < groups.size(); ++gi)
         {
             const auto& gr = deckGroups()[(size_t) gi];
+            if (gr.selector == 1) chordSel->setBounds (groups[gi].getX() + 4, groups[gi].getY() - 3, groups[gi].getWidth() - 8, 17);
+            if (gr.selector == 2) bassSel->setBounds (groups[gi].getX() + 4, groups[gi].getY() - 3, groups[gi].getWidth() - 8, 17);
             int total = 0;
             for (auto& kn : gr.knobs) total += knobColumnWidth (kn.size);
             int x = groups[gi].getCentreX() - total / 2;
@@ -1109,5 +1467,8 @@ namespace hama
         plate->update (processor.stringFlashes.exchange (0), chord);
         module->update (processor.meterLeft.load(), processor.meterRight.load(), chord);
         capture->update();
+        rail->update();
+        chordSel->update();
+        bassSel->update();
     }
 }

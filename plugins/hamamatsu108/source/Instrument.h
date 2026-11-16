@@ -9,6 +9,13 @@
 // only the live parts (keys, strings, displays, knobs, meter) repaint.
 namespace hama
 {
+    // light colour of the instrument (one accent per skin)
+    struct Theme
+    {
+        juce::Colour accent { 0xff3fe0d0 }, soft { 0xffa6f7ef }, deep { 0xff139488 };
+    };
+    inline Theme& th() { static Theme t; return t; }
+
     // geometry of the instrument in stage coordinates (stage = 1280 x 740 at 100 %)
     namespace geo
     {
@@ -30,6 +37,8 @@ namespace hama
     class StrumPlate;
     class VoiceModule;
     class MidiCapture;
+    class MemoryRail;
+    class GroupSelector;
 
     class InstrumentView : public juce::Component, private juce::Timer
     {
@@ -53,6 +62,8 @@ namespace hama
         std::unique_ptr<StrumPlate> plate;
         std::unique_ptr<VoiceModule> module;
         std::unique_ptr<MidiCapture> capture;
+        std::unique_ptr<MemoryRail> rail;
+        std::unique_ptr<GroupSelector> chordSel, bassSel;
         juce::OwnedArray<kuprell::Knob> deckKnobs;
         juce::Array<juce::Rectangle<int>> groupBounds;
 

@@ -18,6 +18,57 @@ const juce::StringArray& Hamamatsu108Processor::strumModeNames()
     return n;
 }
 
+const juce::StringArray& Hamamatsu108Processor::arpPatternNames()
+{
+    static const juce::StringArray n { "Up", "Down", "Up / Down", "Thumb", "Mirror", "Random" };
+    return n;
+}
+
+const juce::StringArray& Hamamatsu108Processor::arpRegenNames()
+{
+    static const juce::StringArray n { "Off", "1 bar", "2 bars", "4 bars" };
+    return n;
+}
+
+const juce::StringArray& Hamamatsu108Processor::memStepNames()
+{
+    static const juce::StringArray n { "1/2 bar", "1 bar", "2 bars" };
+    return n;
+}
+
+double Hamamatsu108Processor::memStepQuarters (int index)
+{
+    static const double q[] = { 2.0, 4.0, 8.0 };
+    return q[juce::jlimit (0, 2, index)];
+}
+
+void Hamamatsu108Processor::memClear (int bank)
+{
+    for (int i = 0; i < memSteps; ++i) memory[(size_t) (bank * memSteps + i)].store (-1);
+    memLength[(size_t) bank].store (0);
+}
+
+void Hamamatsu108Processor::memDelete (int bank, int step)
+{
+    const int len = memLength[(size_t) bank].load();
+    if (step < 0 || step >= len) return;
+    for (int i = step; i < len - 1; ++i)
+        memory[(size_t) (bank * memSteps + i)].store (memory[(size_t) (bank * memSteps + i + 1)].load());
+    memory[(size_t) (bank * memSteps + len - 1)].store (-1);
+    memLength[(size_t) bank].store (len - 1);
+}
+
+void Hamamatsu108Processor::memRecordChord (int chord)
+{
+    if (chord < 0 || ! memRecord.load()) return;
+    const int bank = memBank.load();
+    const int len = memLength[(size_t) bank].load();
+    if (len >= memSteps) { memRecord.store (false); return; }
+    memory[(size_t) (bank * memSteps + len)].store (chord);
+    memLength[(size_t) bank].store (len + 1);
+    if (len + 1 >= memSteps) memRecord.store (false);
+}
+
 const juce::StringArray& Hamamatsu108Processor::strumRateNames()
 {
     static const juce::StringArray n { "1/2", "1/4", "1/8", "1/8T", "1/16" };
@@ -30,6 +81,8 @@ Hamamatsu108Processor::Hamamatsu108Processor()
       apvts (*this, nullptr, "Hamamatsu108", createParameterLayout())
 {
     tones.reserve (64);
+    for (auto& m : memory) m.store (-1);
+    for (auto& l : memLength) l.store (0);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::createParameterLayout()
@@ -67,6 +120,26 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     fl ("strumSpeed", "Strum Speed", 4.0f, 80.0f, 22.0f, [] (float v, int) { return String (roundToInt (v)) + " ms"; }, 20.0f);
 
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "hold", 1 }, "Hold", true));
+
+    // step 3: arpeggio, dual, chord layer, bass, memory
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "arpPattern", 1 }, "Arp Pattern", arpPatternNames(), 0));
+    fl ("arpChance", "Arp Chance", 0.0f, 1.0f, 1.0f, pct);
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "arpRegen", 1 }, "Arp Regen", arpRegenNames(), 0));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { "dual", 1 }, "Dual", false));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "harpVoice2", 1 }, "Dual Voice", harp::voiceNames(), 9));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "chordType", 1 }, "Chord Layer", layers::chordTypeNames(), 0));
+    fl ("chordLevel", "Chord Level", -48.0f, 0.0f, -14.0f, [] (float v, int) { return String (v, 1) + " dB"; });
+    fl ("chordFilter", "Chord Filter", 0.0f, 1.0f, 0.55f, pct);
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "voicing", 1 }, "Voicing", layers::voicingNames(), 0));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "bassType", 1 }, "Bass", layers::bassTypeNames(), 0));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "bassMode", 1 }, "Bass Pattern", layers::bassModeNames(), 0));
+    fl ("bassLevel", "Bass Level", -48.0f, 0.0f, -10.0f, [] (float v, int) { return String (v, 1) + " dB"; });
+    fl ("bassTone", "Bass Tone", 0.0f, 1.0f, 0.4f, pct);
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "memStep", 1 }, "Memory Step", memStepNames(), 1));
+    fl ("morph", "Morph", 0.0f, 1.0f, 0.35f, pct);
+    fl ("macroAge", "Age", 0.0f, 1.0f, 0.0f, pct);
+    fl ("macroDream", "Dream", 0.0f, 1.0f, 0.0f, pct);
+    fl ("macroWobble", "Wobble", 0.0f, 1.0f, 0.0f, pct);
     layout.add (std::make_unique<AudioParameterInt> (ParameterID { "keyRoot", 1 }, "Key", 0, 11, 0,
                                                      AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int) { return String (chords::rootName (v)); })));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "keyMode", 1 }, "Key Mode", StringArray { "Major", "Minor" }, 0));
@@ -79,6 +152,9 @@ void Hamamatsu108Processor::prepareToPlay (double sampleRate, int samplesPerBloc
 {
     sr = sampleRate;
     for (auto& v : voices) v.prepare (sampleRate);
+    for (auto& v : chordVoices) { v.prepare (sampleRate); v.kill(); }
+    for (auto& v : bassVoices) { v.prepare (sampleRate); v.kill(); }
+    layerChord = bassChord = -2;
     numEvents = 0;
     pitchMul.assign ((size_t) juce::jmax (32, samplesPerBlock), 1.0f);
 
@@ -268,11 +344,14 @@ void Hamamatsu108Processor::scheduleStrum (int offset, bool down)
 
 void Hamamatsu108Processor::startVoice (int note, float velocity)
 {
-    // same pitch still ringing: damp it (one string, one note)
+    startHarp (voiceSettings, note, velocity);
+    if (dualOn)
+        startHarp (voiceSettings2, note, velocity * 0.75f);
+}
+
+void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note, float velocity)
+{
     harp::Voice* target = nullptr;
-    for (auto& v : voices)
-        if (v.isActive() && v.getNote() == note)
-            v.release (0.02f);
 
     for (auto& v : voices)
         if (! v.isActive()) { target = &v; break; }
@@ -285,7 +364,114 @@ void Hamamatsu108Processor::startVoice (int note, float velocity)
     }
 
     const float pan = juce::jlimit (-0.6f, 0.6f, (float) (note - 60) / 30.0f);
-    target->start (note, velocity, pan, voiceSettings, rng);
+    target->start (note, velocity, pan, settings, rng);
+}
+
+// one arpeggio step: pattern over the chord tones, Chance thins notes out, Regen re-rolls the variation
+void Hamamatsu108Processor::scheduleArpStep (int offset)
+{
+    const int n = (int) tones.size();
+    if (n == 0) return;
+
+    const int pattern = juce::roundToInt (param (apvts, "arpPattern"));
+    const float chance = param (apvts, "arpChance");
+    const int regen = juce::roundToInt (param (apvts, "arpRegen"));
+    const double stepQ = rateInQuarters (juce::roundToInt (param (apvts, "strumRate")));
+    static const int regenBars[] = { 1, 1, 2, 4 };
+    const int cycle = juce::jmax (1, (int) std::round (regenBars[juce::jlimit (0, 3, regen)] * 4.0 / stepQ));
+
+    const juce::int64 c = arpCounter++;
+    if (regen > 0 && c > 0 && c % cycle == 0) ++arpSeed;   // new variation every N bars
+    const int inCycle = (int) (c % cycle);
+
+    auto hash = [this] (int i)
+    {
+        std::uint32_t h = (std::uint32_t) i * 2654435761u ^ (arpSeed * 40503u + 0x9e3779b9u);
+        h ^= h >> 15; h *= 2246822519u; h ^= h >> 13;
+        return (float) (h & 0xffff) / 65535.0f;
+    };
+
+    int idx = 0;
+    const int span = juce::jmax (1, 2 * n - 2);
+    switch (pattern)
+    {
+        case 0: idx = (int) (c % n); break;                                   // up
+        case 1: idx = n - 1 - (int) (c % n); break;                           // down
+        case 2: { const int p = (int) (c % span); idx = p < n ? p : span - p; break; }       // up / down
+        case 3: idx = (c % 2 == 0) ? 0 : 1 + (int) ((c / 2) % juce::jmax (1, n - 1)); break; // thumb
+        case 4: { const int p = (int) (c % (2 * n)); idx = p < n ? p : 2 * n - 1 - p; break; } // mirror (ends repeat)
+        default: idx = juce::jlimit (0, n - 1, (int) (hash (inCycle + 7919) * n)); break;    // random
+    }
+
+    if (inCycle > 0 && hash (inCycle) > chance) return;   // the first step of a cycle always plays
+    const bool onBeat = std::fmod ((double) c * stepQ, 1.0) < 1.0e-6;
+    scheduleNote (offset, idx, onBeat ? 0.82f : 0.66f);
+}
+
+void Hamamatsu108Processor::updateChordLayer (int chord, int transpose)
+{
+    const int type = juce::roundToInt (param (apvts, "chordType"));
+    const int inv = juce::roundToInt (param (apvts, "voicing"));
+    if (chord == layerChord && type == layerType && transpose == layerTranspose && inv == layerVoicing)
+        return;
+
+    const bool typeChanged = type != layerType;
+    layerChord = chord; layerType = type; layerTranspose = transpose; layerVoicing = inv;
+
+    if (chord < 0 || type == 0)
+    {
+        for (auto& v : chordVoices) v.release();
+        return;
+    }
+
+    voicingNotes = chords::voicing (chord, transpose, inv, voicingNotes);
+    const auto kind = (layers::Kind) type;   // organ .. choir map 1..4
+
+    // keep common tones ringing, release the rest, start the new ones
+    for (auto& v : chordVoices)
+        if (v.isActive() && ! v.isReleasing())
+            if (typeChanged || std::find (voicingNotes.begin(), voicingNotes.end(), v.getNote()) == voicingNotes.end())
+                v.release();
+
+    for (int note : voicingNotes)
+    {
+        bool held = false;
+        for (auto& v : chordVoices)
+            if (v.isActive() && ! v.isReleasing() && v.getNote() == note) held = true;
+        if (held) continue;
+        layers::SustainVoice* target = nullptr;
+        for (auto& v : chordVoices) if (! v.isActive()) { target = &v; break; }
+        if (target == nullptr) for (auto& v : chordVoices) if (v.isReleasing()) { target = &v; break; }
+        if (target != nullptr) target->start (note, 0.8f, kind, rng);
+    }
+}
+
+void Hamamatsu108Processor::bassBeat (int offset, int beatIndex)
+{
+    const int chord = bassChord >= 0 ? bassChord : sounding;
+    const int c = chord >= 0 ? chord : resolveChord();
+    if (c < 0) return;
+
+    const auto& t = chords::types()[(size_t) chords::typeOf (c)];
+    const int mode = juce::roundToInt (param (apvts, "bassMode"));
+    int interval = 0;
+    if (mode == 1)      interval = (beatIndex % 2 == 0) ? 0 : t.intervals[2];                   // root + 5th
+    else if (mode == 2) { static const int step[] = { 0, 1, 2, 1 }; interval = t.intervals[(size_t) step[beatIndex % 4]] % 12; }  // walking
+
+    int note = 36 + ((chords::rootOf (c) + juce::roundToInt (param (apvts, "transpose")) + interval) % 12 + 12) % 12;
+    if (note < 36) note += 12;
+    bassNext = note;
+    bassPendingOffset = offset;
+}
+
+void Hamamatsu108Processor::startBassNote()
+{
+    const int type = juce::roundToInt (param (apvts, "bassType"));
+    if (type == 0) return;
+    const auto kind = type == 1 ? layers::Kind::bassSub : type == 2 ? layers::Kind::bassOrgan : layers::Kind::bassSynth;
+    bassVoices[(size_t) bassVoiceIndex].release();
+    bassVoiceIndex = 1 - bassVoiceIndex;
+    bassVoices[(size_t) bassVoiceIndex].start (bassNext, 0.85f, kind, rng);
 }
 
 //==============================================================================
@@ -316,9 +502,22 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
                 if (auto p = pos->getPpqPosition()) { hostPlaying = true; ppq = *p; }
         }
 
+    // dual voice
+    dualOn = param (apvts, "dual") > 0.5f;
+    voiceSettings2 = voiceSettings;
+    voiceSettings2.model = (harp::Model) juce::roundToInt (param (apvts, "harpVoice2"));
+
     // GUI requests
     // chord buttons: HOLD on = click toggles the chord; HOLD off = chord sounds while the button is held
     const bool holdOn = param (apvts, "hold") > 0.5f;
+    if (lastHoldOn && ! holdOn)
+    {
+        // HOLD switched off: stop whatever was being held
+        latchedChord = -1;
+        if (rootHeldMask == 0) holdChord = -1;
+    }
+    lastHoldOn = holdOn;
+
     // a release is applied one block later, so even a very short click strums once
     if (deferredRelease >= 0 && ! holdOn && deferredRelease == latchedChord)
         latchedChord = -1;
@@ -334,7 +533,35 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     for (const auto meta : midi)
         handleMidi (meta.getMessage(), meta.samplePosition);
 
-    const int chord = resolveChord();
+    int chord = resolveChord();
+
+    // Chord Memory: record new chords while REC is on
+    if (chord >= 0 && chord != memRecordedLast) memRecordChord (chord);
+    memRecordedLast = chord;
+
+    // MEMO mode plays the stored sequence (unless recording)
+    if (mode != lastMode) { memSamples = 0.0; arpCounter = 0; }
+    lastMode = mode;
+    const int bank = memBank.load();
+    const int memLen = memLength[(size_t) bank].load();
+    if (mode == 2 && memLen > 0 && ! memRecord.load())
+    {
+        const double stepQ = memStepQuarters (juce::roundToInt (param (apvts, "memStep")));
+        int step;
+        if (hostPlaying)
+            step = (int) (juce::jmax (0.0, std::floor (ppq / stepQ))) % memLen;
+        else
+        {
+            const double samplesPerMemStep = stepQ * 60.0 / bpm * sr;
+            step = (int) (memSamples / samplesPerMemStep) % memLen;
+            memSamples += numSamples;
+        }
+        memPlayStep.store (step);
+        chord = memChord (bank, step);
+    }
+    else
+        memPlayStep.store (-1);
+
     updateTones (chord, transpose, range);
     activeChord.store (chord);
 
@@ -343,17 +570,24 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             if (plucks & (1u << (unsigned) i))
                 scheduleNote (0, juce::roundToInt ((float) i * (float) (tones.size() - 1) / (float) (numStrings - 1)), 0.8f);
 
-    // Live Strum clock
-    const bool strumming = chord >= 0 && mode == 0;
+    // Live Strum / Arp clock (MEMO uses the Live Strum hand)
+    const bool arp = chord >= 0 && mode == 1;
+    const bool strumming = chord >= 0 && (mode == 0 || mode == 2 || mode == 1);
     const double stepQuarters = rateInQuarters (rateIndex);
     const double samplesPerStep = stepQuarters * 60.0 / bpm * sr;
+    auto hit = [&] (int offset, juce::int64 k)
+    {
+        if (arp) scheduleArpStep (offset);
+        else scheduleStrum (offset, (k % 2) == 0);
+    };
 
     if (strumming)
     {
         if (chord != sounding || ! wasStrumming)
         {
-            scheduleStrum (0, true);   // instant down-stroke on a new chord
-            samplesToNextStrum = samplesPerStep;
+            if (! arp || ! wasStrumming) arpCounter = 0;
+            hit (0, 0);   // instant stroke on a new chord
+            samplesToNextStrum = samplesPerStep - numSamples;
             strumCount = 1;
             samplesSinceTrigger = 0;
         }
@@ -365,7 +599,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             {
                 const int offset = (int) ((k * stepQuarters - ppq) / quartersPerSample);
                 if (samplesSinceTrigger + offset > (int) (0.05 * sr))
-                    scheduleStrum (offset, ((juce::int64) k % 2) == 0);
+                    hit (offset, (juce::int64) k);
             }
         }
         else
@@ -373,13 +607,58 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             double pos = samplesToNextStrum;
             while (pos < numSamples)
             {
-                scheduleStrum ((int) pos, (strumCount % 2) == 0);
+                hit (juce::jmax (0, (int) pos), strumCount);
                 ++strumCount;
                 pos += samplesPerStep;
             }
             samplesToNextStrum = pos - numSamples;
         }
     }
+
+    // chord layer and bass follow the sounding chord
+    updateChordLayer (chord, transpose);
+    {
+        const int newBassType = juce::roundToInt (param (apvts, "bassType"));
+        if (newBassType != bassType || chord != bassChord)
+        {
+            bassType = newBassType;
+            bassChord = chord;
+            if (chord < 0 || newBassType == 0)
+                for (auto& v : bassVoices) v.release();
+            else
+            {
+                bassBeat (0, 0);   // root on every chord change
+                bassSamplesToNext = 60.0 / bpm * sr - numSamples;
+                bassCount = 1;
+            }
+        }
+        else if (chord >= 0 && bassType != 0 && juce::roundToInt (param (apvts, "bassMode")) != 0)
+        {
+            if (hostPlaying)
+            {
+                const double quartersPerSample = bpm / (60.0 * sr);
+                const double endPpq = ppq + numSamples * quartersPerSample;
+                for (double k = std::ceil (ppq); k < endPpq; k += 1.0)
+                {
+                    const int offset = (int) ((k - ppq) / quartersPerSample);
+                    if (samplesSinceTrigger + offset > (int) (0.05 * sr))
+                        bassBeat (offset, (int) ((juce::int64) k % 4));
+                }
+            }
+            else
+            {
+                double pos = bassSamplesToNext;
+                while (pos < numSamples)
+                {
+                    bassBeat (juce::jmax (0, (int) pos), (int) (bassCount % 4));
+                    ++bassCount;
+                    pos += 60.0 / bpm * sr;
+                }
+                bassSamplesToNext = pos - numSamples;
+            }
+        }
+    }
+
     sounding = chord;
     wasStrumming = strumming;
     samplesSinceTrigger = juce::jmin (samplesSinceTrigger + numSamples, 1 << 29);
@@ -393,6 +672,11 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         pitchMul[(size_t) i] = std::exp2 (vibDepth * harp::sine() (vibPhase));
         vibPhase = harp::wrap (vibPhase + vibInc);
     }
+
+    const float chordTone = param (apvts, "chordFilter");
+    const float chordGain = juce::Decibels::decibelsToGain (param (apvts, "chordLevel"), -47.9f) * 0.9f;
+    const float bassTone = param (apvts, "bassTone");
+    const float bassGain = juce::Decibels::decibelsToGain (param (apvts, "bassLevel"), -47.9f) * 0.9f;
 
     // render in small slices so strum notes start close to their exact time
     auto* left = buffer.getWritePointer (0);
@@ -425,7 +709,19 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         float* r = right != nullptr ? right + start : tmpR.data();
         for (auto& v : voices)
             v.render (left + start, r, len, pitchMul.data() + start, rng);
+
+        for (auto& v : chordVoices)
+            v.render (left + start, r, len, chordTone, chordGain, pitchMul.data() + start);
+
+        if (bassPendingOffset >= 0 && bassPendingOffset < start + len)
+        {
+            startBassNote();
+            bassPendingOffset = -1;
+        }
+        for (auto& v : bassVoices)
+            v.render (left + start, r, len, bassTone, bassGain, pitchMul.data() + start);
     }
+    if (bassPendingOffset >= 0) bassPendingOffset -= numSamples;
 
     for (int e = 0; e < numEvents; ++e) events[(size_t) e].delay -= numSamples;
     sampleClock += numSamples;
@@ -507,7 +803,13 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
     state.setProperty ("uiWidth", editorWidth.load(), nullptr);
-    state.setProperty ("latchedChord", latchedChord, nullptr);
+    juce::StringArray mem;
+    for (auto& m : memory) mem.add (juce::String (m.load()));
+    juce::StringArray lens;
+    for (auto& l : memLength) lens.add (juce::String (l.load()));
+    state.setProperty ("memory", mem.joinIntoString (","), nullptr);
+    state.setProperty ("memLength", lens.joinIntoString (","), nullptr);
+    state.setProperty ("memBank", memBank.load(), nullptr);
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -519,6 +821,13 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
         {
             auto state = juce::ValueTree::fromXml (*xml);
             editorWidth.store ((int) state.getProperty ("uiWidth", 0));
+            const auto mem = juce::StringArray::fromTokens (state.getProperty ("memory").toString(), ",", {});
+            const auto lens = juce::StringArray::fromTokens (state.getProperty ("memLength").toString(), ",", {});
+            for (size_t i = 0; i < memory.size(); ++i)
+                memory[i].store (i < (size_t) mem.size() ? juce::jlimit (-1, chords::numChords - 1, mem[(int) i].getIntValue()) : -1);
+            for (size_t i = 0; i < memLength.size(); ++i)
+                memLength[i].store (i < (size_t) lens.size() ? juce::jlimit (0, memSteps, lens[(int) i].getIntValue()) : 0);
+            memBank.store (juce::jlimit (0, memBanks - 1, (int) state.getProperty ("memBank", 0)));
             apvts.replaceState (state);
         }
 }

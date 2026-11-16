@@ -6,13 +6,15 @@
 #include <array>
 #include "Chords.h"
 #include "HarpVoice.h"
+#include "Layers.h"
 
 // Kuprell Hamamatsu 108 - step 2: 108 chords, strum plate, Live Strum, harp voices, basic FX.
 class Hamamatsu108Processor : public juce::AudioProcessor
 {
 public:
     static constexpr int numStrings = 26;       // strings drawn on the strum plate
-    static constexpr int numVoices = 48;
+    static constexpr int numVoices = 64;
+    static constexpr int memBanks = 8, memSteps = 16;
 
     // MIDI zones (fixed for now; editable in Settings later). FL Studio names: C2-B2, C3-G#3, A3 and up.
     static constexpr int rootZoneLow = 24, rootZoneHigh = 35;    // chord root
@@ -66,11 +68,25 @@ public:
     juce::AbstractFifo captureFifo { 2048 };
     std::array<CapturedNote, 2048> captureBuffer {};
 
+    //== Chord Memory: 8 banks x 16 chords (-1 = empty). GUI and audio both edit; ints are atomic.
+    std::array<std::atomic<int>, memBanks * memSteps> memory;
+    std::array<std::atomic<int>, memBanks> memLength;
+    std::atomic<int> memBank { 0 };
+    std::atomic<bool> memRecord { false };
+    std::atomic<int> memPlayStep { -1 };   // step sounding in MEMO mode (-1 = none)
+    int memChord (int bank, int step) const { return memory[(size_t) (bank * memSteps + step)].load(); }
+    void memClear (int bank);
+    void memDelete (int bank, int step);
+    static double memStepQuarters (int index);
+
     // last editor width in pixels (0 = not set yet), saved with the project
     std::atomic<int> editorWidth { 0 };
 
     static const juce::StringArray& strumModeNames();
     static const juce::StringArray& strumRateNames();
+    static const juce::StringArray& arpPatternNames();
+    static const juce::StringArray& arpRegenNames();
+    static const juce::StringArray& memStepNames();
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -83,9 +99,16 @@ private:
     void scheduleNote (int delay, int toneIndex, float velocity);
     void schedulePitch (int delay, int note, float velocity);
     void startVoice (int note, float velocity);
+    void startHarp (const harp::Settings&, int note, float velocity);
+    void scheduleArpStep (int offset);
+    void updateChordLayer (int chord, int transpose);
+    void bassBeat (int offset, int beatIndex);
+    void memRecordChord (int chord);
+    void startBassNote();
     int resolveChord() const;
 
-    harp::Settings voiceSettings;
+    harp::Settings voiceSettings, voiceSettings2;
+    bool dualOn = false;
     std::array<harp::Voice, numVoices> voices;
     std::array<NoteEvent, 512> events {};
     int numEvents = 0;
@@ -106,6 +129,25 @@ private:
     juce::int64 strumCount = 0;
     int samplesSinceTrigger = 1 << 30;
     bool wasStrumming = false;
+    bool lastHoldOn = true;
+    int lastMode = -1;
+
+    // arpeggio
+    juce::int64 arpCounter = 0;
+    std::uint32_t arpSeed = 1;
+
+    // memory playback (free clock when the host is stopped)
+    double memSamples = 0.0;
+    int memRecordedLast = -1;
+
+    // chord layer and bass
+    std::array<layers::SustainVoice, 8> chordVoices;
+    std::array<layers::SustainVoice, 2> bassVoices;
+    std::vector<int> voicingNotes;
+    int layerChord = -2, layerType = -1, layerTranspose = 0, layerVoicing = -1;
+    int bassChord = -2, bassType = -1, bassNext = 0, bassPendingOffset = -1, bassVoiceIndex = 0;
+    double bassSamplesToNext = 0.0;
+    juce::int64 bassCount = 0;
 
     // vibrato
     float vibPhase = 0.0f;

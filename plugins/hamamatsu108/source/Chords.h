@@ -2,6 +2,8 @@
 
 #include <juce_core/juce_core.h>
 #include <array>
+#include <vector>
+#include <algorithm>
 
 // 108 chords = 12 roots x 9 chord types.
 namespace chords
@@ -76,5 +78,56 @@ namespace chords
         const int s = scaleMask (keyRoot, minor);
         const int c = pitchClassMask (chordIndex);
         return (c & ~s) == 0;
+    }
+
+    // Voicing for the chord layer and for MIDI export.
+    // inversion: 0 = auto (voice leading: closest to the previous voicing), 1 = root position, 2 = 1st, 3 = 2nd, 4 = 3rd
+    inline std::vector<int> voicing (int chordIndex, int transpose, int inversion, const std::vector<int>& previous)
+    {
+        std::vector<int> best;
+        if (chordIndex < 0) return best;
+
+        const auto& t = types()[(size_t) typeOf (chordIndex)];
+        const int root = rootOf (chordIndex) + transpose;
+        std::vector<int> rel;
+        for (int i = 0; i < t.numTones; ++i) rel.push_back (t.intervals[(size_t) i]);
+
+        auto build = [&] (int inv)
+        {
+            std::vector<int> v;
+            for (int i = 0; i < (int) rel.size(); ++i)
+            {
+                const int idx = (i + inv) % (int) rel.size();
+                const int octaveUp = (i + inv) >= (int) rel.size() ? 12 : 0;
+                v.push_back (root + rel[(size_t) idx] + octaveUp);
+            }
+            // keep the bottom note between E3 and D#4
+            while (v.front() < 52) for (auto& n : v) n += 12;
+            while (v.front() >= 64) for (auto& n : v) n -= 12;
+            std::sort (v.begin(), v.end());
+            return v;
+        };
+
+        const int n = (int) rel.size();
+        if (inversion >= 1)
+            return build (juce::jlimit (0, n - 1, inversion - 1));
+
+        int bestCost = 1 << 30;
+        for (int inv = 0; inv < n; ++inv)
+        {
+            auto v = build (inv);
+            int cost = 0;
+            if (! previous.empty())
+                for (int note : v)
+                {
+                    int d = 1 << 20;
+                    for (int p : previous) d = std::min (d, std::abs (note - p));
+                    cost += d;
+                }
+            else
+                cost = std::abs (v.front() - 55);   // first chord: sit around G3
+            if (cost < bestCost) { bestCost = cost; best = v; }
+        }
+        return best;
     }
 }
