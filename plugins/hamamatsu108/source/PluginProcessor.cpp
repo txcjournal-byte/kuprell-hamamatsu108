@@ -614,6 +614,7 @@ void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note,
 
 void Hamamatsu108Processor::capture (double seconds, int note, float velocity, int layer, bool on)
 {
+    if (previewMute) return;   // preset previews never end up in the MIDI capture
     const auto scope = captureFifo.write (1);
     const CapturedNote cn { seconds, note, velocity, layer, on };
     if (scope.blockSize1 > 0) captureBuffer[(size_t) scope.startIndex1] = cn;
@@ -809,28 +810,33 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     int chord = resolveChord();
 
-    // preset preview: a short C major strum when nothing else is playing
-    if (previewRequest.exchange (false))
+    // preset preview: ONE stroke of the key chord (plus its chord layer and bass) so the sound can be heard.
+    // It never changes the play mode, never repeats, never records, and a real chord always wins.
+    if (previewRequest.exchange (false) && chord < 0)
     {
         previewSamplesLeft = (int) (2.2 * sr);
-        sounding = -2;   // force a fresh stroke
+        previewStroke = true;
+        previewMute = true;
     }
+    bool previewing = false;
+    if (chord >= 0) previewSamplesLeft = 0;
     if (previewSamplesLeft > 0)
     {
-        if (chord < 0) chord = chords::index (juce::roundToInt (param (apvts, "keyRoot")), param (apvts, "keyMode") > 0.5f ? 1 : 0);
+        chord = chords::index (juce::roundToInt (param (apvts, "keyRoot")), param (apvts, "keyMode") > 0.5f ? 1 : 0);
         previewSamplesLeft -= numSamples;
+        previewing = true;
     }
 
     // Chord Memory: record new chords while REC is on
-    if (chord >= 0 && chord != memRecordedLast) memRecordChord (chord);
-    memRecordedLast = chord;
+    if (! previewing && chord >= 0 && chord != memRecordedLast) memRecordChord (chord);
+    if (! previewing) memRecordedLast = chord;
 
     // MEMO mode plays the stored sequence (unless recording)
     if (mode != lastMode) { memSamples = 0.0; arpCounter = 0; }
     lastMode = mode;
     const int bank = memBank.load();
     const int memLen = memLength[(size_t) bank].load();
-    if (mode == 2 && memLen > 0 && ! memRecord.load())
+    if (! previewing && mode == 2 && memLen > 0 && ! memRecord.load())
     {
         const double stepQ = memStepQuarters (juce::roundToInt (param (apvts, "memStep")));
         int step;
@@ -849,7 +855,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         memPlayStep.store (-1);
 
     updateTones (chord, transpose, range);
-    activeChord.store (chord);
+    activeChord.store (previewing ? -1 : chord);   // a preview does not light a chord button
 
     if (const auto plucks = pendingPlucks.exchange (0); plucks != 0 && ! tones.empty())
         for (int i = 0; i < numStrings; ++i)
@@ -858,7 +864,12 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     // Live Strum / Arp clock (MEMO uses the Live Strum hand)
     const bool arp = chord >= 0 && mode == 1;
-    const bool strumming = chord >= 0 && (mode == 0 || mode == 2 || mode == 1 || previewSamplesLeft > 0);
+    const bool strumming = ! previewing && chord >= 0 && (mode == 0 || mode == 2 || mode == 1);
+    if (previewing && previewStroke)
+    {
+        scheduleStrum (0, true);
+        previewStroke = false;
+    }
     const double stepQuarters = rateInQuarters (rateIndex);
     const double samplesPerStep = stepQuarters * 60.0 / bpm * sr;
     auto hit = [&] (int offset, juce::int64 k)
@@ -950,8 +961,9 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     if (chord != sounding && chord >= 0 && juce::roundToInt (param (apvts, "funcMode")) != 0)
         func.trigger();   // one-shot and key trig restart on every new chord
-    sounding = chord;
+    sounding = previewing ? -1 : chord;
     wasStrumming = strumming;
+    if (! previewing) previewMute = false;
     samplesSinceTrigger = juce::jmin (samplesSinceTrigger + numSamples, 1 << 29);
 
     // vibrato

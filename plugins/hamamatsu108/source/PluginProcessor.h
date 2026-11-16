@@ -156,6 +156,7 @@ private:
     std::atomic<int> pendingChordClick { -1 }, pendingChordRelease { -1 };
     std::atomic<bool> previewRequest { false };
     int previewSamplesLeft = 0;
+    bool previewStroke = false, previewMute = false;   // preview = one stroke, never recorded
     void capture (double seconds, int note, float velocity, int layer, bool on);
     std::atomic<std::uint32_t> pendingPlucks { 0 };
     int latchedChord = -1, holdChord = -1, deferredRelease = -1;
