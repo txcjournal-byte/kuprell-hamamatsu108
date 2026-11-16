@@ -9,6 +9,8 @@
 namespace mod
 {
     constexpr int matrixSlots = 8, morphSlots = 8, funcPoints = 8;
+    // continuous harp-bus targets (no parameter of their own): sweep the sound while notes ring
+    enum BusTarget { tFilter = 21, tVolume, tPan, tPitch };
 
     enum Source { none, lfo1, lfo2, function, random, velocity, modWheel, aftertouch, morph, age, dream, wobble, numSources };
 
@@ -22,14 +24,16 @@ namespace mod
     inline const juce::StringArray& targetIds()
     {
         static const juce::StringArray n { "", "harpTone", "harpDecay", "vibRate", "vibDepth", "chordLevel", "chordFilter", "bassLevel", "bassTone",
-                                           "strumFeel", "strumSpeed", "arpChance", "fx1A", "fx1Mix", "fx2A", "fx2Mix", "fx3A", "fx3Mix", "fx4A", "fx4Mix", "master" };
+                                           "strumFeel", "strumSpeed", "arpChance", "fx1A", "fx1Mix", "fx2A", "fx2Mix", "fx3A", "fx3Mix", "fx4A", "fx4Mix", "master",
+                                           "@filter", "@volume", "@pan", "@pitch" };
         return n;
     }
 
     inline const juce::StringArray& targetNames()
     {
         static const juce::StringArray n { "None", "Harp Tone", "Harp Decay", "Vibrato Rate", "Vibrato Depth", "Chord Level", "Chord Filter", "Bass Level", "Bass Tone",
-                                           "Strum Feel", "Strum Speed", "Arp Chance", "FX 1 A", "FX 1 Mix", "FX 2 A", "FX 2 Mix", "FX 3 A", "FX 3 Mix", "FX 4 A", "FX 4 Mix", "Master" };
+                                           "Strum Feel", "Strum Speed", "Arp Chance", "FX 1 A", "FX 1 Mix", "FX 2 A", "FX 2 Mix", "FX 3 A", "FX 3 Mix", "FX 4 A", "FX 4 Mix", "Master",
+                                           "Harp Filter", "Harp Volume", "Harp Pan", "Harp Pitch" };
         return n;
     }
 

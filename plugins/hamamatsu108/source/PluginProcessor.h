@@ -170,6 +170,9 @@ private:
     std::vector<int> tones;
     std::array<bool, 128> heldMelodic {};   // MIDI notes held outside the chord zones (ARP plays them)
     int heldMelodicCount = 0;
+    bool eventsFromHost = false;      // ARP over piano-roll notes: never captured
+    bool layersFromHost = false;      // chord layer / bass following piano-roll notes: never captured
+    int chordFromHeldNotes();   // chord that fits the held MIDI notes (for chord layer and bass)
     int tonesChord = -2, tonesTranspose = 0, tonesRange = 0;
 
     // strum clock
@@ -210,12 +213,20 @@ private:
     float mlp1L = 0, mlp2L = 0, mlp1R = 0, mlp2R = 0, heldL = 0, heldR = 0, hissEnv = 0, limGain = 1.0f, chorusPhase = 0;
     fx::DelayLine modelChorusL, modelChorusR;
     float dcInL = 0, dcOutL = 0, dcInR = 0, dcOutR = 0;
+    // look-ahead limiter: the gain is lowered smoothly before a peak arrives (no crackle)
+    static constexpr int limLookMax = 256;
+    std::array<float, limLookMax> limDelL {}, limDelR {}, limNeed {};
+    int limLook = 64, limPos = 0;
     int holdCount = 0;
     float wowPhase = 0, flutterPhase = 0, wobblePhase = 0, morphNow = 0.35f;
     std::array<mod::Lfo, 2> lfos;
     mod::Function func;
     mod::Random randomSrc;
     std::array<float, 32> modOffset {};
+    std::array<bool, 32> modRouted {};
+    // harp bus modulation (filter / volume / pan / pitch), smoothed per sample
+    float busCut = 1.0f, busVol = 1.0f, busPan = 0.0f, busPitch = 0.0f;
+    float busIc1L = 0, busIc2L = 0, busIc1R = 0, busIc2R = 0;
     float lastVelocity = 0.8f, modWheel = 0.0f, aftertouch = 0.0f;
 
     // MIDI learn hand-over from the audio thread

@@ -48,6 +48,7 @@ int Hamamatsu108Processor::targetIndex (const juce::String& id)
 
 float Hamamatsu108Processor::mp (const char* id) const
 {
+    if (id[0] == '@') return 0.0f;
     auto* p = apvts.getParameter (id);
     const int t = targetIndex (id);
     if (p == nullptr) return 0.0f;
@@ -125,19 +126,24 @@ void Hamamatsu108Processor::updateModulation (int numSamples, bool hostPlaying, 
     for (size_t i = 0; i < src.size(); ++i) modSources[i].store (src[i]);
 
     modOffset.fill (0.0f);
+    modRouted.fill (false);
     for (int i = 1; i <= mod::matrixSlots; ++i)
     {
         const juce::String n (i);
         const int sIdx = juce::roundToInt (P ("mod" + n + "Src"));
         const int dIdx = juce::roundToInt (P ("mod" + n + "Dst"));
-        if (sIdx > 0 && dIdx > 0) modOffset[(size_t) dIdx] += P ("mod" + n + "Amt") * src[(size_t) sIdx];
+        if (sIdx > 0 && dIdx > 0)
+        {
+            modOffset[(size_t) dIdx] += P ("mod" + n + "Amt") * src[(size_t) sIdx];
+            if (std::abs (P ("mod" + n + "Amt")) > 1.0e-4f) modRouted[(size_t) dIdx] = true;
+        }
     }
     const float morphValue = P ("morph");
     for (int i = 1; i <= mod::morphSlots; ++i)
     {
         const juce::String n (i);
         const int dIdx = juce::roundToInt (P ("morph" + n + "Dst"));
-        if (dIdx > 0) modOffset[(size_t) dIdx] += P ("morph" + n + "Amt") * morphValue;
+        if (dIdx > 0) { modOffset[(size_t) dIdx] += P ("morph" + n + "Amt") * morphValue; if (std::abs (P ("morph" + n + "Amt")) > 1.0e-4f) modRouted[(size_t) dIdx] = true; }
     }
 }
 
@@ -419,6 +425,9 @@ void Hamamatsu108Processor::prepareToPlay (double sampleRate, int samplesPerBloc
     layerChord = bassChord = -2;
     numEvents = 0;
     pitchMul.assign ((size_t) juce::jmax (32, samplesPerBlock), 1.0f);
+    limLook = juce::jlimit (16, limLookMax, (int) std::round (sampleRate * 0.0015));
+    limDelL.fill (0.0f); limDelR.fill (0.0f); limNeed.fill (1.0f); limPos = 0; limGain = 1.0f;
+    setLatencySamples (limLook);
 
     for (auto& u : fxUnits) u.prepare (sampleRate, juce::jmax (32, samplesPerBlock));
     modelChorusL.prepare ((int) (sampleRate * 0.03)); modelChorusR.prepare ((int) (sampleRate * 0.03));
@@ -449,6 +458,34 @@ int Hamamatsu108Processor::resolveChord() const
     return latchedChord;
 }
 
+// the chord that best explains the held piano-roll notes, preferring chords of the current key
+int Hamamatsu108Processor::chordFromHeldNotes()
+{
+    int mask = 0, lowest = 128;
+    for (int n = 0; n < 128; ++n)
+        if (heldMelodic[(size_t) n]) { mask |= 1 << (n % 12); lowest = juce::jmin (lowest, n); }
+    if (mask == 0) return -1;
+    const int keyRoot = juce::roundToInt (param (apvts, "keyRoot"));
+    const bool minorKey = param (apvts, "keyMode") > 0.5f;
+    static const int majDeg[7][2] = { { 0, 0 }, { 2, 1 }, { 4, 1 }, { 5, 0 }, { 7, 0 }, { 9, 1 }, { 11, 5 } };
+    static const int minDeg[7][2] = { { 0, 1 }, { 2, 5 }, { 3, 0 }, { 5, 1 }, { 7, 1 }, { 8, 0 }, { 10, 0 } };
+    const auto& deg = minorKey ? minDeg : majDeg;
+    auto pcs = [] (int m) { int c = 0; for (int i = 0; i < 12; ++i) c += (m >> i) & 1; return c; };
+    int best = -1, bestScore = -1000;
+    auto consider = [&] (int idx, int bonus)
+    {
+        const int cm = chords::pitchClassMask (idx);
+        const int hit = pcs (cm & mask), miss = pcs (mask & ~cm);
+        int score = hit * 10 - miss * 12 + bonus;
+        if (chords::rootOf (idx) == lowest % 12) score += 6;   // the bass note is usually the root
+        if (score > bestScore) { bestScore = score; best = idx; }
+    };
+    for (const auto& d : deg) consider (chords::index ((keyRoot + d[0]) % 12, d[1]), 3);
+    for (int t = 0; t < chords::numTypes; ++t)
+        for (int r = 0; r < 12; ++r) consider (chords::index (r, t), t <= 1 ? 0 : -4);
+    return best;
+}
+
 void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePos)
 {
     if (m.isNoteOn())
@@ -469,11 +506,8 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
         {
             // melodic note: in ARP mode held notes are arpeggiated (piano roll or keyboard),
             // otherwise it plays exactly the written pitch
-            if (juce::roundToInt (param (apvts, "strumMode")) == 1)
-            {
-                if (! heldMelodic[(size_t) n]) { heldMelodic[(size_t) n] = true; ++heldMelodicCount; }
-            }
-            else
+            if (! heldMelodic[(size_t) n]) { heldMelodic[(size_t) n] = true; ++heldMelodicCount; }
+            if (juce::roundToInt (param (apvts, "strumMode")) != 1)
                 schedulePitch (samplePos, n, m.getFloatVelocity());
         }
     }
@@ -565,7 +599,7 @@ void Hamamatsu108Processor::scheduleNote (int delay, int toneIndex, float veloci
     if (numEvents >= (int) events.size() || tones.empty()) return;
     toneIndex = juce::jlimit (0, (int) tones.size() - 1, toneIndex);
     const int visual = tones.size() > 1 ? juce::roundToInt ((float) toneIndex * (numStrings - 1) / (float) (tones.size() - 1)) : numStrings / 2;
-    events[(size_t) numEvents++] = { juce::jmax (0, delay), tones[(size_t) toneIndex], juce::jlimit (0.05f, 1.0f, velocity), visual, true };
+    events[(size_t) numEvents++] = { juce::jmax (0, delay), tones[(size_t) toneIndex], juce::jlimit (0.05f, 1.0f, velocity), visual, ! eventsFromHost };
 }
 
 void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity)
@@ -651,13 +685,17 @@ void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note,
             if (voices[(size_t) i].getLevel() < target->getLevel()) target = &voices[(size_t) i];
     }
 
-    const float pan = juce::jlimit (-0.6f, 0.6f, (float) (note - 60) / 30.0f);
+    // spread around the centre of what is playing, so the harp never leans to one ear
+    float centre = 72.0f;
+    if (tones.size() > 1) centre = 0.5f * (float) (tones.front() + tones.back());
+    const float pan = juce::jlimit (-0.45f, 0.45f, ((float) note - centre) / 30.0f);
     target->start (note, velocity, pan, settings, rng, noteHz (note));
 }
 
 void Hamamatsu108Processor::capture (double seconds, int note, float velocity, int layer, bool on)
 {
     if (previewMute) return;   // preset previews never end up in the MIDI capture
+    if (layer >= 1 && layersFromHost) return;   // layers that only follow the piano roll are not recorded
     const auto scope = captureFifo.write (1);
     const CapturedNote cn { seconds, note, velocity, layer, on };
     if (scope.blockSize1 > 0) captureBuffer[(size_t) scope.startIndex1] = cn;
@@ -913,8 +951,8 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
                 scheduleNote (0, juce::roundToInt ((float) i * (float) (tones.size() - 1) / (float) (numStrings - 1)), 0.8f);
 
     // ARP over held MIDI notes (piano roll melody / chords) when no chord button is active
-    if (mode != 1 && heldMelodicCount > 0) { heldMelodic.fill (false); heldMelodicCount = 0; }
     const bool arpHeld = ! previewing && mode == 1 && chord < 0 && heldMelodicCount > 0;
+    eventsFromHost = arpHeld;
     if (arpHeld)
     {
         tones.clear();
@@ -977,7 +1015,16 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
     }
 
-    // chord layer and bass follow the sounding chord
+    eventsFromHost = false;
+
+    // chord layer and bass follow the sounding chord, or the notes held in the piano roll
+    const int playedChord = chord;
+    layersFromHost = false;
+    if (chord < 0 && ! previewing && heldMelodicCount > 0)
+    {
+        chord = chordFromHeldNotes();
+        layersFromHost = chord >= 0;
+    }
     updateChordLayer (chord, transpose);
     {
         const int newBassType = juce::roundToInt (param (apvts, "bassType"));
@@ -1024,6 +1071,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
     }
 
+    chord = playedChord;
     if (chord != sounding && chord >= 0 && juce::roundToInt (param (apvts, "funcMode")) != 0)
         func.trigger();   // one-shot and key trig restart on every new chord
     sounding = previewing ? -1 : chord;
@@ -1038,11 +1086,13 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     const float vibInc = vibRate / (float) sr;
     const float driftDepth = (model.drift + age * 14.0f) / 1200.0f;
     const float wobbleDepth = wobble * 0.3f / 12.0f;
+    const float pitchTarget = modRouted[mod::tPitch] ? juce::jlimit (-1.0f, 1.0f, modOffset[mod::tPitch]) : 0.0f;   // up to +-1 octave
     for (int i = 0; i < numSamples; ++i)
     {
         const float drift = driftDepth * (0.7f * harp::sine() (wowPhase) + 0.3f * harp::sine() (flutterPhase) * age);
         const float wob = wobbleDepth * (harp::sine() (wobblePhase) + 0.3f * harp::sine() (vibPhase));
-        pitchMul[(size_t) i] = std::exp2 (vibDepth * harp::sine() (vibPhase) + drift + wob);
+        busPitch += (pitchTarget - busPitch) * 0.002f;
+        pitchMul[(size_t) i] = std::exp2 (vibDepth * harp::sine() (vibPhase) + drift + wob + busPitch);
         vibPhase = harp::wrap (vibPhase + vibInc);
         wowPhase = harp::wrap (wowPhase + 0.45f / (float) sr);
         flutterPhase = harp::wrap (flutterPhase + 6.5f / (float) sr);
@@ -1053,6 +1103,16 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     const float chordGain = juce::Decibels::decibelsToGain (mp ("chordLevel"), -47.9f) * 0.9f;
     const float bassTone = mp ("bassTone");
     const float bassGain = juce::Decibels::decibelsToGain (mp ("bassLevel"), -47.9f) * 0.9f;
+
+    // harp bus modulation: Harp Filter (Harp Tone also sweeps it, so it is heard on ringing notes), Volume, Pan
+    const bool filterOn = modRouted[mod::tFilter] || modRouted[(size_t) targetIndex ("harpTone")];
+    const float cutTarget = ! filterOn ? 1.0f
+        : juce::jlimit (0.0f, 1.0f, (modRouted[mod::tFilter] ? 0.62f : 1.0f) + 0.62f * modOffset[mod::tFilter] + 0.8f * modOffset[(size_t) targetIndex ("harpTone")]);
+    const float volTarget = modRouted[mod::tVolume] ? juce::jlimit (0.0f, 1.5f, 1.0f + modOffset[mod::tVolume]) : 1.0f;
+    const float panTarget = modRouted[mod::tPan] ? juce::jlimit (-1.0f, 1.0f, modOffset[mod::tPan]) : 0.0f;
+    if (! filterOn) { busIc1L = busIc2L = busIc1R = busIc2R = 0.0f; busCut = 1.0f; }
+    const bool busActive = filterOn || modRouted[mod::tVolume] || modRouted[mod::tPan]
+                           || std::abs (busVol - 1.0f) > 1.0e-3f || std::abs (busPan) > 1.0e-3f;
 
     // render in small slices so strum notes start close to their exact time
     if (work.getNumSamples() < numSamples) work.setSize (2, numSamples, false, false, true);
@@ -1079,8 +1139,40 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
 
         float* r = right + start;
-        for (auto& v : voices)
-            v.render (left + start, r, len, pitchMul.data() + start, rng);
+        if (busActive)
+        {
+            float hl[32] = {}, hr[32] = {};
+            for (auto& v : voices)
+                v.render (hl, hr, len, pitchMul.data() + start, rng);
+            for (int i = 0; i < len; ++i)
+            {
+                busCut += (cutTarget - busCut) * 0.003f;
+                busVol += (volTarget - busVol) * 0.003f;
+                busPan += (panTarget - busPan) * 0.003f;
+                float x = hl[i], y = hr[i];
+                if (filterOn)
+                {
+                    // TPT state-variable low-pass, 120 Hz .. 20 kHz
+                    const float fc = 120.0f * std::exp2 (busCut * 7.37f);
+                    const float g = std::tan (juce::MathConstants<float>::pi * juce::jmin (fc, 0.45f * (float) sr) / (float) sr);
+                    const float k = 1.0f / 1.4f, a1 = 1.0f / (1.0f + g * (g + k)), a2 = g * a1, a3 = g * a2;
+                    auto svf = [&] (float in, float& ic1, float& ic2)
+                    {
+                        const float v3 = in - ic2, v1 = a1 * ic1 + a2 * v3, v2 = ic2 + a2 * ic1 + a3 * v3;
+                        ic1 = 2.0f * v1 - ic1; ic2 = 2.0f * v2 - ic2;
+                        return v2;
+                    };
+                    x = svf (x, busIc1L, busIc2L); y = svf (y, busIc1R, busIc2R);
+                }
+                const float pl = std::cos ((busPan + 1.0f) * juce::MathConstants<float>::pi * 0.25f) * 1.41421356f;
+                const float pr = std::sin ((busPan + 1.0f) * juce::MathConstants<float>::pi * 0.25f) * 1.41421356f;
+                left[start + i] += x * busVol * juce::jmin (1.0f, pl);
+                r[i] += y * busVol * juce::jmin (1.0f, pr);
+            }
+        }
+        else
+            for (auto& v : voices)
+                v.render (left + start, r, len, pitchMul.data() + start, rng);
 
         for (auto& v : chordVoices)
             v.render (left + start, r, len, chordTone, chordGain, pitchMul.data() + start);
@@ -1190,6 +1282,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     // clean peak limiter (ceiling -1 dB): no clipping, no crackle
     const float ceiling = 0.89f;
     const float release = std::exp (-1.0f / (0.12f * (float) sr));
+    const float attackCoef = 1.0f - std::exp (-5.0f / (float) limLook);
     const float dcCoef = 1.0f - juce::MathConstants<float>::twoPi * 12.0f / (float) sr;   // 12 Hz DC blocker
     for (int i = 0; i < numSamples; ++i)
     {
@@ -1197,10 +1290,17 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         float l = left[i] * g, r = right[i] * g;
         const float hl = l - dcInL + dcCoef * dcOutL; dcInL = l; dcOutL = hl; l = hl;
         const float hr = r - dcInR + dcCoef * dcOutR; dcInR = r; dcOutR = hr; r = hr;
+        // look-ahead: remember the gain each sample needs, play the audio limLook samples later
         const float peak = juce::jmax (std::abs (l), std::abs (r));
-        const float target = peak > ceiling ? ceiling / peak : 1.0f;
-        limGain = target < limGain ? target : 1.0f - (1.0f - limGain) * release;
-        l *= limGain; r *= limGain;
+        limNeed[(size_t) limPos] = peak > ceiling ? ceiling / peak : 1.0f;
+        const float outL = limDelL[(size_t) limPos], outR = limDelR[(size_t) limPos];
+        limDelL[(size_t) limPos] = l; limDelR[(size_t) limPos] = r;
+        if (++limPos >= limLook) limPos = 0;
+        float need = 1.0f;
+        for (int k = 0; k < limLook; ++k) need = juce::jmin (need, limNeed[(size_t) k]);
+        if (need < limGain) limGain += (need - limGain) * attackCoef;      // glide down over the look-ahead
+        else                limGain = 1.0f - (1.0f - limGain) * release;   // recover slowly
+        l = outL * limGain; r = outR * limGain;
         left[i] = juce::jlimit (-1.0f, 1.0f, l);
         right[i] = juce::jlimit (-1.0f, 1.0f, r);
         pl = juce::jmax (pl, std::abs (left[i]));

@@ -111,7 +111,7 @@ namespace harp
         void tune (float freq, float t60, float bright, float sr)
         {
             const float period = sr / freq;
-            damp = 0.5f * (1.0f - bright * 0.9f);
+            damp = 0.5f * (1.0f - bright * 0.6f);
             const float total = period - damp;                // the loss filter delays by 'damp' samples
             len = juce::jlimit (2, (int) buf.size() - 2, (int) std::floor (total - 0.1f));
             float frac = total - (float) len;                  // kept in 0.1 .. 1.1: stable and flat
@@ -274,7 +274,7 @@ namespace harp
                         const float amp = table[i].a * std::pow (0.35f + 1.1f * bright, octaves);
                         modes[(size_t) numModes++].set (f, t60 * decayScale * table[i].d, amp, sr);
                     }
-                    exciteLen = juce::jmax (2, (int) (malletMs * (1.4f - bright) * 0.001f * sr));
+                    exciteLen = juce::jmax (3, (int) (malletMs * (1.4f - bright) * 0.001f * sr));
                     exciteLeft = exciteLen;
                     malletNoise = model == Model::glass ? 0.0f : 0.15f * bright;
                     gain = 0.16f * velGain;
@@ -291,20 +291,26 @@ namespace harp
                         float lp = 0.0f;
                         for (int i = 0; i < len; ++i)
                         {
-                            lp += (rng.nextFloat() * 2.0f - 1.0f - lp) * (0.25f + 0.7f * bright);
+                            lp += (rng.nextFloat() * 2.0f - 1.0f - lp) * (0.12f + 0.4f * bright);
                             burst[(size_t) i] = lp;
                         }
                         for (int i = 0; i < len; ++i)
                             str.excite (i, 0.7f * (burst[(size_t) i] - (i >= pick ? burst[(size_t) (i - pick)] : 0.0f)));
                     }
-                    bodyLp = 0.0f;
+                    bodyLp = 0.0f; pluckLp = pluckLp2 = 0.0f;
+                    {
+                        const float fc = juce::jmin (0.42f * sr, (1800.0f + 5000.0f * bright) * (1.0f + freq / 1500.0f));
+                        pluckCoef = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * fc / sr);
+                    }
                     gain = 0.28f * velGain;
                     break;
 
                 case Model::epiano:
-                    fmIndex = (0.8f + 2.6f * vel * vel) * (0.5f + bright);
+                    // less FM and a softer tine up high, so nothing folds back above 20 kHz
+                    fmIndex = (0.8f + 2.6f * vel * vel) * (0.5f + bright) * juce::jlimit (0.15f, 1.0f, 700.0f / freq);
                     fmIndexMul = std::exp (-1.0f / (0.35f * sr));
-                    tineEnv = 0.35f * vel * (0.4f + bright);
+                    tineEnv = 0.35f * vel * (0.4f + bright) * juce::jlimit (0.0f, 1.0f, (6000.0f - freq * 4.0f) / 4000.0f);
+                    tineInc = juce::jmin (freq * 14.0f, 7000.0f) / sr;
                     tineMul = std::exp (-1.0f / (0.025f * sr));
                     envMul = std::exp (-6.9078f / (t60 * 1.2f * sr));
                     gain = 0.2f * velGain;
@@ -365,7 +371,10 @@ namespace harp
                     if (exciteLeft > 0)
                     {
                         // impulse strike plus a very short mallet contact noise
-                        x = exciteLeft == exciteLen ? 1.0f : 0.0f;
+                        {
+                            const int k = exciteLen - exciteLeft;   // 3-sample raised cosine strike, same energy in the low modes
+                            x = k == 0 ? 0.25f : k == 1 ? 0.5f : k == 2 ? 0.25f : 0.0f;
+                        }
                         malletLp += ((rng.nextFloat() * 2.0f - 1.0f) - malletLp) * 0.3f;
                         x += malletLp * malletNoise * (float) exciteLeft / (float) exciteLen;
                         --exciteLeft;
@@ -382,8 +391,9 @@ namespace harp
                 case Model::pluck:
                 {
                     const float y = strings[0].process() + strings[1].process();
-                    bodyLp += (y - bodyLp) * 0.5f;
-                    return bodyLp;
+                    pluckLp += (y - pluckLp) * pluckCoef;           // 2-pole body low-pass: warm, no fizz
+                    pluckLp2 += (pluckLp - pluckLp2) * pluckCoef;
+                    return pluckLp2;
                 }
                 case Model::epiano:
                 {
@@ -392,7 +402,7 @@ namespace harp
                     const float tine = sn (phase[2]) * tineEnv;
                     phase[0] = wrap (phase[0] + dt);
                     phase[1] = wrap (phase[1] + dt);
-                    phase[2] = wrap (phase[2] + juce::jmin (0.45f, dt * 14.0f));
+                    phase[2] = wrap (phase[2] + tineInc * pm);
                     fmIndex *= fmIndexMul;
                     tineEnv *= tineMul;
                     return car + tine;
@@ -440,7 +450,7 @@ namespace harp
         std::array<Svf, 2> svf;
         std::array<Mode, 8> modes;
         int numModes = 0, exciteLeft = 0, exciteLen = 1;
-        float malletNoise = 0.0f, tremolo = 0.0f, malletLp = 0.0f;
+        float malletNoise = 0.0f, tremolo = 0.0f, malletLp = 0.0f, tineInc = 0.0f, pluckLp = 0.0f, pluckLp2 = 0.0f, pluckCoef = 0.5f;
         std::array<String, 2> strings;
         std::vector<float> burst;
         float bodyLp = 0.0f;
