@@ -971,6 +971,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     updateTones (chord, transpose, range);
     activeChord.store (previewing ? -1 : chord);   // a preview does not light a chord button
 
+    const int eventsBefore = numEvents;
     if (const auto plucks = pendingPlucks.exchange (0); plucks != 0 && ! tones.empty())
         for (int i = 0; i < numStrings; ++i)
             if (plucks & (1u << (unsigned) i))
@@ -1043,8 +1044,16 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     eventsFromHost = false;
 
-    // chord layer and bass follow the sounding chord, or the notes held in the piano roll
+    // chord layer and bass ring while the harp is played (strum, arp, plucks, MIDI keys held),
+    // and release when the playing stops - a latched chord button alone never drones forever
     const int playedChord = chord;
+    {
+        const double stepQ = rateInQuarters (rateIndex);
+        const int gateLen = juce::jmax ((int) (0.6 * sr), (int) (stepQ * 60.0 / bpm * sr * 1.15));
+        if (numEvents > eventsBefore) layerGateLeft = gateLen;
+        else layerGateLeft = juce::jmax (0, layerGateLeft - numSamples);
+        if (chord >= 0 && rootHeldMask == 0 && layerGateLeft <= 0) chord = -1;
+    }
     layersFromHost = false;
     if (chord < 0 && ! previewing && heldMelodicCount > 0)
     {
