@@ -475,7 +475,7 @@ namespace hama
                     if (keyBounds (r, t).contains (e.position))
                     {
                         pressed = chords::index (r, t);
-                        processor.clickChord (pressed);
+                        processor.latchChord (pressed);   // stays on until clicked again or another chord is chosen
                         repaint();
                         return;
                     }
@@ -483,7 +483,6 @@ namespace hama
 
         void mouseUp (const juce::MouseEvent&) override
         {
-            if (pressed >= 0) processor.releaseChord (pressed);
             pressed = -1;
             repaint();
         }

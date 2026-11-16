@@ -8,7 +8,7 @@ Elektronická drnkací harfa: 108 akordů, Live Strum a šest zvukových modelů
 ## Stav: kompletní verze 0.2 (kroky 1–6)
 
 ### PLAY (hlavní okno)
-- **108 akordových tlačítek** (12 tónin × 9 typů), tečka = akord patří do tóniny. **HOLD** zapnutý: klik akord zapne a vypne. Vypnutý: hraje, jen dokud držíš.
+- **108 akordových tlačítek** (12 tónin × 9 typů), tečka = akord patří do tóniny. Klik myší akord zapne (zůstane svítit), další klik ho vypne, klik na jiný akord přepne. Pak můžeš brnkat myší po STRUM PLATE. **HOLD** platí pro MIDI klávesy: zapnutý = akord zní i po puštění kláves, vypnutý = jen dokud držíš.
 - **Strumplate** s 26 strunami (myš), **Live Strum** v tempu FL (RATE, FEEL, SPEED), **ARP** (6 vzorů, CHANCE, REGEN po kliknutí na ARP), **MEMO** (přehrává paměť akordů), **OFF**.
 - **VOICE** (10 barev harfy), **MORPH** (prolnutí vrstev A a B), **DUAL** (klik = výběr druhé barvy).
 - **MODEL** (klik na displej): Early 81, System 84, Tone Bank 89, Late 90s, Cartridge 99, Modern Strum.

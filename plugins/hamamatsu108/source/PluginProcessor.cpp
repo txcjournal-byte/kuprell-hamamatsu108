@@ -783,7 +783,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     voiceSettings2.model = (harp::Model) juce::roundToInt (param (apvts, "harpVoice2"));
 
     // GUI requests
-    // chord buttons: HOLD on = click toggles the chord; HOLD off = chord sounds while the button is held
+    // HOLD (MIDI keys): on = the chord keeps sounding after the keys are released; off = only while held
     const bool holdOn = param (apvts, "hold") > 0.5f;
     if (lastHoldOn && ! holdOn)
     {
@@ -804,6 +804,13 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         latchedChord = (holdOn && click == latchedChord && rootHeldMask == 0) ? -1 : click;
     }
     deferredRelease = pendingChordRelease.exchange (-1);
+    // a mouse click on a chord button always latches (a mouse cannot hold a chord and strum at once);
+    // HOLD only decides what MIDI keys do
+    if (const int latch = pendingChordLatch.exchange (-1); latch >= 0)
+    {
+        holdChord = -1;
+        latchedChord = (latch == latchedChord && rootHeldMask == 0) ? -1 : latch;
+    }
 
     for (const auto meta : midi)
         handleMidi (meta.getMessage(), meta.samplePosition);

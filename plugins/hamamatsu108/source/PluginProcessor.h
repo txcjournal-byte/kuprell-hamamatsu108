@@ -78,6 +78,7 @@ public:
 
     //== GUI -> audio requests (lock free)
     void clickChord (int chordIndex)   { pendingChordClick.store (chordIndex); }
+    void latchChord (int chordIndex)   { pendingChordLatch.store (chordIndex); }   // chord buttons by mouse: click on, click again off
     void releaseChord (int chordIndex) { pendingChordRelease.store (chordIndex); }   // mouse up (matters when HOLD is off)
     void previewPreset() { previewRequest.store (true); }                            // short demo strum after a preset click
     void pluckString (int visualIndex) { pendingPlucks.fetch_or (1u << (unsigned) visualIndex); }
@@ -153,7 +154,7 @@ private:
     double sr = 44100.0;
 
     // chord state (audio thread)
-    std::atomic<int> pendingChordClick { -1 }, pendingChordRelease { -1 };
+    std::atomic<int> pendingChordClick { -1 }, pendingChordRelease { -1 }, pendingChordLatch { -1 };
     std::atomic<bool> previewRequest { false };
     int previewSamplesLeft = 0;
     bool previewStroke = false, previewMute = false;   // preview = one stroke, never recorded
