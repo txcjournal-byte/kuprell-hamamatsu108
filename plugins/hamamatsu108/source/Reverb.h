@@ -122,3 +122,65 @@ namespace hama
         int preW = 0;
     };
 }
+
+namespace hama
+{
+    // The instrument's own body: a short 4-line feedback network that every string shares,
+    // like the soundboard of a real harp. Adds depth and a stereo image to the harp only.
+    class Soundboard
+    {
+    public:
+        void prepare (double sampleRate)
+        {
+            sr = (float) sampleRate;
+            for (auto& l : lines) { l.buf.assign ((size_t) (sr * 0.08f) + 4, 0.0f); l.w = 0; l.lp = 0.0f; }
+            hpL = hpR = hpInL = hpInR = 0.0f;
+        }
+        // size 0.5..1.3, decay seconds, dark 0..1 (damping), returns wet only
+        void configure (float size, float decay, float dark)
+        {
+            static const float base[4] = { 11.3f, 13.7f, 17.9f, 23.1f };
+            for (int i = 0; i < 4; ++i)
+            {
+                auto& l = lines[(size_t) i];
+                l.len = juce::jlimit (8, (int) l.buf.size() - 2, (int) (base[i] * size * 0.001f * sr));
+                l.g = std::pow (10.0f, -3.0f * ((float) l.len / sr) / juce::jmax (0.05f, decay));
+            }
+            dampCoef = 0.15f + 0.7f * (1.0f - dark);
+        }
+        void process (const float* inL, const float* inR, float* outL, float* outR, int n, float mix)
+        {
+            const float hpC = 1.0f - juce::MathConstants<float>::twoPi * 160.0f / sr;   // keep the low end dry
+            for (int i = 0; i < n; ++i)
+            {
+                const float xl = inL[i] - hpInL + hpC * hpL; hpInL = inL[i]; hpL = xl;
+                const float xr = inR[i] - hpInR + hpC * hpR; hpInR = inR[i]; hpR = xr;
+                float o[4];
+                for (int k = 0; k < 4; ++k)
+                {
+                    auto& l = lines[(size_t) k];
+                    int r = l.w - l.len; if (r < 0) r += (int) l.buf.size();
+                    l.lp += (l.buf[(size_t) r] - l.lp) * dampCoef;
+                    o[k] = l.lp * l.g;
+                }
+                // Householder-like 4x4 Hadamard mix (energy preserving)
+                const float a = o[0] + o[1], b = o[0] - o[1], c = o[2] + o[3], d = o[2] - o[3];
+                const float m0 = 0.5f * (a + c), m1 = 0.5f * (b + d), m2 = 0.5f * (a - c), m3 = 0.5f * (b - d);
+                const float in[4] = { xl * 0.5f, xr * 0.5f, xl * 0.35f, xr * 0.35f };
+                const float mm[4] = { m0, m1, m2, m3 };
+                for (int k = 0; k < 4; ++k)
+                {
+                    auto& l = lines[(size_t) k];
+                    l.buf[(size_t) l.w] = mm[k] + in[k];
+                    if (++l.w >= (int) l.buf.size()) l.w = 0;
+                }
+                outL[i] += (o[0] + 0.6f * o[2]) * mix;
+                outR[i] += (o[1] + 0.6f * o[3]) * mix;
+            }
+        }
+    private:
+        struct Line { std::vector<float> buf; int w = 0, len = 100; float g = 0.5f, lp = 0.0f; };
+        std::array<Line, 4> lines;
+        float sr = 48000.0f, dampCoef = 0.5f, hpL = 0, hpR = 0, hpInL = 0, hpInR = 0;
+    };
+}

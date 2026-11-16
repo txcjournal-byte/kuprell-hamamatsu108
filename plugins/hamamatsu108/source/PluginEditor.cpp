@@ -111,7 +111,7 @@ Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
     const int w = initialWidth();
     intendedWidth = w;
     setSize (w, juce::roundToInt (w * (double) baseHeight / (double) baseWidth));
-    startTimerHz (10);
+    startTimerHz (30);   // fast while the window opens, so a host resize is undone within a frame
 }
 
 Hamamatsu108Editor::~Hamamatsu108Editor()
@@ -315,7 +315,7 @@ void Hamamatsu108Editor::timerCallback()
     else if (n > 0 && ++undoIdleTicks > 4) { audioProcessor.undoManager.beginNewTransaction(); lastUndoCount = 0; }
 
     // some hosts (FL Studio) shrink the window while opening it: put our size back once it is on screen
-    if (sizeFixes < 4 && intendedWidth > 0 && isShowing()
+    if (sizeFixes < 8 && intendedWidth > 0 && isShowing()
         && juce::Time::getMillisecondCounter() - openedAt < 4000 && std::abs (getWidth() - intendedWidth) > 4)
     {
         ++sizeFixes;

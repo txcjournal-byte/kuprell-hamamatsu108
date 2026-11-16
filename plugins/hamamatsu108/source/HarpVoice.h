@@ -140,6 +140,7 @@ namespace harp
     {
     public:
         bool isActive() const noexcept { return active || pending; }
+        bool isBusy() const noexcept   { return pending || fadeOutLeft > 0; }   // fading out or waiting to restart
         int getNote() const noexcept   { return pending ? pendingArgs.note : note; }
         juce::int64 getAge() const noexcept { return age; }
         float getLevel() const noexcept { return active ? level : 0.0f; }
@@ -159,6 +160,11 @@ namespace harp
             {
                 // steal smoothly: fade the old note for 3 ms, then start the new one
                 pendingArgs = args;
+                if (pending || fadeOutLeft > 0)   // already fading: keep going from where it is (never jump back up)
+                {
+                    pending = true;
+                    return;
+                }
                 pending = true;
                 fadeOut = juce::jmax (1, (int) (0.003f * sr));
                 fadeOutLeft = fadeOut;
@@ -171,7 +177,15 @@ namespace harp
         {
             if (! active) return;
             pending = false;
-            fadeOut = juce::jmax (1, (int) (seconds * sr));
+            const int len = juce::jmax (1, (int) (seconds * sr));
+            if (fadeOutLeft > 0)
+            {
+                // continue the running fade, stretched to the new length, from the current gain
+                const float g = (float) fadeOutLeft / (float) fadeOut;
+                fadeOut = len; fadeOutLeft = juce::jmax (1, (int) (g * (float) len));
+                return;
+            }
+            fadeOut = len;
             fadeOutLeft = fadeOut;
         }
 
@@ -200,6 +214,15 @@ namespace harp
                 }
 
                 const float out = s * gain;
+               #ifdef HAMA_PROBE
+                {
+                    const float d2 = out - 2.0f * pr1 + pr2; pr2 = pr1; pr1 = out;
+                    prEnv = 0.995f * prEnv + 0.005f * d2 * d2;
+                    if (std::abs (d2) > 0.006f && d2 * d2 > 100.0f * prEnv)
+                        printf ("PROBE note %d model %d age %lld n %d fadeLeft %d pending %d attack %.3f env %.3f d2 %.4f out %.4f excite %d\n",
+                                note, (int) model, (long long) age, n, fadeOutLeft, (int) pending, attack, env, d2, out, exciteLeft);
+                }
+               #endif
                 left[n]  += out * panL;
                 right[n] += out * panR;
                 peak = juce::jmax (peak, std::abs (out));
@@ -269,12 +292,14 @@ namespace harp
                     for (int i = 0; i < count; ++i)
                     {
                         const float f = freq * table[i].r;
-                        if (f > sr * 0.45f) continue;
+                        if (f > juce::jmin (sr * 0.42f, 16000.0f)) continue;
                         const float octaves = std::log2 (juce::jmax (1.0f, table[i].r));
-                        const float amp = table[i].a * std::pow (0.35f + 1.1f * bright, octaves);
+                        float amp = table[i].a * std::pow (0.35f + 1.1f * bright, octaves);
+                        if (f > 7000.0f) amp *= 7000.0f / f * 7000.0f / f;   // real bars lose their top quickly
                         modes[(size_t) numModes++].set (f, t60 * decayScale * table[i].d, amp, sr);
                     }
-                    exciteLen = juce::jmax (3, (int) (malletMs * (1.4f - bright) * 0.001f * sr));
+                    // mallet contact time: soft felt ~0.6 ms, hard mallet ~0.15 ms (a Hann pulse, never a raw impulse)
+                    exciteLen = juce::jmax (4, (int) ((0.15f + 0.45f * (1.0f - bright)) * (0.6f + 0.4f * malletMs) * 0.001f * sr));
                     exciteLeft = exciteLen;
                     malletNoise = model == Model::glass ? 0.0f : 0.15f * bright;
                     gain = 0.16f * velGain;
@@ -372,11 +397,13 @@ namespace harp
                     {
                         // impulse strike plus a very short mallet contact noise
                         {
-                            const int k = exciteLen - exciteLeft;   // 3-sample raised cosine strike, same energy in the low modes
-                            x = k == 0 ? 0.25f : k == 1 ? 0.5f : k == 2 ? 0.25f : 0.0f;
+                            // Hann-shaped contact force, area 1: low modes keep their level, the top is rolled off
+                            const int k = exciteLen - exciteLeft;
+                            const float ph = ((float) k + 0.5f) / (float) exciteLen;
+                            x = (1.0f - std::cos (juce::MathConstants<float>::twoPi * ph)) / (float) exciteLen;
                         }
                         malletLp += ((rng.nextFloat() * 2.0f - 1.0f) - malletLp) * 0.3f;
-                        x += malletLp * malletNoise * (float) exciteLeft / (float) exciteLen;
+                        x += malletLp * malletNoise * 0.25f * (float) exciteLeft / ((float) exciteLen * (float) exciteLen);
                         --exciteLeft;
                     }
                     float y = 0.0f;
@@ -454,6 +481,9 @@ namespace harp
         std::array<String, 2> strings;
         std::vector<float> burst;
         float bodyLp = 0.0f;
+       #ifdef HAMA_PROBE
+        float pr1 = 0, pr2 = 0, prEnv = 1e-6f;
+       #endif
         float fmIndex = 0, fmIndexMul = 1, tineEnv = 0, tineMul = 1;
     };
 }

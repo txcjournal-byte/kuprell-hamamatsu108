@@ -121,7 +121,7 @@ namespace presets
                         b.set ("harpTone", b.range (0.4f, 0.6f));
                         b.set ("harpDecay", b.range (4.0f, 6.5f));
                         b.set ("chordType", (float) b.pick ({ 2, 3, 4 }));
-                        b.set ("chordLevel", b.range (-16.0f, -10.0f));
+                        b.set ("chordLevel", b.range (-19.0f, -13.0f));
                         b.set ("chordFilter", b.range (0.4f, 0.6f));
                         b.set ("strumRate", (float) b.pick ({ 0, 1 }));
                         b.set ("strumFeel", b.range (0.3f, 0.5f));

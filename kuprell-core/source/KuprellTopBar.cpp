@@ -129,7 +129,9 @@ namespace kuprell
 
     void TopBar::setPreset (const juce::String& category, const juce::String& name, bool modified)
     {
-        presetCategory = category.toUpperCase();
+        const auto cat = category.toUpperCase();
+        if (cat == presetCategory && name == presetName && modified == presetModified) return;   // nothing changed
+        presetCategory = cat;
         presetName = name;
         presetModified = modified;
         repaint (presetArea);

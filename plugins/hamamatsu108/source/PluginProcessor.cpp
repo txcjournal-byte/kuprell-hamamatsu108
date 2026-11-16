@@ -32,12 +32,12 @@ const Hamamatsu108Processor::ModelSpec& Hamamatsu108Processor::modelSpec (int m)
 {
     //                                   cutoff  width  hiss     bits   hold  drift  sat    tone   decay
     //                                   cutoff   width hiss     bits  hold drift sat    tone   decay  chorus
-    static const ModelSpec specs[] = { { 3200.0f,  0.15f, 0.0006f, 16.0f, 1, 9.0f, 0.50f, 0.55f, 0.75f, 0.00f },   // Early 81: dark, nearly mono, warm drift
-                                       { 6500.0f,  0.45f, 0.0003f, 16.0f, 1, 4.0f, 0.25f, 0.80f, 1.00f, 0.25f },   // System 84: the classic, light chorus
-                                       { 13000.0f, 0.85f, 0.0001f, 16.0f, 1, 2.0f, 0.15f, 1.00f, 1.10f, 0.50f },   // Tone Bank 89: bright and lush
-                                       { 17000.0f, 1.00f, 0.0f,    16.0f, 1, 0.0f, 0.08f, 1.05f, 1.15f, 0.15f },   // Late 90s: clean
-                                       { 6000.0f,  0.60f, 0.0004f,  8.0f, 3, 1.0f, 0.35f, 0.90f, 0.85f, 0.00f },   // Cartridge 99: 8-bit, 16 kHz grit
-                                       { 20000.0f, 1.30f, 0.0f,    16.0f, 1, 0.0f, 0.03f, 1.15f, 1.30f, 0.30f } }; // Modern Strum: hi-fi, extra wide
+    static const ModelSpec specs[] = { { 3200.0f,  0.15f, 0.0006f, 16.0f, 1, 9.0f, 0.50f, 0.55f, 0.75f, 0.00f, 0.55f, 0.22f, 0.75f, 0.17f },   // Early 81: dark, nearly mono, warm drift
+                                       { 6500.0f,  0.45f, 0.0003f, 16.0f, 1, 4.0f, 0.25f, 0.80f, 1.00f, 0.25f, 0.80f, 0.32f, 0.55f, 0.15f },   // System 84: the classic, light chorus
+                                       { 13000.0f, 0.85f, 0.0001f, 16.0f, 1, 2.0f, 0.15f, 1.00f, 1.10f, 0.50f, 0.95f, 0.42f, 0.40f, 0.13f },   // Tone Bank 89: bright and lush
+                                       { 17000.0f, 1.00f, 0.0f,    16.0f, 1, 0.0f, 0.08f, 1.05f, 1.15f, 0.15f, 1.00f, 0.30f, 0.35f, 0.09f },   // Late 90s: clean
+                                       { 6000.0f,  0.60f, 0.0004f,  8.0f, 3, 1.0f, 0.35f, 0.90f, 0.85f, 0.00f, 0.50f, 0.18f, 0.60f, 0.10f },   // Cartridge 99: 8-bit, 16 kHz grit
+                                       { 20000.0f, 1.30f, 0.0f,    16.0f, 1, 0.0f, 0.03f, 1.15f, 1.30f, 0.30f, 1.25f, 0.60f, 0.25f, 0.13f } }; // Modern Strum: hi-fi, extra wide
     return specs[juce::jlimit (0, 5, m)];
 }
 
@@ -426,6 +426,7 @@ void Hamamatsu108Processor::prepareToPlay (double sampleRate, int samplesPerBloc
     numEvents = 0;
     pitchMul.assign ((size_t) juce::jmax (32, samplesPerBlock), 1.0f);
     limLook = juce::jlimit (16, limLookMax, (int) std::round (sampleRate * 0.0015));
+    soundboard.prepare (sampleRate); boardModel = -1;
     limDelL.fill (0.0f); limDelR.fill (0.0f); limNeed.fill (1.0f); limPos = 0; limGain = 1.0f;
     setLatencySamples (limLook);
 
@@ -680,9 +681,17 @@ void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note,
 
     if (target == nullptr)   // steal the quietest voice (it fades out over 3 ms, no click)
     {
-        target = &voices[0];
+        // prefer a voice that is not already being faded out for another note
+        target = nullptr;
         for (int i = 0; i < limit; ++i)
-            if (voices[(size_t) i].getLevel() < target->getLevel()) target = &voices[(size_t) i];
+            if (! voices[(size_t) i].isBusy() && (target == nullptr || voices[(size_t) i].getLevel() < target->getLevel()))
+                target = &voices[(size_t) i];
+        if (target == nullptr)
+        {
+            target = &voices[0];
+            for (int i = 0; i < limit; ++i)
+                if (voices[(size_t) i].getLevel() < target->getLevel()) target = &voices[(size_t) i];
+        }
     }
 
     // spread around the centre of what is playing, so the harp never leans to one ear
@@ -819,6 +828,23 @@ void Hamamatsu108Processor::startBassNote()
 }
 
 //==============================================================================
+
+#ifdef HAMA_PROBE
+static void probeStage (int stage, const float* x, int n, juce::int64 clock)
+{
+    static float p1[16] {}, p2[16] {}, e[16] = { 1e-6f, 1e-6f, 1e-6f, 1e-6f, 1e-6f, 1e-6f, 1e-6f, 1e-6f, 1e-6f, 1e-6f, 1e-6f, 1e-6f, 1e-6f, 1e-6f, 1e-6f, 1e-6f };
+    for (int i = 0; i < n; ++i)
+    {
+        const float d2 = x[i] - 2 * p1[stage] + p2[stage]; p2[stage] = p1[stage]; p1[stage] = x[i];
+        e[stage] = 0.999f * e[stage] + 0.001f * d2 * d2;
+        if (clock > 2000 && d2 * d2 > 400.0f * e[stage] && std::abs (d2) > 0.015f) printf ("STAGE %d spike at sample %lld (pos %d of %d) d2 %.4f\n", stage, (long long) (clock + i), i, n, d2);
+    }
+}
+#define PROBE(st, buf) probeStage (st, buf, numSamples, sampleClock - numSamples)
+#else
+#define PROBE(st, buf)
+#endif
+
 void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -1111,8 +1137,11 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     const float volTarget = modRouted[mod::tVolume] ? juce::jlimit (0.0f, 1.5f, 1.0f + modOffset[mod::tVolume]) : 1.0f;
     const float panTarget = modRouted[mod::tPan] ? juce::jlimit (-1.0f, 1.0f, modOffset[mod::tPan]) : 0.0f;
     if (! filterOn) { busIc1L = busIc2L = busIc1R = busIc2R = 0.0f; busCut = 1.0f; }
-    const bool busActive = filterOn || modRouted[mod::tVolume] || modRouted[mod::tPan]
-                           || std::abs (busVol - 1.0f) > 1.0e-3f || std::abs (busPan) > 1.0e-3f;
+    const bool busActive = true;   // the harp always goes through its own bus (soundboard)
+    {
+        const int mIdx = juce::roundToInt (param (apvts, "model"));
+        if (mIdx != boardModel) { soundboard.configure (model.boardSize, model.boardDecay, model.boardDark); boardModel = mIdx; }
+    }
 
     // render in small slices so strum notes start close to their exact time
     if (work.getNumSamples() < numSamples) work.setSize (2, numSamples, false, false, true);
@@ -1166,9 +1195,12 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
                 }
                 const float pl = std::cos ((busPan + 1.0f) * juce::MathConstants<float>::pi * 0.25f) * 1.41421356f;
                 const float pr = std::sin ((busPan + 1.0f) * juce::MathConstants<float>::pi * 0.25f) * 1.41421356f;
-                left[start + i] += x * busVol * juce::jmin (1.0f, pl);
-                r[i] += y * busVol * juce::jmin (1.0f, pr);
+                hl[i] = x * busVol * juce::jmin (1.0f, pl);
+                hr[i] = y * busVol * juce::jmin (1.0f, pr);
+                left[start + i] += hl[i];
+                r[i] += hr[i];
             }
+            soundboard.process (hl, hr, left + start, r, len, model.boardMix);
         }
         else
             for (auto& v : voices)
@@ -1196,6 +1228,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     for (auto& v : voices) inUse += v.isActive() ? 1 : 0;
     voicesInUse.store (inUse);
 
+    PROBE (0, left);
     // model character: tone, width, saturation, chorus, bits (Cartridge), hiss only while playing (+ AGE)
     {
         const float cutoff = model.cutoff * (1.0f - 0.65f * age);
@@ -1263,6 +1296,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         const float a = i < 4 ? mp ((id + "A").toRawUTF8()) : param (apvts, (id + "A").toRawUTF8());
         const float b = param (apvts, (id + "B").toRawUTF8());
         const float mixv = i < 4 ? mp ((id + "Mix").toRawUTF8()) : param (apvts, (id + "Mix").toRawUTF8());
+        PROBE (1 + i, left);
         fxUnits[(size_t) i].process (type, a, b, mixv, left, right, numSamples, bpm);
     }
 
@@ -1276,6 +1310,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         for (int i = 0; i < numSamples; ++i) { left[i] += dreamL[(size_t) i] * dream * 0.7f; right[i] += dreamR[(size_t) i] * dream * 0.7f; }
     }
 
+    PROBE (12, left);
     // master + soft limit + meters
     masterGain.setTargetValue (juce::Decibels::decibelsToGain (mp ("master")));
     float pl = 0.0f, pr = 0.0f;
@@ -1306,6 +1341,35 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         pl = juce::jmax (pl, std::abs (left[i]));
         pr = juce::jmax (pr, std::abs (right[i]));
     }
+    // switching the sound mid-note: no step, glide from the last output sample into the new sound
+    {
+        std::uint64_t sig = 1469598103934665603ull;
+        auto mix = [&sig] (int v) { sig = (sig ^ (std::uint64_t) (v + 7)) * 1099511628211ull; };
+        mix (juce::roundToInt (param (apvts, "model")));
+        mix (juce::roundToInt (param (apvts, "harpVoice")));
+        mix (juce::roundToInt (param (apvts, "harpVoice2")));
+        mix (juce::roundToInt (param (apvts, "dual")));
+        mix (juce::roundToInt (param (apvts, "chordType")));
+        mix (juce::roundToInt (param (apvts, "bassType")));
+        for (int i = 1; i <= fx::numSlots; ++i)
+        {
+            mix (juce::roundToInt (param (apvts, ("fx" + juce::String (i) + "Type").toRawUTF8())));
+            mix (juce::roundToInt (param (apvts, ("fx" + juce::String (i) + "On").toRawUTF8())));
+        }
+        if (sig != soundSignature)
+        {
+            if (soundSignature != 0) { declickLen = juce::jmax (16, (int) (0.003 * sr)); declickLeft = declickLen; }
+            soundSignature = sig;
+        }
+        for (int i = 0; i < numSamples && declickLeft > 0; ++i, --declickLeft)
+        {
+            const float t = 1.0f - (float) declickLeft / (float) declickLen;
+            const float w = t * t * (3.0f - 2.0f * t);
+            left[i] = lastOutL + (left[i] - lastOutL) * w;
+            right[i] = lastOutR + (right[i] - lastOutR) * w;
+        }
+        if (numSamples > 0) { lastOutL = left[numSamples - 1]; lastOutR = right[numSamples - 1]; }
+    }
     if (buffer.getNumChannels() > 1)
     {
         buffer.copyFrom (0, 0, left, numSamples);
@@ -1316,6 +1380,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         buffer.copyFrom (0, 0, left, numSamples, 0.5f);
         buffer.addFrom (0, 0, right, numSamples, 0.5f);
     }
+    PROBE (13, left);
     meterLeft.store (juce::jmax (pl, meterLeft.load() * 0.85f));
     meterRight.store (juce::jmax (pr, meterRight.load() * 0.85f));
 }

@@ -119,7 +119,8 @@ public:
     static const juce::StringArray& arpPatternNames();
     static const juce::StringArray& modelNames();
 
-    struct ModelSpec { float cutoff, width, hiss, bits; int hold; float drift, sat, tone, decay, chorus; };
+    struct ModelSpec { float cutoff, width, hiss, bits; int hold; float drift, sat, tone, decay, chorus;
+                       float boardSize, boardDecay, boardDark, boardMix; };   // the instrument's body
     static const ModelSpec& modelSpec (int model);
     static int targetIndex (const juce::String& id);
 
@@ -217,6 +218,12 @@ private:
     static constexpr int limLookMax = 256;
     std::array<float, limLookMax> limDelL {}, limDelR {}, limNeed {};
     int limLook = 64, limPos = 0;
+    // de-click when the sound is switched (preset, model, voice, FX type): glide from the last sample for 3 ms
+    std::uint64_t soundSignature = 0;
+    hama::Soundboard soundboard;
+    int boardModel = -1;
+    int declickLeft = 0, declickLen = 132;
+    float lastOutL = 0.0f, lastOutR = 0.0f;
     int holdCount = 0;
     float wowPhase = 0, flutterPhase = 0, wobblePhase = 0, morphNow = 0.35f;
     std::array<mod::Lfo, 2> lfos;
