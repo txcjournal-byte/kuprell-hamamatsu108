@@ -704,6 +704,11 @@ void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note,
 void Hamamatsu108Processor::capture (double seconds, int note, float velocity, int layer, bool on)
 {
     if (previewMute) return;   // preset previews never end up in the MIDI capture
+    if (note < 0 || note > 127 || layer < 0 || layer > 2) return;
+    auto& wasOn = capturedOn[(size_t) layer][(size_t) note];
+    if (! on && ! wasOn) return;  // the matching note-on was never recorded
+    if (on && hostDriven) return; // piano roll playback is not recorded again
+    wasOn = on;
     if (layer >= 1 && layersFromHost) return;   // layers that only follow the piano roll are not recorded
     const auto scope = captureFifo.write (1);
     const CapturedNote cn { seconds, note, velocity, layer, on };
@@ -923,6 +928,9 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         handleMidi (meta.getMessage(), meta.samplePosition);
 
     int chord = resolveChord();
+    // notes coming from the host while its transport runs (piano roll, playlist) are already in the
+    // project: the MIDI capture only records what is played by hand on the plugin
+    hostDriven = hostPlaying && (rootHeldMask != 0 || heldMelodicCount > 0 || numTypesHeld > 0);
 
     // preset preview: ONE stroke of the key chord (plus its chord layer and bass) so the sound can be heard.
     // It never changes the play mode, never repeats, never records, and a real chord always wins.

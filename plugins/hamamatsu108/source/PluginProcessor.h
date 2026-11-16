@@ -173,7 +173,9 @@ private:
     int heldMelodicCount = 0;
     bool eventsFromHost = false;      // ARP over piano-roll notes: never captured
     bool layersFromHost = false;
-    int layerGateLeft = 0;            // chord layer + bass sound while the harp is being played, then release      // chord layer / bass following piano-roll notes: never captured
+    int layerGateLeft = 0;
+    bool hostDriven = false;
+    std::array<std::array<bool, 128>, 3> capturedOn {};   // note-offs are recorded only for recorded note-ons          // the piano roll is playing the plugin: MIDI capture records nothing            // chord layer + bass sound while the harp is being played, then release      // chord layer / bass following piano-roll notes: never captured
     int chordFromHeldNotes();   // chord that fits the held MIDI notes (for chord layer and bass)
     int tonesChord = -2, tonesTranspose = 0, tonesRange = 0;
 
