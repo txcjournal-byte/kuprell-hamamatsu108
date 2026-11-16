@@ -30,12 +30,13 @@ const juce::StringArray& Hamamatsu108Processor::modelNames()
 const Hamamatsu108Processor::ModelSpec& Hamamatsu108Processor::modelSpec (int m)
 {
     //                                   cutoff  width  hiss     bits   hold  drift  sat    tone   decay
-    static const ModelSpec specs[] = { { 4800.0f, 0.35f, 0.0009f, 12.0f, 1, 6.0f, 0.35f, 0.75f, 0.85f },   // Early 81: dark, narrow, a bit noisy
-                                       { 8500.0f, 0.60f, 0.0004f, 14.0f, 1, 3.0f, 0.20f, 0.90f, 1.00f },   // System 84: the classic
-                                       { 12000.0f, 0.85f, 0.0002f, 16.0f, 1, 2.0f, 0.15f, 1.00f, 1.05f },  // Tone Bank 89: brighter
-                                       { 16000.0f, 1.00f, 0.0f,    16.0f, 1, 0.0f, 0.10f, 1.05f, 1.10f },  // Late 90s: clean
-                                       { 7000.0f, 0.70f, 0.0006f,  8.0f, 2, 1.0f, 0.30f, 0.95f, 0.90f },   // Cartridge 99: lo-fi
-                                       { 20000.0f, 1.20f, 0.0f,    16.0f, 1, 0.0f, 0.05f, 1.10f, 1.20f } }; // Modern Strum: hi-fi, wide
+    //                                   cutoff   width hiss     bits  hold drift sat    tone   decay  chorus
+    static const ModelSpec specs[] = { { 3200.0f,  0.15f, 0.0006f, 16.0f, 1, 9.0f, 0.50f, 0.55f, 0.75f, 0.00f },   // Early 81: dark, nearly mono, warm drift
+                                       { 6500.0f,  0.45f, 0.0003f, 16.0f, 1, 4.0f, 0.25f, 0.80f, 1.00f, 0.25f },   // System 84: the classic, light chorus
+                                       { 13000.0f, 0.85f, 0.0001f, 16.0f, 1, 2.0f, 0.15f, 1.00f, 1.10f, 0.50f },   // Tone Bank 89: bright and lush
+                                       { 17000.0f, 1.00f, 0.0f,    16.0f, 1, 0.0f, 0.08f, 1.05f, 1.15f, 0.15f },   // Late 90s: clean
+                                       { 6000.0f,  0.60f, 0.0004f,  8.0f, 3, 1.0f, 0.35f, 0.90f, 0.85f, 0.00f },   // Cartridge 99: 8-bit, 16 kHz grit
+                                       { 20000.0f, 1.30f, 0.0f,    16.0f, 1, 0.0f, 0.03f, 1.15f, 1.30f, 0.30f } }; // Modern Strum: hi-fi, extra wide
     return specs[juce::jlimit (0, 5, m)];
 }
 
@@ -279,7 +280,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
                                                            AudioParameterFloatAttributes().withStringFromValueFunction (std::move (text))));
     };
 
-    fl ("master", "Master Volume", -60.0f, 6.0f, -3.0f, [] (float v, int) { return String (v, 1) + " dB"; });
+    fl ("master", "Master Volume", -60.0f, 6.0f, 0.0f, [] (float v, int) { return String (v, 1) + " dB"; });
 
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "harpVoice", 1 }, "Harp Voice", harp::voiceNames(), 0));
     fl ("harpTone", "Harp Tone", 0.0f, 1.0f, 0.62f, pct);
@@ -385,8 +386,10 @@ void Hamamatsu108Processor::prepareToPlay (double sampleRate, int samplesPerBloc
     pitchMul.assign ((size_t) juce::jmax (32, samplesPerBlock), 1.0f);
 
     for (auto& u : fxUnits) u.prepare (sampleRate, juce::jmax (32, samplesPerBlock));
-    dreamReverb.setSampleRate (sampleRate);
-    dreamReverb.reset();
+    modelChorusL.prepare ((int) (sampleRate * 0.03)); modelChorusR.prepare ((int) (sampleRate * 0.03));
+    dreamReverb.prepare (sampleRate);
+    dreamL.assign ((size_t) juce::jmax (32, samplesPerBlock), 0.0f);
+    dreamR.assign ((size_t) juce::jmax (32, samplesPerBlock), 0.0f);
     work.setSize (2, juce::jmax (32, samplesPerBlock));
     for (auto* s : { &masterGain })
         s->reset (sampleRate, 0.05);
@@ -598,15 +601,23 @@ void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note,
     for (int i = 0; i < limit; ++i)
         if (! voices[(size_t) i].isActive()) { target = &voices[(size_t) i]; break; }
 
-    if (target == nullptr)   // steal the oldest
+    if (target == nullptr)   // steal the quietest voice (it fades out over 3 ms, no click)
     {
         target = &voices[0];
         for (int i = 0; i < limit; ++i)
-            if (voices[(size_t) i].getAge() > target->getAge()) target = &voices[(size_t) i];
+            if (voices[(size_t) i].getLevel() < target->getLevel()) target = &voices[(size_t) i];
     }
 
     const float pan = juce::jlimit (-0.6f, 0.6f, (float) (note - 60) / 30.0f);
     target->start (note, velocity, pan, settings, rng, noteHz (note));
+}
+
+void Hamamatsu108Processor::capture (double seconds, int note, float velocity, int layer, bool on)
+{
+    const auto scope = captureFifo.write (1);
+    const CapturedNote cn { seconds, note, velocity, layer, on };
+    if (scope.blockSize1 > 0) captureBuffer[(size_t) scope.startIndex1] = cn;
+    else if (scope.blockSize2 > 0) captureBuffer[(size_t) scope.startIndex2] = cn;
 }
 
 // one arpeggio step: pattern over the chord tones, Chance thins notes out, Regen re-rolls the variation
@@ -662,7 +673,8 @@ void Hamamatsu108Processor::updateChordLayer (int chord, int transpose)
 
     if (chord < 0 || type == 0)
     {
-        for (auto& v : chordVoices) v.release();
+        for (auto& v : chordVoices)
+            if (v.isActive() && ! v.isReleasing()) { v.release(); capture ((double) sampleClock / sr, v.getNote(), 0.0f, 1, false); }
         return;
     }
 
@@ -670,10 +682,14 @@ void Hamamatsu108Processor::updateChordLayer (int chord, int transpose)
     const auto kind = (layers::Kind) type;   // organ .. choir map 1..4
 
     // keep common tones ringing, release the rest, start the new ones
+    const double now = (double) sampleClock / sr;
     for (auto& v : chordVoices)
         if (v.isActive() && ! v.isReleasing())
             if (typeChanged || std::find (voicingNotes.begin(), voicingNotes.end(), v.getNote()) == voicingNotes.end())
+            {
                 v.release();
+                capture (now, v.getNote(), 0.0f, 1, false);
+            }
 
     for (int note : voicingNotes)
     {
@@ -684,7 +700,7 @@ void Hamamatsu108Processor::updateChordLayer (int chord, int transpose)
         layers::SustainVoice* target = nullptr;
         for (auto& v : chordVoices) if (! v.isActive()) { target = &v; break; }
         if (target == nullptr) for (auto& v : chordVoices) if (v.isReleasing()) { target = &v; break; }
-        if (target != nullptr) target->start (note, 0.8f, kind, rng, noteHz (note));
+        if (target != nullptr) { target->start (note, 0.8f, kind, rng, noteHz (note)); capture (now, note, 0.8f, 1, true); }
     }
 }
 
@@ -711,9 +727,13 @@ void Hamamatsu108Processor::startBassNote()
     const int type = juce::roundToInt (param (apvts, "bassType"));
     if (type == 0) return;
     const auto kind = type == 1 ? layers::Kind::bassSub : type == 2 ? layers::Kind::bassOrgan : layers::Kind::bassSynth;
+    const double now = (double) sampleClock / sr;
+    if (bassVoices[(size_t) bassVoiceIndex].isActive() && ! bassVoices[(size_t) bassVoiceIndex].isReleasing())
+        capture (now, bassVoices[(size_t) bassVoiceIndex].getNote(), 0.0f, 2, false);
     bassVoices[(size_t) bassVoiceIndex].release();
     bassVoiceIndex = 1 - bassVoiceIndex;
     bassVoices[(size_t) bassVoiceIndex].start (bassNext, 0.85f, kind, rng, noteHz (bassNext));
+    capture (now, bassNext, 0.85f, 2, true);
 }
 
 //==============================================================================
@@ -789,6 +809,18 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     int chord = resolveChord();
 
+    // preset preview: a short C major strum when nothing else is playing
+    if (previewRequest.exchange (false))
+    {
+        previewSamplesLeft = (int) (2.2 * sr);
+        sounding = -2;   // force a fresh stroke
+    }
+    if (previewSamplesLeft > 0)
+    {
+        if (chord < 0) chord = chords::index (juce::roundToInt (param (apvts, "keyRoot")), param (apvts, "keyMode") > 0.5f ? 1 : 0);
+        previewSamplesLeft -= numSamples;
+    }
+
     // Chord Memory: record new chords while REC is on
     if (chord >= 0 && chord != memRecordedLast) memRecordChord (chord);
     memRecordedLast = chord;
@@ -826,7 +858,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     // Live Strum / Arp clock (MEMO uses the Live Strum hand)
     const bool arp = chord >= 0 && mode == 1;
-    const bool strumming = chord >= 0 && (mode == 0 || mode == 2 || mode == 1);
+    const bool strumming = chord >= 0 && (mode == 0 || mode == 2 || mode == 1 || previewSamplesLeft > 0);
     const double stepQuarters = rateInQuarters (rateIndex);
     const double samplesPerStep = stepQuarters * 60.0 / bpm * sr;
     auto hit = [&] (int offset, juce::int64 k)
@@ -878,7 +910,10 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             bassType = newBassType;
             bassChord = chord;
             if (chord < 0 || newBassType == 0)
-                for (auto& v : bassVoices) v.release();
+            {
+                for (auto& v : bassVoices)
+                    if (v.isActive() && ! v.isReleasing()) { v.release(); capture ((double) sampleClock / sr, v.getNote(), 0.0f, 2, false); }
+            }
             else
             {
                 bassBeat (0, 0);   // root on every chord change
@@ -959,12 +994,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             {
                 startVoice (events[(size_t) e].note, events[(size_t) e].velocity);
                 if (events[(size_t) e].capture)
-                {
-                    const auto scope = captureFifo.write (1);
-                    const CapturedNote cn { (double) (sampleClock + start) / sr, events[(size_t) e].note, events[(size_t) e].velocity };
-                    if (scope.blockSize1 > 0) captureBuffer[(size_t) scope.startIndex1] = cn;
-                    else if (scope.blockSize2 > 0) captureBuffer[(size_t) scope.startIndex2] = cn;
-                }
+                    capture ((double) (sampleClock + start) / sr, events[(size_t) e].note, events[(size_t) e].velocity, 0, true);
                 flashes |= 1u << (unsigned) events[(size_t) e].visual;
                 events[(size_t) e] = events[(size_t) --numEvents];
             }
@@ -997,17 +1027,21 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     for (auto& v : voices) inUse += v.isActive() ? 1 : 0;
     voicesInUse.store (inUse);
 
-    // model character: tone, width, saturation, bits, hiss (+ AGE)
+    // model character: tone, width, saturation, chorus, bits (Cartridge), hiss only while playing (+ AGE)
     {
         const float cutoff = model.cutoff * (1.0f - 0.65f * age);
         const float c = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * cutoff / (float) sr);
         const float width = model.width;
-        const float sat = model.sat + age * 0.5f;
-        const float satNorm = 1.0f / std::tanh (1.0f + sat * 3.0f);
-        const float bits = model.bits - age * 4.0f;
-        const float steps = std::pow (2.0f, bits - 1.0f);
+        const float sat = model.sat + age * 0.4f;
+        const float drive = 1.0f + sat * 2.5f;
+        const float satNorm = 1.0f / std::tanh (drive);
+        const float bits = model.bits - age * 3.0f;
         const bool crush = bits < 15.5f;
-        const float hiss = model.hiss + age * 0.003f;
+        const float steps = std::pow (2.0f, bits - 1.0f);
+        const float hiss = model.hiss + age * 0.002f;
+        const float chorusAmt = model.chorus;
+        const float relHiss = std::exp (-1.0f / (0.3f * (float) sr));
+        const float fsr = (float) sr;
         for (int i = 0; i < numSamples; ++i)
         {
             float l = left[i], r = right[i];
@@ -1015,14 +1049,38 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             l = mid + side; r = mid - side;
             mlp1L += (l - mlp1L) * c; mlp2L += (mlp1L - mlp2L) * c;
             mlp1R += (r - mlp1R) * c; mlp2R += (mlp1R - mlp2R) * c;
-            l = std::tanh (mlp2L * (1.0f + sat * 3.0f)) * satNorm;
-            r = std::tanh (mlp2R * (1.0f + sat * 3.0f)) * satNorm;
+            l = std::tanh (mlp2L * drive) * satNorm;
+            r = std::tanh (mlp2R * drive) * satNorm;
+            if (chorusAmt > 0.0f)
+            {
+                // built-in ensemble of the model (two slow taps, opposite phase left / right)
+                modelChorusL.push (l); modelChorusR.push (r);
+                const float m1 = harp::sine() (chorusPhase), m2 = harp::sine() (harp::wrap (chorusPhase + 0.5f));
+                const float wl = modelChorusL.read (0.007f * fsr + 0.0025f * fsr * (0.5f + 0.5f * m1));
+                const float wr = modelChorusR.read (0.007f * fsr + 0.0025f * fsr * (0.5f + 0.5f * m2));
+                l = l * (1.0f - 0.4f * chorusAmt) + wl * 0.6f * chorusAmt;
+                r = r * (1.0f - 0.4f * chorusAmt) + wr * 0.6f * chorusAmt;
+                chorusPhase = harp::wrap (chorusPhase + 0.6f / fsr);
+            }
             if (crush)
             {
-                if (--holdCount <= 0) { heldL = std::round (l * steps) / steps; heldR = std::round (r * steps) / steps; holdCount = model.hold; }
+                // 8-bit converter with a little dither and sample-and-hold
+                if (--holdCount <= 0)
+                {
+                    const float d = (rng.nextFloat() - rng.nextFloat()) * 0.5f / steps;
+                    heldL = std::round ((l + d) * steps) / steps;
+                    heldR = std::round ((r + d) * steps) / steps;
+                    holdCount = model.hold;
+                }
                 l = heldL; r = heldR;
             }
-            if (hiss > 0.0f) { l += (rng.nextFloat() - 0.5f) * hiss; r += (rng.nextFloat() - 0.5f) * hiss; }
+            // hiss follows the music, never in silence
+            hissEnv = juce::jmax (std::abs (mid), hissEnv * relHiss);
+            if (hiss > 0.0f)
+            {
+                const float h = hiss * juce::jmin (1.0f, hissEnv * 20.0f);
+                l += (rng.nextFloat() - 0.5f) * h; r += (rng.nextFloat() - 0.5f) * h;
+            }
             left[i] = l; right[i] = r;
         }
     }
@@ -1042,21 +1100,32 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     // DREAM: a huge soft reverb on top
     if (dream > 0.001f)
     {
-        juce::Reverb::Parameters rp;
-        rp.roomSize = 0.94f; rp.damping = 0.3f; rp.width = 1.0f;
-        rp.wetLevel = dream * 0.5f; rp.dryLevel = 1.0f; rp.freezeMode = 0.0f;
-        dreamReverb.setParameters (rp);
-        dreamReverb.processStereo (left, right, numSamples);
+        if ((int) dreamL.size() < numSamples) { dreamL.resize ((size_t) numSamples); dreamR.resize ((size_t) numSamples); }
+        std::copy (left, left + numSamples, dreamL.begin());
+        std::copy (right, right + numSamples, dreamR.begin());
+        dreamReverb.process (dreamL.data(), dreamR.data(), numSamples, 0.92f, 0.35f);
+        for (int i = 0; i < numSamples; ++i) { left[i] += dreamL[(size_t) i] * dream * 0.7f; right[i] += dreamR[(size_t) i] * dream * 0.7f; }
     }
 
     // master + soft limit + meters
     masterGain.setTargetValue (juce::Decibels::decibelsToGain (mp ("master")));
     float pl = 0.0f, pr = 0.0f;
+    // clean peak limiter (ceiling -1 dB): no clipping, no crackle
+    const float ceiling = 0.89f;
+    const float release = std::exp (-1.0f / (0.12f * (float) sr));
+    const float dcCoef = 1.0f - juce::MathConstants<float>::twoPi * 12.0f / (float) sr;   // 12 Hz DC blocker
     for (int i = 0; i < numSamples; ++i)
     {
         const float g = masterGain.getNextValue();
-        left[i] = std::tanh (left[i] * g);
-        right[i] = std::tanh (right[i] * g);
+        float l = left[i] * g, r = right[i] * g;
+        const float hl = l - dcInL + dcCoef * dcOutL; dcInL = l; dcOutL = hl; l = hl;
+        const float hr = r - dcInR + dcCoef * dcOutR; dcInR = r; dcOutR = hr; r = hr;
+        const float peak = juce::jmax (std::abs (l), std::abs (r));
+        const float target = peak > ceiling ? ceiling / peak : 1.0f;
+        limGain = target < limGain ? target : 1.0f - (1.0f - limGain) * release;
+        l *= limGain; r *= limGain;
+        left[i] = juce::jlimit (-1.0f, 1.0f, l);
+        right[i] = juce::jlimit (-1.0f, 1.0f, r);
         pl = juce::jmax (pl, std::abs (left[i]));
         pr = juce::jmax (pr, std::abs (right[i]));
     }

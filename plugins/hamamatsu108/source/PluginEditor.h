@@ -34,6 +34,7 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    bool keyPressed (const juce::KeyPress&) override { return false; }   // let the host have every key
 
 private:
     void timerCallback() override;

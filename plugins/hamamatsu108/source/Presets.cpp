@@ -49,89 +49,101 @@ namespace presets
                 p.model = i % 6;
                 b.set ("model", (float) p.model);
 
+                // musical defaults shared by every preset: clean chorus, a real room, gentle vibrato
+                b.set ("fx1Mix", b.range (0.2f, 0.35f));    // chorus
+                b.set ("fx1A", b.range (0.2f, 0.35f));
+                b.set ("fx1B", b.range (0.3f, 0.5f));
+                b.set ("fx2Mix", b.range (0.08f, 0.18f));   // delay
+                b.set ("fx2A", (float) b.pick ({ 2, 3, 3, 5 }) / 6.0f + 0.01f);
+                b.set ("fx2B", b.range (0.25f, 0.4f));
+                b.set ("fx3Mix", b.range (0.25f, 0.4f));    // reverb
+                b.set ("fx3A", b.range (0.55f, 0.75f));
+                b.set ("fx3B", b.range (0.35f, 0.55f));
+                b.set ("vibDepth", b.range (0.03f, 0.1f));
+                b.set ("vibRate", b.range (4.5f, 5.8f));
+
                 switch (c)
                 {
-                    case 0: // Harp: the classic strummed chime
-                        b.set ("harpVoice", (float) b.pick ({ 0, 0, 0, 1, 3, 7 }));
-                        b.set ("harpTone", b.range (0.5f, 0.82f));
-                        b.set ("harpDecay", b.range (1.4f, 3.2f));
+                    case 0: // Harp: the classic strummed chime, played by a relaxed hand
+                        b.set ("harpVoice", (float) b.pick ({ 0, 0, 0, 0, 1, 7 }));
+                        b.set ("harpTone", b.range (0.55f, 0.75f));
+                        b.set ("harpDecay", b.range (1.8f, 3.0f));
+                        b.set ("harpRange", 3.0f);
                         b.set ("strumRate", (float) b.pick ({ 2, 2, 1 }));
-                        b.set ("strumFeel", b.range (0.4f, 0.8f));
-                        b.set ("strumSpeed", b.range (14.0f, 32.0f));
-                        b.set ("vibDepth", b.range (0.04f, 0.2f));
-                        b.set ("fx1Mix", b.range (0.25f, 0.5f));
-                        b.set ("fx3Mix", b.range (0.4f, 0.65f));
-                        b.set ("fx3A", b.range (0.7f, 0.9f));
-                        if (b.chance (0.35f)) { b.set ("dual", 1.0f); b.set ("harpVoice2", (float) b.pick ({ 9, 5, 1 })); b.set ("morph", b.range (0.2f, 0.45f)); }
+                        b.set ("strumFeel", b.range (0.45f, 0.65f));
+                        b.set ("strumSpeed", b.range (16.0f, 26.0f));
+                        if (b.chance (0.3f)) { b.set ("dual", 1.0f); b.set ("harpVoice2", (float) b.pick ({ 9, 5, 1 })); b.set ("morph", b.range (0.2f, 0.35f)); }
+                        if (b.chance (0.3f)) { b.set ("chordType", 2.0f); b.set ("chordLevel", b.range (-24.0f, -18.0f)); b.set ("chordFilter", 0.45f); }
                         break;
-                    case 1: // Pluck: short and rhythmic
-                        b.set ("harpVoice", (float) b.pick ({ 4, 4, 6, 7, 2, 4 }));
-                        b.set ("harpTone", b.range (0.5f, 0.9f));
-                        b.set ("harpDecay", b.range (0.35f, 1.2f));
-                        b.set ("harpRange", (float) b.pick ({ 2, 3 }));
+                    case 1: // Pluck: short, rhythmic, dry
+                        b.set ("harpVoice", (float) b.pick ({ 4, 4, 4, 6, 7, 2 }));
+                        b.set ("harpTone", b.range (0.5f, 0.75f));
+                        b.set ("harpDecay", b.range (0.6f, 1.3f));
+                        b.set ("harpRange", 2.0f);
                         b.set ("strumRate", (float) b.pick ({ 4, 2, 4 }));
-                        b.set ("strumFeel", b.range (0.3f, 0.7f));
-                        if (b.chance (0.5f)) { b.set ("strumMode", 1.0f); b.set ("arpPattern", (float) b.pick ({ 0, 2, 3, 4 })); b.set ("arpChance", b.range (0.7f, 1.0f)); }
-                        b.set ("fx2Mix", b.range (0.2f, 0.4f));
-                        b.set ("fx2A", b.range (0.15f, 0.5f));
-                        b.set ("fx3Mix", b.range (0.2f, 0.4f));
+                        b.set ("strumFeel", b.range (0.35f, 0.6f));
+                        b.set ("strumSpeed", b.range (10.0f, 18.0f));
+                        if (b.chance (0.5f)) { b.set ("strumMode", 1.0f); b.set ("arpPattern", (float) b.pick ({ 0, 2, 3, 4 })); b.set ("arpChance", b.range (0.85f, 1.0f)); }
+                        b.set ("fx2Mix", b.range (0.15f, 0.28f));
+                        b.set ("fx3Mix", b.range (0.15f, 0.28f));
                         break;
                     case 2: // Bell: long, glassy, spacious
-                        b.set ("harpVoice", (float) b.pick ({ 1, 3, 2, 0, 3, 1 }));
-                        b.set ("harpTone", b.range (0.6f, 0.92f));
-                        b.set ("harpDecay", b.range (3.0f, 7.0f));
+                        b.set ("harpVoice", (float) b.pick ({ 1, 3, 2, 1, 7, 0 }));
+                        b.set ("harpTone", b.range (0.6f, 0.8f));
+                        b.set ("harpDecay", b.range (3.0f, 5.0f));
                         b.set ("harpRange", (float) b.pick ({ 3, 4 }));
                         b.set ("strumRate", (float) b.pick ({ 1, 0, 1 }));
-                        b.set ("strumFeel", b.range (0.3f, 0.6f));
-                        b.set ("strumSpeed", b.range (25.0f, 60.0f));
-                        if (b.chance (0.5f)) { b.set ("fx4Type", 15.0f); b.set ("fx4Mix", b.range (0.25f, 0.45f)); b.set ("fx4A", 0.75f); b.set ("fx4B", 0.5f); }
-                        b.set ("macroDream", b.range (0.1f, 0.4f));
-                        b.set ("fx3Mix", b.range (0.5f, 0.7f));
-                        b.set ("fx3A", b.range (0.8f, 0.95f));
+                        b.set ("strumFeel", b.range (0.35f, 0.55f));
+                        b.set ("strumSpeed", b.range (30.0f, 55.0f));
+                        if (b.chance (0.5f)) { b.set ("fx4Type", 15.0f); b.set ("fx4Mix", b.range (0.15f, 0.28f)); b.set ("fx4A", 0.7f); b.set ("fx4B", 0.5f); }
+                        b.set ("macroDream", b.range (0.08f, 0.22f));
+                        b.set ("fx3Mix", b.range (0.38f, 0.5f));
+                        b.set ("fx3A", b.range (0.75f, 0.88f));
                         break;
-                    case 3: // Keys: harp plus chord layer and bass
-                        b.set ("harpVoice", (float) b.pick ({ 8, 8, 2, 6, 8, 2 }));
-                        b.set ("harpTone", b.range (0.4f, 0.7f));
-                        b.set ("harpDecay", b.range (1.2f, 2.5f));
+                    case 3: // Keys: tines or vibes over a soft organ and a round bass
+                        b.set ("harpVoice", (float) b.pick ({ 8, 8, 2, 8, 6, 2 }));
+                        b.set ("harpTone", b.range (0.45f, 0.65f));
+                        b.set ("harpDecay", b.range (1.4f, 2.4f));
+                        b.set ("strumRate", (float) b.pick ({ 2, 1 }));
+                        b.set ("strumFeel", b.range (0.35f, 0.55f));
+                        b.set ("strumSpeed", b.range (18.0f, 30.0f));
                         b.set ("chordType", (float) b.pick ({ 1, 1, 2 }));
-                        b.set ("chordLevel", b.range (-20.0f, -13.0f));
-                        b.set ("chordFilter", b.range (0.35f, 0.6f));
+                        b.set ("chordLevel", b.range (-22.0f, -16.0f));
+                        b.set ("chordFilter", b.range (0.35f, 0.55f));
                         b.set ("bassType", (float) b.pick ({ 1, 1, 2, 3 }));
                         b.set ("bassMode", (float) b.pick ({ 0, 1, 2 }));
-                        b.set ("bassLevel", b.range (-16.0f, -9.0f));
-                        b.set ("strumFeel", b.range (0.3f, 0.6f));
-                        b.set ("fx1Mix", b.range (0.3f, 0.6f));
-                        if (b.chance (0.4f)) { b.set ("fx4Type", 11.0f); b.set ("fx4Mix", b.range (0.25f, 0.5f)); b.set ("fx4A", 0.4f); b.set ("fx4B", 0.3f); }
+                        b.set ("bassLevel", b.range (-18.0f, -12.0f));
+                        b.set ("bassTone", b.range (0.3f, 0.5f));
+                        if (b.chance (0.4f)) { b.set ("fx4Type", 11.0f); b.set ("fx4Mix", b.range (0.25f, 0.45f)); b.set ("fx4A", 0.3f); b.set ("fx4B", 0.25f); }
                         break;
-                    case 4: // Pad: slow and wide
-                        b.set ("harpVoice", (float) b.pick ({ 9, 5, 9, 1, 5, 9 }));
-                        b.set ("harpTone", b.range (0.35f, 0.65f));
-                        b.set ("harpDecay", b.range (4.0f, 8.0f));
+                    case 4: // Pad: slow strums over a warm layer
+                        b.set ("harpVoice", (float) b.pick ({ 9, 5, 9, 1, 0, 9 }));
+                        b.set ("harpTone", b.range (0.4f, 0.6f));
+                        b.set ("harpDecay", b.range (4.0f, 6.5f));
                         b.set ("chordType", (float) b.pick ({ 2, 3, 4 }));
-                        b.set ("chordLevel", b.range (-12.0f, -6.0f));
-                        b.set ("chordFilter", b.range (0.4f, 0.7f));
+                        b.set ("chordLevel", b.range (-16.0f, -10.0f));
+                        b.set ("chordFilter", b.range (0.4f, 0.6f));
                         b.set ("strumRate", (float) b.pick ({ 0, 1 }));
-                        b.set ("strumFeel", b.range (0.2f, 0.5f));
-                        b.set ("strumSpeed", b.range (40.0f, 80.0f));
-                        b.set ("macroDream", b.range (0.3f, 0.6f));
-                        b.set ("fx3Mix", b.range (0.6f, 0.75f));
-                        b.set ("fx3A", 0.92f);
-                        if (b.chance (0.5f)) { b.set ("dual", 1.0f); b.set ("harpVoice2", (float) b.pick ({ 9, 5 })); b.set ("morph", b.range (0.4f, 0.6f)); }
+                        b.set ("strumFeel", b.range (0.3f, 0.5f));
+                        b.set ("strumSpeed", b.range (40.0f, 70.0f));
+                        b.set ("macroDream", b.range (0.15f, 0.35f));
+                        b.set ("fx3Mix", b.range (0.42f, 0.55f));
+                        b.set ("fx3A", 0.85f);
+                        if (b.chance (0.5f)) { b.set ("dual", 1.0f); b.set ("harpVoice2", (float) b.pick ({ 9, 5 })); b.set ("morph", b.range (0.35f, 0.55f)); }
                         break;
-                    default: // Texture: lo-fi, moving, a little broken
-                        b.set ("harpVoice", (float) b.r.nextInt (10));
-                        b.set ("harpTone", b.range (0.3f, 0.8f));
-                        b.set ("harpDecay", b.range (0.8f, 4.0f));
-                        if (b.chance (0.6f)) { b.set ("strumMode", 1.0f); b.set ("arpPattern", (float) b.pick ({ 5, 4, 5 })); b.set ("arpChance", b.range (0.5f, 0.8f)); b.set ("arpRegen", (float) b.pick ({ 1, 2, 3 })); b.set ("strumRate", (float) b.pick ({ 2, 4 })); }
-                        b.set ("macroAge", b.range (0.3f, 0.8f));
-                        b.set ("macroWobble", b.range (0.2f, 0.6f));
-                        b.set ("fx4Type", (float) b.pick ({ 4, 11, 9, 8 }));
-                        b.set ("fx4Mix", b.range (0.4f, 0.7f));
-                        b.set ("fx4A", b.range (0.3f, 0.7f));
-                        b.set ("fx4B", b.range (0.3f, 0.7f));
-                        b.set ("mod1Src", 1.0f); b.set ("mod1Dst", 1.0f); b.set ("mod1Amt", b.range (0.2f, 0.4f));
-                        b.set ("mod2Src", 4.0f); b.set ("mod2Dst", 17.0f); b.set ("mod2Amt", b.range (0.15f, 0.3f));
-                        b.set ("lfo1Rate", b.range (0.2f, 1.0f));
+                    default: // Texture: well-loved tape, gentle movement
+                        b.set ("harpVoice", (float) b.pick ({ 0, 1, 2, 3, 8, 4 }));
+                        b.set ("harpTone", b.range (0.45f, 0.7f));
+                        b.set ("harpDecay", b.range (1.2f, 3.0f));
+                        if (b.chance (0.6f)) { b.set ("strumMode", 1.0f); b.set ("arpPattern", (float) b.pick ({ 5, 4, 2 })); b.set ("arpChance", b.range (0.65f, 0.85f)); b.set ("arpRegen", (float) b.pick ({ 1, 2, 3 })); b.set ("strumRate", (float) b.pick ({ 2, 4 })); }
+                        b.set ("macroAge", b.range (0.15f, 0.45f));
+                        b.set ("macroWobble", b.range (0.1f, 0.3f));
+                        b.set ("fx4Type", (float) b.pick ({ 11, 11, 9, 8, 4 }));
+                        b.set ("fx4Mix", b.range (0.25f, 0.45f));
+                        b.set ("fx4A", b.range (0.25f, 0.5f));
+                        b.set ("fx4B", b.range (0.25f, 0.5f));
+                        b.set ("mod1Src", 1.0f); b.set ("mod1Dst", 1.0f); b.set ("mod1Amt", b.range (0.1f, 0.2f));
+                        b.set ("lfo1Rate", b.range (0.15f, 0.6f));
                         break;
                 }
                 p.values = std::move (b.v);

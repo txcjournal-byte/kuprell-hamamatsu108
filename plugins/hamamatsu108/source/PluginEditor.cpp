@@ -77,6 +77,8 @@ Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
     topBar.onPrevPreset    = [this] { browser.refresh(); audioProcessor.presetManager->loadNext (-1, browser.filtered()); say ("Preset: " + audioProcessor.presetManager->currentName()); };
     topBar.onNextPreset    = [this] { browser.refresh(); audioProcessor.presetManager->loadNext (1, browser.filtered()); say ("Preset: " + audioProcessor.presetManager->currentName()); };
     topBar.onPresetClicked = [this] { showPage (page == Page::presets ? Page::play : Page::presets); };
+    topBar.onPrevPreset    = [this] { browser.refresh(); audioProcessor.presetManager->loadNext (-1, browser.filtered()); audioProcessor.previewPreset(); say ("Preset: " + audioProcessor.presetManager->currentName()); };
+    topBar.onNextPreset    = [this] { browser.refresh(); audioProcessor.presetManager->loadNext (1, browser.filtered()); audioProcessor.previewPreset(); say ("Preset: " + audioProcessor.presetManager->currentName()); };
     topBar.onSave          = [this] { browser.saveCurrent(); };
     topBar.onCompare       = [this] { compareAB(); };
     topBar.onRandomize     = [this] { showRandomMenu(); };
@@ -93,6 +95,18 @@ Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
                      juce::roundToInt (baseWidth * maxScale), juce::roundToInt (baseHeight * maxScale));
     if (auto* constrainer = getConstrainer())
         constrainer->setFixedAspectRatio ((double) baseWidth / (double) baseHeight);
+
+    // the plugin never keeps the keyboard: space, transport and shortcuts stay with FL Studio
+    std::function<void (juce::Component&)> noFocus = [&noFocus] (juce::Component& c)
+    {
+        if (dynamic_cast<juce::TextEditor*> (&c) == nullptr)
+        {
+            c.setWantsKeyboardFocus (false);
+            c.setMouseClickGrabsKeyboardFocus (false);
+        }
+        for (auto* child : c.getChildren()) noFocus (*child);
+    };
+    noFocus (*this);
 
     const int w = initialWidth();
     intendedWidth = w;

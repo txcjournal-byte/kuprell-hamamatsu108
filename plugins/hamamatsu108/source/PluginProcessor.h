@@ -79,6 +79,7 @@ public:
     //== GUI -> audio requests (lock free)
     void clickChord (int chordIndex)   { pendingChordClick.store (chordIndex); }
     void releaseChord (int chordIndex) { pendingChordRelease.store (chordIndex); }   // mouse up (matters when HOLD is off)
+    void previewPreset() { previewRequest.store (true); }                            // short demo strum after a preset click
     void pluckString (int visualIndex) { pendingPlucks.fetch_or (1u << (unsigned) visualIndex); }
 
     //== audio -> GUI state
@@ -90,7 +91,7 @@ public:
 
     // notes the plugin creates itself (Live Strum, strum plate), for "drag MIDI to the DAW".
     // Notes coming in from the host are not captured: the DAW already has them.
-    struct CapturedNote { double seconds; int note; float velocity; };
+    struct CapturedNote { double seconds; int note; float velocity; int layer = 0; bool on = true; };   // layer: 0 harp, 1 chord, 2 bass
     juce::AbstractFifo captureFifo { 2048 };
     std::array<CapturedNote, 2048> captureBuffer {};
 
@@ -113,7 +114,7 @@ public:
     static const juce::StringArray& arpPatternNames();
     static const juce::StringArray& modelNames();
 
-    struct ModelSpec { float cutoff, width, hiss, bits; int hold; float drift, sat, tone, decay; };
+    struct ModelSpec { float cutoff, width, hiss, bits; int hold; float drift, sat, tone, decay, chorus; };
     static const ModelSpec& modelSpec (int model);
     static int targetIndex (const juce::String& id);
 
@@ -153,6 +154,9 @@ private:
 
     // chord state (audio thread)
     std::atomic<int> pendingChordClick { -1 }, pendingChordRelease { -1 };
+    std::atomic<bool> previewRequest { false };
+    int previewSamplesLeft = 0;
+    void capture (double seconds, int note, float velocity, int layer, bool on);
     std::atomic<std::uint32_t> pendingPlucks { 0 };
     int latchedChord = -1, holdChord = -1, deferredRelease = -1;
     int rootHeldMask = 0, lastRoot = -1, typeHeldStack[16] {}, numTypesHeld = 0;
@@ -192,9 +196,12 @@ private:
     // model, FX, modulation
     juce::AudioBuffer<float> work;
     std::array<fx::FxUnit, fx::numSlots> fxUnits;
-    juce::Reverb dreamReverb;
+    hama::FdnReverb dreamReverb;
+    std::vector<float> dreamL, dreamR;
     juce::SmoothedValue<float> masterGain;
-    float mlp1L = 0, mlp2L = 0, mlp1R = 0, mlp2R = 0, heldL = 0, heldR = 0;
+    float mlp1L = 0, mlp2L = 0, mlp1R = 0, mlp2R = 0, heldL = 0, heldR = 0, hissEnv = 0, limGain = 1.0f, chorusPhase = 0;
+    fx::DelayLine modelChorusL, modelChorusR;
+    float dcInL = 0, dcOutL = 0, dcInR = 0, dcOutR = 0;
     int holdCount = 0;
     float wowPhase = 0, flutterPhase = 0, wobblePhase = 0, morphNow = 0.35f;
     std::array<mod::Lfo, 2> lfos;

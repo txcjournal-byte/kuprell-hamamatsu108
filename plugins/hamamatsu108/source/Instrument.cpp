@@ -269,19 +269,14 @@ namespace hama
             g.drawText ("HAMAMATSU 108", juce::Rectangle<float> (tx, (float) rearY + 36.0f, 240.0f, 14.0f), juce::Justification::centredLeft, false);
 
             // model display (models arrive in step 4)
-            auto disp = juce::Rectangle<float> ((float) (innerX + innerW - 230 - 46), (float) rearY + 6.0f, 230.0f, 46.0f);
+            auto disp = juce::Rectangle<float> ((float) (innerX + innerW - 230), (float) rearY + 6.0f, 230.0f, 46.0f);
             g.setColour (juce::Colours::white.withAlpha (0.12f));
             g.fillRoundedRectangle (disp.expanded (3.0f), 11.0f);
             g.setColour (juce::Colour (0xff1a1c1f));
             g.fillRoundedRectangle (disp.expanded (2.0f), 10.0f);
             drawDisplay (g, disp, 9.0f);
 
-            // power LED
-            const float px = (float) (innerX + innerW - 18);
-            drawLed (g, juce::Rectangle<float> (12.0f, 12.0f).withCentre ({ px, (float) rearY + 22.0f }), true);
-            g.setFont (spaced (8.5f, true, 0.25f));
-            g.setColour (engrave);
-            g.drawText ("POWER", juce::Rectangle<float> (px - 30.0f, (float) rearY + 34.0f, 60.0f, 12.0f), juce::Justification::centred, false);
+
         }
 
         void engravedLabel (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& left, const juce::String& right = {})
@@ -798,6 +793,7 @@ namespace hama
         {
             auto& s = processor.apvts;
             const auto p = e.position;
+            if (juce::Rectangle<float> (12.0f, 12.0f, 192.0f, 42.0f).contains (p)) { showPresetMenu(); return; }
             if (holdArea().contains (p))       setParam (s, "hold", hold ? 0.0f : 1.0f);
             else if (dualArea().contains (p))  showDualMenu();
             else if (trDown().contains (p))    setParam (s, "transpose", (float) juce::jmax (-12, transpose - 1));
@@ -828,6 +824,28 @@ namespace hama
             juce::Component::SafePointer<VoiceModule> safe (this);
             m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (area.toNearestInt())),
                              [safe, f] (int r) { if (safe != nullptr && r > 0) f (r); });
+        }
+
+        // quick preset choice while playing: click the VOICE display
+        void showPresetMenu()
+        {
+            auto& pm = *processor.presetManager;
+            juce::PopupMenu m;
+            m.addSectionHeader ("Presets (click the display to change while playing)");
+            for (int c = 0; c < presets::categories().size(); ++c)
+            {
+                juce::PopupMenu sub;
+                for (int i = 0; i < (int) pm.all().size(); ++i)
+                    if (pm.all()[(size_t) i].category == presets::categories()[c])
+                        sub.addItem (1 + i, pm.all()[(size_t) i].name + (pm.all()[(size_t) i].factory ? juce::String() : juce::String (" (user)")), true, i == pm.getCurrent());
+                m.addSubMenu (presets::categories()[c], sub);
+            }
+            popup (m, { 12.0f, 12.0f, 192.0f, 42.0f }, [this] (int r)
+            {
+                processor.presetManager->load (r - 1);
+                processor.previewPreset();
+                message ("Preset: " + processor.presetManager->currentName());
+            });
         }
 
         void showDualMenu()
@@ -900,7 +918,7 @@ namespace hama
     public:
         explicit MidiCapture (Hamamatsu108Processor& p) : processor (p)
         {
-            setTooltip (juce::String::fromUTF8 ("MIDI capture \xc2\xb7 everything you play is recorded here. Drag it into the FL Studio playlist or piano roll. Right-click: clear."));
+            setTooltip (juce::String::fromUTF8 ("MIDI capture \xc2\xb7 harp, chord layer and bass the plugin plays are recorded here (3 tracks). Drag it into the FL Studio playlist or piano roll. Right-click: clear."));
             setMouseCursor (juce::MouseCursor::DraggingHandCursor);
         }
 
@@ -955,7 +973,9 @@ namespace hama
             {
                 const double secs = notes.back().seconds - notes.front().seconds;
                 const double bars = secs * processor.hostBpm.load() / 240.0;
-                glowText (g, juce::String::fromUTF8 ("DRAG \xe2\x87\xa2 ") + juce::String ((int) notes.size()) + " notes " + juce::String (juce::jmax (1, (int) std::ceil (bars))) + " bar",
+                int ons = 0;
+                for (auto& n : notes) if (n.on) ++ons;
+                glowText (g, juce::String::fromUTF8 ("DRAG \xe2\x87\xa2 ") + juce::String (ons) + " notes " + juce::String (juce::jmax (1, (int) std::ceil (bars))) + " bar",
                           text, juce::Justification::centredLeft);
             }
         }
@@ -993,24 +1013,40 @@ namespace hama
             const double t0 = notes.front().seconds;
             auto toTicks = [&] (double s) { return (s - t0) * bpm / 60.0 * ppq; };
 
-            juce::MidiMessageSequence seq;
-            seq.addEvent (juce::MidiMessage::tempoMetaEvent (juce::roundToInt (60000000.0 / bpm)), 0.0);
-            for (size_t i = 0; i < notes.size(); ++i)
-            {
-                const double on = toTicks (notes[i].seconds);
-                double off = on + ppq / 2.0;
-                for (size_t j = i + 1; j < notes.size(); ++j)
-                    if (notes[j].note == notes[i].note) { off = juce::jmin (off, toTicks (notes[j].seconds) - 1.0); break; }
-                const auto vel = (juce::uint8) juce::jlimit (1, 127, juce::roundToInt (notes[i].velocity * 127.0f));
-                seq.addEvent (juce::MidiMessage::noteOn (1, notes[i].note, vel), on);
-                seq.addEvent (juce::MidiMessage::noteOff (1, notes[i].note), juce::jmax (on + 1.0, off));
-            }
-            seq.updateMatchedPairs();
-            seq.sort();
-
+            // three tracks: harp, chord layer, bass (FL Studio puts each on its own channel)
             juce::MidiFile mf;
             mf.setTicksPerQuarterNote (ppq);
-            mf.addTrack (seq);
+            const double endTicks = toTicks (notes.back().seconds) + ppq;
+            for (int layer = 0; layer < 3; ++layer)
+            {
+                juce::MidiMessageSequence seq;
+                if (layer == 0) seq.addEvent (juce::MidiMessage::tempoMetaEvent (juce::roundToInt (60000000.0 / bpm)), 0.0);
+                static const char* trackNames[] = { "Hamamatsu harp", "Hamamatsu chords", "Hamamatsu bass" };
+                seq.addEvent (juce::MidiMessage::textMetaEvent (3, trackNames[layer]), 0.0);
+                int count = 0;
+                for (size_t i = 0; i < notes.size(); ++i)
+                {
+                    const auto& n = notes[i];
+                    if (n.layer != layer || ! n.on) continue;
+                    const double on = toTicks (n.seconds);
+                    double off = layer == 0 ? on + ppq / 2.0 : endTicks;
+                    for (size_t j = i + 1; j < notes.size(); ++j)
+                        if (notes[j].layer == layer && notes[j].note == n.note)
+                        {
+                            const double t = toTicks (notes[j].seconds) - 1.0;
+                            if (layer == 0) { if (notes[j].on) off = juce::jmin (off, t); }
+                            else { off = t; }
+                            break;
+                        }
+                    const auto vel = (juce::uint8) juce::jlimit (1, 127, juce::roundToInt (n.velocity * 127.0f));
+                    seq.addEvent (juce::MidiMessage::noteOn (1 + layer, n.note, vel), on);
+                    seq.addEvent (juce::MidiMessage::noteOff (1 + layer, n.note), juce::jmax (on + 1.0, off));
+                    ++count;
+                }
+                seq.updateMatchedPairs();
+                seq.sort();
+                if (count > 0 || layer == 0) mf.addTrack (seq);
+            }
 
             auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Kuprell Hamamatsu 108");
             dir.createDirectory();
@@ -1311,7 +1347,7 @@ namespace hama
             setTooltip ("Model: six eras of the instrument, from the dark early 81 to the hi-fi Modern Strum. Click to choose.");
             setMouseCursor (juce::MouseCursor::PointingHandCursor);
         }
-        static juce::Rectangle<int> area() { return { geo::innerX + geo::innerW - 230 - 46, geo::rearY + 6, 230, 46 }; }
+        static juce::Rectangle<int> area() { return { geo::innerX + geo::innerW - 230, geo::rearY + 6, 230, 46 }; }
 
         void update()
         {

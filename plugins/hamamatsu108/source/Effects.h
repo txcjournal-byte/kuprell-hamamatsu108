@@ -2,6 +2,7 @@
 
 #include <juce_dsp/juce_dsp.h>
 #include "Layers.h"
+#include "Reverb.h"
 #include <array>
 #include <cmath>
 
@@ -114,7 +115,7 @@ namespace fx
             const int maxDelay = (int) (sr * 2.6);
             for (auto* d : { &dl, &dr }) d->prepare (maxDelay);
             for (auto* d : { &ml, &mr }) d->prepare ((int) (sr * 0.06));
-            reverb.setSampleRate (sr);
+            reverb.prepare (sr);
             juce::dsp::ProcessSpec spec { sr, (juce::uint32) juce::jmax (1, maxBlock), 2 };
             comp.prepare (spec);
             limiter.prepare (spec);
@@ -310,11 +311,6 @@ namespace fx
                 }
                 case 14: case 15: // reverb, shimmer
                 {
-                    juce::Reverb::Parameters p;
-                    p.roomSize = type == 15 ? 0.5f + a * 0.32f : 0.5f + a * 0.48f;
-                    p.damping = type == 15 ? 0.2f : b;
-                    p.width = 1.0f; p.wetLevel = 1.0f; p.dryLevel = 0.0f;
-                    reverb.setParameters (p);
                     if (type == 15)
                         for (int i = 0; i < n; ++i)
                         {
@@ -322,8 +318,7 @@ namespace fx
                             wl[i] += shLp.lp (shL.process (wl[i]), 0.3f) * b * 0.8f;
                             wr[i] += shRp.lp (shR.process (wr[i]), 0.3f) * b * 0.8f;
                         }
-                    reverb.processStereo (wl, wr, n);
-                    for (int i = 0; i < n; ++i) { wl[i] *= 0.6f; wr[i] *= 0.6f; }
+                    reverb.process (wl, wr, n, type == 15 ? 0.35f + a * 0.6f : a, type == 15 ? 0.25f : b);
                     break;
                 }
                 case 16: // limiter
@@ -350,7 +345,7 @@ namespace fx
         double sr = 44100.0;
         int lastType = -1;
         DelayLine dl, dr, ml, mr;
-        juce::Reverb reverb;
+        hama::FdnReverb reverb;
         juce::dsp::Compressor<float> comp;
         juce::dsp::Limiter<float> limiter;
         layers::Svf svfL, svfR, spkL, spkR, spk2L, spk2R;

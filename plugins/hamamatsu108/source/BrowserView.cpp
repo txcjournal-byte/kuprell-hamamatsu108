@@ -27,6 +27,8 @@ namespace hama
         search.setColour (juce::TextEditor::focusedOutlineColourId, th().accent);
         search.setColour (juce::TextEditor::textColourId, th().soft);
         search.onTextChange = [this] { refresh(); };
+        search.onReturnKey = [this] { search.giveAwayKeyboardFocus(); };
+        search.onEscapeKey = [this] { search.giveAwayKeyboardFocus(); };
         addAndMakeVisible (search);
 
         refresh();
@@ -38,6 +40,7 @@ namespace hama
     void BrowserView::visibilityChanged()
     {
         if (isVisible()) { processor.presetManager->rescanUser(); refresh(); }
+        else search.giveAwayKeyboardFocus();
     }
 
     void BrowserView::refresh()
@@ -248,6 +251,7 @@ namespace hama
         auto& pm = *processor.presetManager;
         if (e.x < 40) { pm.toggleFavourite (idx); if (category == 7) refresh(); list.repaint(); return; }
         pm.load (idx);
+        processor.previewPreset();   // let it be heard right away
         if (onStatus) onStatus ("Preset", pm.currentName());
         list.repaint();
         repaint();
