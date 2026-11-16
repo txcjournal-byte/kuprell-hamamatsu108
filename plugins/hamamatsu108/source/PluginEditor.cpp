@@ -50,13 +50,15 @@ void StatusBar::paint (juce::Graphics& g)
 
 //==============================================================================
 Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
-    : AudioProcessorEditor (&p), audioProcessor (p), instrument (p)
+    : AudioProcessorEditor (&p), audioProcessor (p), instrument (p), editView (p)
 {
     setLookAndFeel (&lookAndFeel);
 
     addAndMakeVisible (content);
     content.addAndMakeVisible (topBar);
     content.addAndMakeVisible (instrument);
+    content.addChildComponent (editView);
+    editView.onStatus = [this] (const juce::String& n, const juce::String& v) { status.setText (n, v); };
     content.addAndMakeVisible (status);
 
     topBar.setPreset ("Init", "Init", false);
@@ -72,7 +74,7 @@ Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
     topBar.onRedo          = topBar.onUndo;
     topBar.onHelp          = [this] { say ("Help mode arrives in step 6."); };
     topBar.onSettings      = [this] { showSettingsMenu(); };
-    topBar.onEdit          = [this] { say ("The EDIT pages arrive in steps 3 and 4."); };
+    topBar.onEdit          = [this] { showEdit (! editView.isVisible()); };
     topBar.onLogoClicked   = [this] { say ("About window arrives in step 6."); };
 
     // resizable 50 % - 200 %, fixed aspect ratio; opens at the last used size, or fitted to the screen
@@ -149,6 +151,13 @@ void Hamamatsu108Editor::showSettingsMenu()
     });
 }
 
+void Hamamatsu108Editor::showEdit (bool shouldShow)
+{
+    editView.setVisible (shouldShow);
+    instrument.setVisible (! shouldShow);
+    topBar.setEditActive (shouldShow);
+}
+
 void Hamamatsu108Editor::paint (juce::Graphics& g)
 {
     g.fillAll (colours::window);
@@ -166,6 +175,7 @@ void Hamamatsu108Editor::resized()
 
     topBar.setBounds (0, 0, baseWidth, TopBar::height);
     instrument.setBounds (0, TopBar::height, baseWidth, baseHeight - TopBar::height - StatusBar::height);
+    editView.setBounds (instrument.getBounds());
     status.setBounds (0, baseHeight - StatusBar::height, baseWidth, StatusBar::height);
 }
 

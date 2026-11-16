@@ -3,6 +3,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "PluginProcessor.h"
 #include "Instrument.h"
+#include "EditView.h"
 #include "KuprellLookAndFeel.h"
 #include "KuprellTopBar.h"
 
@@ -48,6 +49,8 @@ private:
     juce::Component content;            // drawn at 1280 x 760 and scaled as a whole (50-200 %)
     kuprell::TopBar topBar { "Hamamatsu 108" };
     hama::InstrumentView instrument;
+    hama::EditView editView;
+    void showEdit (bool shouldShow);
     StatusBar status;
     juce::TooltipWindow tooltips { this, 700 };
 
