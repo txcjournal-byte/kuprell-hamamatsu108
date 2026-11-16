@@ -39,6 +39,7 @@ namespace hama
     class MidiCapture;
     class MemoryRail;
     class GroupSelector;
+    class ModelDisplay;
 
     class InstrumentView : public juce::Component, private juce::Timer
     {
@@ -64,6 +65,8 @@ namespace hama
         std::unique_ptr<MidiCapture> capture;
         std::unique_ptr<MemoryRail> rail;
         std::unique_ptr<GroupSelector> chordSel, bassSel;
+        std::unique_ptr<ModelDisplay> modelDisplay;
+        std::array<kuprell::Knob*, 3> fxKnobs {};
         juce::OwnedArray<kuprell::Knob> deckKnobs;
         juce::Array<juce::Rectangle<int>> groupBounds;
 

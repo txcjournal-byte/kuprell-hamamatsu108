@@ -32,6 +32,9 @@ namespace kuprell
         void resized() override;
 
         int getKnobSize() const noexcept { return knobSize; }
+        void setLabel (const juce::String& newLabel) { if (newLabel != label) { label = newLabel; repaint(); } }
+        void setStyle (const Style& s);
+        juce::Slider& getSlider() noexcept;
         juce::String getDisplayName() const;
         juce::String getValueText() const;
 

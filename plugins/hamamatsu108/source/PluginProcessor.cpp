@@ -18,6 +18,92 @@ const juce::StringArray& Hamamatsu108Processor::strumModeNames()
     return n;
 }
 
+const juce::StringArray& Hamamatsu108Processor::modelNames()
+{
+    static const juce::StringArray n { "Early 81", "System 84", "Tone Bank 89", "Late 90s", "Cartridge 99", "Modern Strum" };
+    return n;
+}
+
+const Hamamatsu108Processor::ModelSpec& Hamamatsu108Processor::modelSpec (int m)
+{
+    //                                   cutoff  width  hiss     bits   hold  drift  sat    tone   decay
+    static const ModelSpec specs[] = { { 4800.0f, 0.35f, 0.0009f, 12.0f, 1, 6.0f, 0.35f, 0.75f, 0.85f },   // Early 81: dark, narrow, a bit noisy
+                                       { 8500.0f, 0.60f, 0.0004f, 14.0f, 1, 3.0f, 0.20f, 0.90f, 1.00f },   // System 84: the classic
+                                       { 12000.0f, 0.85f, 0.0002f, 16.0f, 1, 2.0f, 0.15f, 1.00f, 1.05f },  // Tone Bank 89: brighter
+                                       { 16000.0f, 1.00f, 0.0f,    16.0f, 1, 0.0f, 0.10f, 1.05f, 1.10f },  // Late 90s: clean
+                                       { 7000.0f, 0.70f, 0.0006f,  8.0f, 2, 1.0f, 0.30f, 0.95f, 0.90f },   // Cartridge 99: lo-fi
+                                       { 20000.0f, 1.20f, 0.0f,    16.0f, 1, 0.0f, 0.05f, 1.10f, 1.20f } }; // Modern Strum: hi-fi, wide
+    return specs[juce::jlimit (0, 5, m)];
+}
+
+int Hamamatsu108Processor::targetIndex (const juce::String& id)
+{
+    return mod::targetIds().indexOf (id);
+}
+
+float Hamamatsu108Processor::mp (const char* id) const
+{
+    auto* p = apvts.getParameter (id);
+    const int t = targetIndex (id);
+    if (p == nullptr) return 0.0f;
+    if (t <= 0 || std::abs (modOffset[(size_t) t]) < 1.0e-5f) return apvts.getRawParameterValue (id)->load();
+    return p->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, p->getValue() + modOffset[(size_t) t]));
+}
+
+void Hamamatsu108Processor::updateModulation (int numSamples, bool hostPlaying, double ppq)
+{
+    const double secs = numSamples / sr;
+    auto P = [this] (const juce::String& id) { return apvts.getRawParameterValue (id)->load(); };
+
+    std::array<float, mod::numSources> src {};
+    for (int i = 0; i < 2; ++i)
+    {
+        const juce::String id ("lfo" + juce::String (i + 1));
+        const int shape = juce::roundToInt (P (id + "Shape"));
+        const int sync = juce::roundToInt (P (id + "Sync"));
+        auto& l = lfos[(size_t) i];
+        if (sync > 0 && hostPlaying)
+        {
+            const double q = mod::syncQuarters (sync);
+            l.phase = std::fmod (ppq / q, 1.0);
+            src[(size_t) (mod::lfo1 + i)] = l.advance (0.0, shape);
+        }
+        else
+        {
+            const double hz = sync > 0 ? bpm / 60.0 / mod::syncQuarters (sync) : P (id + "Rate");
+            src[(size_t) (mod::lfo1 + i)] = l.advance (hz * secs, shape);
+        }
+    }
+    std::array<float, mod::funcPoints> pts {};
+    for (int i = 0; i < mod::funcPoints; ++i) pts[(size_t) i] = P ("funcP" + juce::String (i + 1));
+    src[mod::function] = func.advance (P ("funcRate") * secs, juce::roundToInt (P ("funcMode")), pts);
+    src[mod::random] = randomSrc.advance (P ("randRate") * secs, P ("randSmooth"), P ("randChaos"), (float) secs);
+    src[mod::velocity] = lastVelocity;
+    src[mod::modWheel] = modWheel;
+    src[mod::aftertouch] = aftertouch;
+    src[mod::morph] = P ("morph");
+    src[mod::age] = P ("macroAge");
+    src[mod::dream] = P ("macroDream");
+    src[mod::wobble] = P ("macroWobble");
+    for (size_t i = 0; i < src.size(); ++i) modSources[i].store (src[i]);
+
+    modOffset.fill (0.0f);
+    for (int i = 1; i <= mod::matrixSlots; ++i)
+    {
+        const juce::String n (i);
+        const int sIdx = juce::roundToInt (P ("mod" + n + "Src"));
+        const int dIdx = juce::roundToInt (P ("mod" + n + "Dst"));
+        if (sIdx > 0 && dIdx > 0) modOffset[(size_t) dIdx] += P ("mod" + n + "Amt") * src[(size_t) sIdx];
+    }
+    const float morphValue = P ("morph");
+    for (int i = 1; i <= mod::morphSlots; ++i)
+    {
+        const juce::String n (i);
+        const int dIdx = juce::roundToInt (P ("morph" + n + "Dst"));
+        if (dIdx > 0) modOffset[(size_t) dIdx] += P ("morph" + n + "Amt") * morphValue;
+    }
+}
+
 const juce::StringArray& Hamamatsu108Processor::arpPatternNames()
 {
     static const juce::StringArray n { "Up", "Down", "Up / Down", "Thumb", "Mirror", "Random" };
@@ -110,9 +196,55 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     fl ("vibRate", "Vibrato Rate", 0.5f, 9.0f, 5.2f, [] (float v, int) { return String (v, 1) + " Hz"; });
     fl ("vibDepth", "Vibrato Depth", 0.0f, 1.0f, 0.12f, pct);
 
-    fl ("fxChorus", "Chorus", 0.0f, 1.0f, 0.45f, pct);
-    fl ("fxDelay", "Delay", 0.0f, 1.0f, 0.22f, pct);
-    fl ("fxReverb", "Reverb", 0.0f, 1.0f, 0.55f, pct);
+    // step 4: model, FX slots, modulation
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "model", 1 }, "Model", modelNames(), 1));
+    {
+        const int defType[] = { 7, 12, 14, 0, 0, 0, 0, 0 };
+        const float defA[] = { 0.3f, 0.45f, 0.8f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+        const float defB[] = { 0.45f, 0.4f, 0.45f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+        const float defMix[] = { 0.45f, 0.22f, 0.55f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+        for (int i = 0; i < fx::numSlots; ++i)
+        {
+            const String n (i + 1), id ("fx" + n);
+            layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id + "Type", 1 }, "FX " + n + " Type", fx::names(), defType[i]));
+            layout.add (std::make_unique<AudioParameterBool> (ParameterID { id + "On", 1 }, "FX " + n + " On", true));
+            fl ((id + "A").toRawUTF8(), ("FX " + n + " A").toRawUTF8(), 0.0f, 1.0f, defA[i], pct);
+            fl ((id + "B").toRawUTF8(), ("FX " + n + " B").toRawUTF8(), 0.0f, 1.0f, defB[i], pct);
+            fl ((id + "Mix").toRawUTF8(), ("FX " + n + " Mix").toRawUTF8(), 0.0f, 1.0f, defMix[i], pct);
+        }
+    }
+    for (int i = 1; i <= 2; ++i)
+    {
+        const String id ("lfo" + String (i));
+        fl ((id + "Rate").toRawUTF8(), ("LFO " + String (i) + " Rate").toRawUTF8(), 0.02f, 20.0f, i == 1 ? 0.8f : 3.0f, [] (float v, int) { return String (v, 2) + " Hz"; }, 1.0f);
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id + "Shape", 1 }, "LFO " + String (i) + " Shape", mod::lfoShapeNames(), 0));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id + "Sync", 1 }, "LFO " + String (i) + " Sync", mod::lfoSyncNames(), 0));
+    }
+    fl ("funcRate", "Function Rate", 0.02f, 10.0f, 0.5f, [] (float v, int) { return String (v, 2) + " Hz"; }, 0.8f);
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "funcMode", 1 }, "Function Mode", mod::funcModeNames(), 0));
+    {
+        const float pts[] = { 0.0f, 0.85f, 1.0f, 0.7f, 0.55f, 0.4f, 0.2f, 0.0f };
+        for (int i = 0; i < mod::funcPoints; ++i)
+            fl (("funcP" + String (i + 1)).toRawUTF8(), ("Function Point " + String (i + 1)).toRawUTF8(), 0.0f, 1.0f, pts[i], pct);
+    }
+    fl ("randRate", "Random Rate", 0.05f, 20.0f, 2.0f, [] (float v, int) { return String (v, 2) + " Hz"; }, 1.5f);
+    fl ("randSmooth", "Random Smooth", 0.0f, 1.0f, 0.5f, pct);
+    fl ("randChaos", "Random Chaos", 0.0f, 1.0f, 0.3f, pct);
+    for (int i = 1; i <= mod::matrixSlots; ++i)
+    {
+        const String n (i);
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "mod" + n + "Src", 1 }, "Mod " + n + " Source", mod::sourceNames(), 0));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "mod" + n + "Dst", 1 }, "Mod " + n + " Target", mod::targetNames(), 0));
+        fl (("mod" + n + "Amt").toRawUTF8(), ("Mod " + n + " Amount").toRawUTF8(), -1.0f, 1.0f, 0.0f, [] (float v, int) { return (v > 0 ? "+" : "") + String (roundToInt (v * 100.0f)) + " %"; });
+    }
+    for (int i = 1; i <= mod::morphSlots; ++i)
+    {
+        const String n (i);
+        const int defDst = i == 1 ? 17 : i == 2 ? 2 : 0;   // morph: more reverb, longer decay
+        const float defAmt = i == 1 ? 0.3f : i == 2 ? 0.25f : 0.0f;
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "morph" + n + "Dst", 1 }, "Morph " + n + " Target", mod::targetNames(), defDst));
+        fl (("morph" + n + "Amt").toRawUTF8(), ("Morph " + n + " Amount").toRawUTF8(), -1.0f, 1.0f, defAmt, [] (float v, int) { return (v > 0 ? "+" : "") + String (roundToInt (v * 100.0f)) + " %"; });
+    }
 
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumMode", 1 }, "Strum Mode", strumModeNames(), 0));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumRate", 1 }, "Strum Rate", strumRateNames(), 2));
@@ -158,21 +290,11 @@ void Hamamatsu108Processor::prepareToPlay (double sampleRate, int samplesPerBloc
     numEvents = 0;
     pitchMul.assign ((size_t) juce::jmax (32, samplesPerBlock), 1.0f);
 
-    juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) juce::jmax (1, samplesPerBlock), 2 };
-    chorus.prepare (spec);
-    chorus.setRate (0.55f);
-    chorus.setDepth (0.22f);
-    chorus.setCentreDelay (9.0f);
-    chorus.setFeedback (0.0f);
-
-    reverb.setSampleRate (sampleRate);
-    reverb.reset();
-
-    delayBuffer.setSize (2, (int) (sampleRate * 2.5) + 1);
-    delayBuffer.clear();
-    delayWrite = 0;
-
-    for (auto* s : { &masterGain, &chorusMix, &delayMix, &reverbMix })
+    for (auto& u : fxUnits) u.prepare (sampleRate, juce::jmax (32, samplesPerBlock));
+    dreamReverb.setSampleRate (sampleRate);
+    dreamReverb.reset();
+    work.setSize (2, juce::jmax (32, samplesPerBlock));
+    for (auto* s : { &masterGain })
         s->reset (sampleRate, 0.05);
     masterGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (param (apvts, "master")));
 }
@@ -200,6 +322,7 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
     if (m.isNoteOn())
     {
         const int n = m.getNoteNumber();
+        lastVelocity = m.getFloatVelocity();
         if (n >= rootZoneLow && n <= rootZoneHigh)
         {
             lastRoot = n - rootZoneLow;
@@ -244,6 +367,12 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
                 }
         }
     }
+    else if (m.isController() && m.getControllerNumber() == 1)
+        modWheel = m.getControllerValue() / 127.0f;
+    else if (m.isChannelPressure())
+        aftertouch = m.getChannelPressureValue() / 127.0f;
+    else if (m.isAftertouch())
+        aftertouch = m.getAfterTouchValue() / 127.0f;
     else if (m.isAllNotesOff() || m.isAllSoundOff())
     {
         rootHeldMask = 0;
@@ -306,8 +435,8 @@ void Hamamatsu108Processor::scheduleStrum (int offset, bool down)
     const int n = (int) tones.size();
     if (n == 0) return;
 
-    const float feel = param (apvts, "strumFeel");
-    const float speedMs = param (apvts, "strumSpeed");
+    const float feel = mp ("strumFeel");
+    const float speedMs = mp ("strumSpeed");
     auto rnd = [this] { return rng.nextFloat(); };
 
     // a loose hand sometimes skips a light up-stroke
@@ -344,9 +473,12 @@ void Hamamatsu108Processor::scheduleStrum (int offset, bool down)
 
 void Hamamatsu108Processor::startVoice (int note, float velocity)
 {
-    startHarp (voiceSettings, note, velocity);
-    if (dualOn)
-        startHarp (voiceSettings2, note, velocity * 0.75f);
+    if (! dualOn) { startHarp (voiceSettings, note, velocity); return; }
+    // MORPH blends layer A and layer B (equal power)
+    const float m = juce::jlimit (0.0f, 1.0f, morphNow);
+    const float gA = std::cos (m * juce::MathConstants<float>::halfPi), gB = std::sin (m * juce::MathConstants<float>::halfPi);
+    if (gA > 0.05f) startHarp (voiceSettings, note, velocity * gA);
+    if (gB > 0.05f) startHarp (voiceSettings2, note, velocity * gB);
 }
 
 void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note, float velocity)
@@ -374,7 +506,7 @@ void Hamamatsu108Processor::scheduleArpStep (int offset)
     if (n == 0) return;
 
     const int pattern = juce::roundToInt (param (apvts, "arpPattern"));
-    const float chance = param (apvts, "arpChance");
+    const float chance = mp ("arpChance");
     const int regen = juce::roundToInt (param (apvts, "arpRegen"));
     const double stepQ = rateInQuarters (juce::roundToInt (param (apvts, "strumRate")));
     static const int regenBars[] = { 1, 1, 2, 4 };
@@ -483,9 +615,21 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     if ((int) pitchMul.size() < numSamples) pitchMul.resize ((size_t) numSamples, 1.0f);
 
     // parameters
+    // modulation first: everything below reads modulated values
+    {
+        bool playing = false; double pq = 0.0;
+        if (auto* ph = getPlayHead())
+            if (auto pos = ph->getPosition())
+                if (pos->getIsPlaying())
+                    if (auto p = pos->getPpqPosition()) { playing = true; pq = *p; }
+        updateModulation (numSamples, playing, pq);
+    }
+    const auto& model = modelSpec (juce::roundToInt (param (apvts, "model")));
+    const float age = param (apvts, "macroAge"), dream = param (apvts, "macroDream"), wobble = param (apvts, "macroWobble");
+    morphNow = param (apvts, "morph");
     voiceSettings.model = (harp::Model) juce::roundToInt (param (apvts, "harpVoice"));
-    voiceSettings.tone = param (apvts, "harpTone");
-    voiceSettings.decay = param (apvts, "harpDecay");
+    voiceSettings.tone = juce::jlimit (0.0f, 1.0f, mp ("harpTone") * model.tone * (1.0f - 0.35f * age));
+    voiceSettings.decay = mp ("harpDecay") * model.decay * (1.0f + 1.2f * dream);
     const int range = juce::roundToInt (param (apvts, "harpRange"));
     const int transpose = juce::roundToInt (param (apvts, "transpose"));
     const int mode = juce::roundToInt (param (apvts, "strumMode"));
@@ -659,29 +803,40 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
     }
 
+    if (chord != sounding && chord >= 0 && juce::roundToInt (param (apvts, "funcMode")) != 0)
+        func.trigger();   // one-shot and key trig restart on every new chord
     sounding = chord;
     wasStrumming = strumming;
     samplesSinceTrigger = juce::jmin (samplesSinceTrigger + numSamples, 1 << 29);
 
     // vibrato
-    const float vibRate = param (apvts, "vibRate");
-    const float vibDepth = param (apvts, "vibDepth") * 0.45f / 12.0f;   // up to ~0.45 semitone
+    // pitch: vibrato + model drift + AGE wow/flutter + WOBBLE
+    const float vibRate = mp ("vibRate");
+    const float vibDepth = juce::jlimit (0.0f, 1.0f, mp ("vibDepth")) * 0.45f / 12.0f;   // up to ~0.45 semitone
     const float vibInc = vibRate / (float) sr;
+    const float driftDepth = (model.drift + age * 14.0f) / 1200.0f;
+    const float wobbleDepth = wobble * 0.3f / 12.0f;
     for (int i = 0; i < numSamples; ++i)
     {
-        pitchMul[(size_t) i] = std::exp2 (vibDepth * harp::sine() (vibPhase));
+        const float drift = driftDepth * (0.7f * harp::sine() (wowPhase) + 0.3f * harp::sine() (flutterPhase) * age);
+        const float wob = wobbleDepth * (harp::sine() (wobblePhase) + 0.3f * harp::sine() (vibPhase));
+        pitchMul[(size_t) i] = std::exp2 (vibDepth * harp::sine() (vibPhase) + drift + wob);
         vibPhase = harp::wrap (vibPhase + vibInc);
+        wowPhase = harp::wrap (wowPhase + 0.45f / (float) sr);
+        flutterPhase = harp::wrap (flutterPhase + 6.5f / (float) sr);
+        wobblePhase = harp::wrap (wobblePhase + 0.8f / (float) sr);
     }
 
-    const float chordTone = param (apvts, "chordFilter");
-    const float chordGain = juce::Decibels::decibelsToGain (param (apvts, "chordLevel"), -47.9f) * 0.9f;
-    const float bassTone = param (apvts, "bassTone");
-    const float bassGain = juce::Decibels::decibelsToGain (param (apvts, "bassLevel"), -47.9f) * 0.9f;
+    const float chordTone = mp ("chordFilter") * (1.0f - 0.4f * age);
+    const float chordGain = juce::Decibels::decibelsToGain (mp ("chordLevel"), -47.9f) * 0.9f;
+    const float bassTone = mp ("bassTone");
+    const float bassGain = juce::Decibels::decibelsToGain (mp ("bassLevel"), -47.9f) * 0.9f;
 
     // render in small slices so strum notes start close to their exact time
-    auto* left = buffer.getWritePointer (0);
-    auto* right = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr;
-    std::array<float, 32> tmpR {};
+    if (work.getNumSamples() < numSamples) work.setSize (2, numSamples, false, false, true);
+    work.clear();
+    auto* left = work.getWritePointer (0);
+    auto* right = work.getWritePointer (1);
     std::uint32_t flashes = 0;
 
     for (int start = 0; start < numSamples; start += 32)
@@ -706,7 +861,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             else ++e;
         }
 
-        float* r = right != nullptr ? right + start : tmpR.data();
+        float* r = right + start;
         for (auto& v : voices)
             v.render (left + start, r, len, pitchMul.data() + start, rng);
 
@@ -732,68 +887,79 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     for (auto& v : voices) inUse += v.isActive() ? 1 : 0;
     voicesInUse.store (inUse);
 
-    if (right == nullptr) // mono host: nothing more to spread
-        right = left;
-
-    // FX: chorus -> delay -> reverb
-    chorusMix.setTargetValue (param (apvts, "fxChorus"));
-    delayMix.setTargetValue (param (apvts, "fxDelay"));
-    reverbMix.setTargetValue (param (apvts, "fxReverb"));
-    masterGain.setTargetValue (juce::Decibels::decibelsToGain (param (apvts, "master")));
-
-    if (buffer.getNumChannels() > 1)
+    // model character: tone, width, saturation, bits, hiss (+ AGE)
     {
-        chorus.setMix (chorusMix.getNextValue() * 0.55f);
-        chorusMix.skip (numSamples - 1);
-        juce::dsp::AudioBlock<float> block (buffer);
-        chorus.process (juce::dsp::ProcessContextReplacing<float> (block));
+        const float cutoff = model.cutoff * (1.0f - 0.65f * age);
+        const float c = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * cutoff / (float) sr);
+        const float width = model.width;
+        const float sat = model.sat + age * 0.5f;
+        const float satNorm = 1.0f / std::tanh (1.0f + sat * 3.0f);
+        const float bits = model.bits - age * 4.0f;
+        const float steps = std::pow (2.0f, bits - 1.0f);
+        const bool crush = bits < 15.5f;
+        const float hiss = model.hiss + age * 0.003f;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            float l = left[i], r = right[i];
+            const float mid = 0.5f * (l + r), side = 0.5f * (l - r) * width;
+            l = mid + side; r = mid - side;
+            mlp1L += (l - mlp1L) * c; mlp2L += (mlp1L - mlp2L) * c;
+            mlp1R += (r - mlp1R) * c; mlp2R += (mlp1R - mlp2R) * c;
+            l = std::tanh (mlp2L * (1.0f + sat * 3.0f)) * satNorm;
+            r = std::tanh (mlp2R * (1.0f + sat * 3.0f)) * satNorm;
+            if (crush)
+            {
+                if (--holdCount <= 0) { heldL = std::round (l * steps) / steps; heldR = std::round (r * steps) / steps; holdCount = model.hold; }
+                l = heldL; r = heldR;
+            }
+            if (hiss > 0.0f) { l += (rng.nextFloat() - 0.5f) * hiss; r += (rng.nextFloat() - 0.5f) * hiss; }
+            left[i] = l; right[i] = r;
+        }
     }
 
-    const int delayLen = delayBuffer.getNumSamples();
-    const int delaySamples = juce::jlimit (1, delayLen - 1, (int) (0.75 * 60.0 / bpm * sr));   // dotted 1/8
-    auto* dl = delayBuffer.getWritePointer (0);
-    auto* dr = delayBuffer.getWritePointer (1);
-    for (int i = 0; i < numSamples; ++i)
+    // FX chain: 8 slots in order
+    for (int i = 0; i < fx::numSlots; ++i)
     {
-        const int readPos = (delayWrite - delaySamples + delayLen) % delayLen;
-        const float yl = dl[readPos], yr = dr[readPos];
-        delayLpL += (yl - delayLpL) * 0.35f;
-        delayLpR += (yr - delayLpR) * 0.35f;
-        const float inL = left[i], inR = right[i];
-        // cross-feedback = gentle ping-pong
-        dl[delayWrite] = inL + delayLpR * 0.42f;
-        dr[delayWrite] = inR + delayLpL * 0.42f;
-        delayWrite = (delayWrite + 1) % delayLen;
-        const float mix = delayMix.getNextValue() * 0.5f;
-        left[i] = inL + yl * mix;
-        if (right != left) right[i] = inR + yr * mix;
+        const juce::String id ("fx" + juce::String (i + 1));
+        const int type = juce::roundToInt (param (apvts, (id + "Type").toRawUTF8()));
+        if (param (apvts, (id + "On").toRawUTF8()) < 0.5f) continue;
+        const float a = i < 4 ? mp ((id + "A").toRawUTF8()) : param (apvts, (id + "A").toRawUTF8());
+        const float b = param (apvts, (id + "B").toRawUTF8());
+        const float mixv = i < 4 ? mp ((id + "Mix").toRawUTF8()) : param (apvts, (id + "Mix").toRawUTF8());
+        fxUnits[(size_t) i].process (type, a, b, mixv, left, right, numSamples, bpm);
     }
 
-    juce::Reverb::Parameters rp;
-    rp.roomSize = 0.82f;
-    rp.damping = 0.45f;
-    rp.width = 1.0f;
-    rp.wetLevel = reverbMix.getNextValue() * 0.55f;
-    rp.dryLevel = 1.0f - reverbMix.getCurrentValue() * 0.25f;
-    reverbMix.skip (numSamples - 1);
-    reverb.setParameters (rp);
-    if (right != left) reverb.processStereo (left, right, numSamples);
-    else reverb.processMono (left, numSamples);
+    // DREAM: a huge soft reverb on top
+    if (dream > 0.001f)
+    {
+        juce::Reverb::Parameters rp;
+        rp.roomSize = 0.94f; rp.damping = 0.3f; rp.width = 1.0f;
+        rp.wetLevel = dream * 0.5f; rp.dryLevel = 1.0f; rp.freezeMode = 0.0f;
+        dreamReverb.setParameters (rp);
+        dreamReverb.processStereo (left, right, numSamples);
+    }
 
     // master + soft limit + meters
+    masterGain.setTargetValue (juce::Decibels::decibelsToGain (mp ("master")));
     float pl = 0.0f, pr = 0.0f;
     for (int i = 0; i < numSamples; ++i)
     {
         const float g = masterGain.getNextValue();
         left[i] = std::tanh (left[i] * g);
+        right[i] = std::tanh (right[i] * g);
         pl = juce::jmax (pl, std::abs (left[i]));
-        if (right != left)
-        {
-            right[i] = std::tanh (right[i] * g);
-            pr = juce::jmax (pr, std::abs (right[i]));
-        }
+        pr = juce::jmax (pr, std::abs (right[i]));
     }
-    if (right == left) pr = pl;
+    if (buffer.getNumChannels() > 1)
+    {
+        buffer.copyFrom (0, 0, left, numSamples);
+        buffer.copyFrom (1, 0, right, numSamples);
+    }
+    else
+    {
+        buffer.copyFrom (0, 0, left, numSamples, 0.5f);
+        buffer.addFrom (0, 0, right, numSamples, 0.5f);
+    }
     meterLeft.store (juce::jmax (pl, meterLeft.load() * 0.85f));
     meterRight.store (juce::jmax (pr, meterRight.load() * 0.85f));
 }

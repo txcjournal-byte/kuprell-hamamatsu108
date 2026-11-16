@@ -134,7 +134,7 @@ namespace hama
                 { "CHORD",   { { "chordLevel", "Level", 36, nullptr }, { "chordFilter", "Filter", 36, nullptr } }, false, 1 },
                 { "BASS",    { { "bassLevel", "Level", 36, nullptr }, { "bassTone", "Tone", 36, nullptr } }, false, 2 },
                 { "VIBRATO", { { "vibRate", "Rate", 36, nullptr }, { "vibDepth", "Depth", 36, nullptr } }, false },
-                { "FX",      { { "fxChorus", "Chorus", 36, nullptr }, { "fxDelay", "Delay", 36, nullptr }, { "fxReverb", "Reverb", 36, nullptr } }, false },
+                { "FX",      { { "fx1Mix", "FX 1", 36, nullptr }, { "fx2Mix", "FX 2", 36, nullptr }, { "fx3Mix", "FX 3", 36, nullptr } }, false },
                 { "MACROS",  { { "macroAge", "AGE", 44, nullptr }, { "macroDream", "DREAM", 44, nullptr }, { "macroWobble", "WOBBLE", 44, nullptr } }, true },
                 { "MASTER",  { { "master", "Volume", 48, nullptr } }, false },
             };
@@ -344,10 +344,6 @@ namespace hama
             g.setColour (juce::Colour (0xff1a1c1f));
             g.fillRoundedRectangle (disp.expanded (2.0f), 10.0f);
             drawDisplay (g, disp, 9.0f);
-            g.setFont (LookAndFeel::monoFont (11.0f));
-            glowText (g, "MODEL", disp.reduced (14.0f, 0.0f), juce::Justification::centredLeft, 0.7f);
-            g.setFont (LookAndFeel::monoFont (17.0f));
-            glowText (g, "SYSTEM 84", disp.reduced (14.0f, 0.0f), juce::Justification::centredRight);
 
             // power LED
             const float px = (float) (innerX + innerW - 18);
@@ -1371,6 +1367,53 @@ namespace hama
         bool dragging = false;
     };
 
+
+    //==========================================================================
+    // MODEL display on the rear of the instrument: click to choose one of the 6 models.
+    class ModelDisplay : public juce::Component, public juce::SettableTooltipClient
+    {
+    public:
+        explicit ModelDisplay (Hamamatsu108Processor& p) : processor (p)
+        {
+            setTooltip ("Model: six eras of the instrument, from the dark early 81 to the hi-fi Modern Strum. Click to choose.");
+            setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        }
+        static juce::Rectangle<int> area() { return { geo::innerX + geo::innerW - 230 - 46, geo::rearY + 6, 230, 46 }; }
+
+        void update()
+        {
+            const int m = juce::roundToInt (plain (processor.apvts, "model"));
+            if (m != model) { model = m; repaint(); }
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat().reduced (14.0f, 0.0f);
+            g.setFont (LookAndFeel::monoFont (11.0f));
+            glowText (g, "MODEL", r, juce::Justification::centredLeft, 0.7f);
+            g.setFont (LookAndFeel::monoFont (17.0f));
+            glowText (g, Hamamatsu108Processor::modelNames()[juce::jmax (0, model)].toUpperCase(), r, juce::Justification::centredRight);
+        }
+
+        void mouseDown (const juce::MouseEvent&) override
+        {
+            juce::PopupMenu m;
+            m.addSectionHeader ("Model");
+            static const char* desc[] = { "dark, warm, a little noisy", "the classic chime", "brighter, wider", "clean and smooth", "lo-fi cartridge grit", "hi-fi and wide" };
+            for (int i = 0; i < 6; ++i)
+                m.addItem (1 + i, Hamamatsu108Processor::modelNames()[i] + juce::String::fromUTF8 ("  \xc2\xb7  ") + desc[i], true, i == model);
+            juce::Component::SafePointer<ModelDisplay> safe (this);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int r)
+            {
+                if (safe != nullptr && r > 0) { setParam (safe->processor.apvts, "model", (float) (r - 1)); safe->update(); }
+            });
+        }
+
+    private:
+        Hamamatsu108Processor& processor;
+        int model = -1;
+    };
+
     //==========================================================================
     InstrumentView::InstrumentView (Hamamatsu108Processor& p) : processor (p)
     {
@@ -1380,6 +1423,7 @@ namespace hama
         module = std::make_unique<VoiceModule> (p);
         capture = std::make_unique<MidiCapture> (p);
         rail = std::make_unique<MemoryRail> (p);
+        modelDisplay = std::make_unique<ModelDisplay> (p);
         chordSel = std::make_unique<GroupSelector> (p, 1);
         bassSel = std::make_unique<GroupSelector> (p, 2);
 
@@ -1389,6 +1433,7 @@ namespace hama
         addAndMakeVisible (*module);
         addAndMakeVisible (*capture);
         addAndMakeVisible (*rail);
+        addAndMakeVisible (*modelDisplay);
         addAndMakeVisible (*chordSel);
         addAndMakeVisible (*bassSel);
 
@@ -1410,7 +1455,12 @@ namespace hama
                 auto st = deck;
                 if (std::string (gr.name) == "MASTER") { st.ring = juce::Colour (0xff22262b); st.pointer = juce::Colour (0xff22262b); }
                 if (k.param != nullptr)
+                {
                     addKnob (std::make_unique<Knob> (p.apvts, k.param, k.label, k.size, st));
+                    const juce::String pid (k.param);
+                    if (pid.startsWith ("fx") && pid.endsWith ("Mix"))
+                        fxKnobs[(size_t) (pid.substring (2, 3).getIntValue() - 1)] = deckKnobs.getLast();
+                }
                 else
                     addKnob (std::make_unique<Knob> (k.label, k.size, st, k.soon));
             }
@@ -1438,6 +1488,7 @@ namespace hama
         module->setBounds (geo::moduleArea());
         capture->setBounds (MidiCapture::area());
         rail->setBounds (MemoryRail::area());
+        modelDisplay->setBounds (ModelDisplay::area());
 
         const auto groups = deckGroupBounds();
         int k = 0;
@@ -1468,6 +1519,14 @@ namespace hama
         module->update (processor.meterLeft.load(), processor.meterRight.load(), chord);
         capture->update();
         rail->update();
+        modelDisplay->update();
+        // FX knobs on the deck are named after the effect in slots 1-3
+        for (int i = 0; i < 3; ++i)
+            if (fxKnobs[(size_t) i] != nullptr)
+            {
+                const int t = juce::roundToInt (plain (processor.apvts, ("fx" + juce::String (i + 1) + "Type").toRawUTF8()));
+                fxKnobs[(size_t) i]->setLabel (t == 0 ? "Empty" : fx::names()[t]);
+            }
         chordSel->update();
         bassSel->update();
     }

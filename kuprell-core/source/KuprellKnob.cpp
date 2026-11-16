@@ -157,6 +157,9 @@ namespace kuprell
         attachment.reset();
     }
 
+    juce::Slider& Knob::getSlider() noexcept { return *dial; }
+    void Knob::setStyle (const Style& s) { style = s; repaint(); dial->repaint(); }
+
     juce::String Knob::getDisplayName() const
     {
         return parameter != nullptr ? parameter->getName (64) : label;

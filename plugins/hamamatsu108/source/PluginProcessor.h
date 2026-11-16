@@ -7,6 +7,8 @@
 #include "Chords.h"
 #include "HarpVoice.h"
 #include "Layers.h"
+#include "Effects.h"
+#include "Modulation.h"
 
 // Kuprell Hamamatsu 108 - step 2: 108 chords, strum plate, Live Strum, harp voices, basic FX.
 class Hamamatsu108Processor : public juce::AudioProcessor
@@ -85,6 +87,14 @@ public:
     static const juce::StringArray& strumModeNames();
     static const juce::StringArray& strumRateNames();
     static const juce::StringArray& arpPatternNames();
+    static const juce::StringArray& modelNames();
+
+    struct ModelSpec { float cutoff, width, hiss, bits; int hold; float drift, sat, tone, decay; };
+    static const ModelSpec& modelSpec (int model);
+    static int targetIndex (const juce::String& id);
+
+    // current value of each modulation source (for the EDIT page displays)
+    std::array<std::atomic<float>, mod::numSources> modSources {};
     static const juce::StringArray& arpRegenNames();
     static const juce::StringArray& memStepNames();
 
@@ -105,6 +115,8 @@ private:
     void bassBeat (int offset, int beatIndex);
     void memRecordChord (int chord);
     void startBassNote();
+    float mp (const char* id) const;   // parameter value including modulation
+    void updateModulation (int numSamples, bool hostPlaying, double ppq);
     int resolveChord() const;
 
     harp::Settings voiceSettings, voiceSettings2;
@@ -153,13 +165,19 @@ private:
     float vibPhase = 0.0f;
     std::vector<float> pitchMul;
 
-    // FX
-    juce::dsp::Chorus<float> chorus;
-    juce::Reverb reverb;
-    juce::AudioBuffer<float> delayBuffer;
-    int delayWrite = 0;
-    float delayLpL = 0.0f, delayLpR = 0.0f;
-    juce::SmoothedValue<float> masterGain, chorusMix, delayMix, reverbMix;
+    // model, FX, modulation
+    juce::AudioBuffer<float> work;
+    std::array<fx::FxUnit, fx::numSlots> fxUnits;
+    juce::Reverb dreamReverb;
+    juce::SmoothedValue<float> masterGain;
+    float mlp1L = 0, mlp2L = 0, mlp1R = 0, mlp2R = 0, heldL = 0, heldR = 0;
+    int holdCount = 0;
+    float wowPhase = 0, flutterPhase = 0, wobblePhase = 0, morphNow = 0.35f;
+    std::array<mod::Lfo, 2> lfos;
+    mod::Function func;
+    mod::Random randomSrc;
+    std::array<float, 32> modOffset {};
+    float lastVelocity = 0.8f, modWheel = 0.0f, aftertouch = 0.0f;
     double bpm = 120.0;
     juce::int64 sampleClock = 0;
 
