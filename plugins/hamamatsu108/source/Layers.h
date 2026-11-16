@@ -55,11 +55,11 @@ namespace layers
 
         void prepare (double newSr) { sr = (float) newSr; }
 
-        void start (int midiNote, float velocity, Kind k, juce::Random& rng)
+        void start (int midiNote, float velocity, Kind k, juce::Random& rng, float hz)
         {
             kind = k;
             note = midiNote;
-            freq = (float) juce::MidiMessage::getMidiNoteInHertz (midiNote);
+            freq = hz;
             vel = 0.4f + 0.6f * velocity;
             active = true;
             releasing = false;

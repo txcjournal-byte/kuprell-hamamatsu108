@@ -6,6 +6,14 @@
 
 namespace kuprell
 {
+    // A parent component can add items to every knob's right-click menu (MIDI Learn, Lock ...).
+    struct KnobMenuProvider
+    {
+        virtual ~KnobMenuProvider() = default;
+        virtual void addKnobMenuItems (juce::PopupMenu&, const juce::String& paramID) = 0;   // use item ids >= 100
+        virtual void knobMenuResult (int result, const juce::String& paramID) = 0;
+    };
+
     // Hardware-style knob: value ring, knurled black body, polished chrome cap, pointer.
     // Label and value are printed under it. Works with any APVTS parameter (float, int or choice).
     // Double-click resets; right-click opens Reset / Type value; mouse wheel and drag change it.
@@ -21,9 +29,14 @@ namespace kuprell
             juce::Colour value = colours::accentSoft;
             float labelHeight = 9.5f;
             bool showValue = true;
+            int themed = 1;   // ring colour: 1 = theme accent, 2 = theme deep, 0 = 'ring' as given
         };
 
         Knob (juce::AudioProcessorValueTreeState&, const juce::String& paramID, const juce::String& label, int knobSize, Style);
+
+        // skin colours shared by all knobs of the plugin window
+        static juce::Colour themeAccent, themeSoft, themeDeep;
+        juce::String getParamID() const { return parameter != nullptr ? parameter->getParameterID() : juce::String(); }
         // placeholder knob for a feature that arrives later (drawn dimmed, not editable)
         Knob (const juce::String& label, int knobSize, Style, const juce::String& comingSoonText);
         ~Knob() override;

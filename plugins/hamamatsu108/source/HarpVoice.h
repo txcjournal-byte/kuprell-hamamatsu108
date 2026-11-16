@@ -105,7 +105,7 @@ namespace harp
             ks.assign ((size_t) (sampleRate / 20.0) + 4, 0.0f);
         }
 
-        void start (int midiNote, float velocity, float pan, const Settings& s, juce::Random& rng)
+        void start (int midiNote, float velocity, float pan, const Settings& s, juce::Random& rng, float hz)
         {
             note = midiNote;
             model = s.model;
@@ -113,7 +113,7 @@ namespace harp
             releasing = false;
             age = 0;
             vel = velocity;
-            freq = (float) juce::MidiMessage::getMidiNoteInHertz (midiNote);
+            freq = hz;
 
             const auto& t = timbre (model);
             const float brightness = juce::jmap (juce::jlimit (0.0f, 1.0f, s.tone * (0.6f + 0.4f * velocity)), 0.3f, 1.7f);

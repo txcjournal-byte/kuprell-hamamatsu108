@@ -1,5 +1,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#if HAMA_MTS
+ #include "libMTSClient.h"
+#endif
 
 namespace
 {
@@ -164,11 +167,102 @@ const juce::StringArray& Hamamatsu108Processor::strumRateNames()
 //==============================================================================
 Hamamatsu108Processor::Hamamatsu108Processor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
-      apvts (*this, nullptr, "Hamamatsu108", createParameterLayout())
+      apvts (*this, &undoManager, "Hamamatsu108", createParameterLayout())
 {
+    for (auto& c : ccMap) c.store (-1);
+    for (auto& c : ccPending) c.store (0.0f);
+#if HAMA_MTS
+    mtsClient = MTS_RegisterClient();
+#endif
+    loadUserDefaults();
+    startTimerHz (30);
+    presetManager = std::make_unique<presets::Manager> (apvts);
+    presetManager->load (0);   // start with "Paper Lanterns"
+    undoManager.clearUndoHistory();
     tones.reserve (64);
     for (auto& m : memory) m.store (-1);
     for (auto& l : memLength) l.store (0);
+}
+
+Hamamatsu108Processor::~Hamamatsu108Processor()
+{
+    stopTimer();
+#if HAMA_MTS
+    if (mtsClient != nullptr) MTS_DeregisterClient ((MTSClient*) mtsClient);
+#endif
+}
+
+float Hamamatsu108Processor::noteHz (int midiNote) const
+{
+#if HAMA_MTS
+    if (mtsEnabled.load() && mtsClient != nullptr && MTS_HasMaster ((MTSClient*) mtsClient))
+        return (float) MTS_NoteToFrequency ((MTSClient*) mtsClient, (char) juce::jlimit (0, 127, midiNote), -1);
+#endif
+    return tuningA4.load() * std::pow (2.0f, (midiNote - 69) / 12.0f);
+}
+
+bool Hamamatsu108Processor::mtsConnected() const
+{
+#if HAMA_MTS
+    return mtsClient != nullptr && MTS_HasMaster ((MTSClient*) mtsClient);
+#else
+    return false;
+#endif
+}
+
+juce::String Hamamatsu108Processor::ccName (int cc) const { return "CC " + juce::String (cc); }
+
+int Hamamatsu108Processor::ccForParam (int paramIndex) const
+{
+    for (int i = 0; i < 128; ++i) if (ccMap[(size_t) i].load() == paramIndex) return i;
+    return -1;
+}
+
+void Hamamatsu108Processor::timerCallback()
+{
+    // MIDI learn: apply controller moves on the message thread
+    const auto lo = ccDirtyLo.exchange (0), hi = ccDirtyHi.exchange (0);
+    if (lo == 0 && hi == 0) return;
+    const auto& params = getParameters();
+    for (int cc = 0; cc < 128; ++cc)
+    {
+        const bool dirty = cc < 64 ? (lo >> cc) & 1 : (hi >> (cc - 64)) & 1;
+        if (! dirty) continue;
+        const int idx = ccMap[(size_t) cc].load();
+        if (idx >= 0 && idx < params.size())
+            params[idx]->setValueNotifyingHost (ccPending[(size_t) cc].load());
+    }
+}
+
+static juce::File settingsFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("Kuprell").getChildFile ("Hamamatsu 108").getChildFile ("settings.xml");
+}
+
+void Hamamatsu108Processor::saveUserDefaults() const
+{
+    juce::XmlElement xml ("HAMAMATSU108SETTINGS");
+    xml.setAttribute ("skin", skin.load());
+    xml.setAttribute ("zoneOctave", zoneOctave.load());
+    xml.setAttribute ("chordZones", chordZones.load());
+    xml.setAttribute ("tuning", tuningA4.load());
+    xml.setAttribute ("voices", maxVoices.load());
+    xml.setAttribute ("mts", mtsEnabled.load());
+    settingsFile().getParentDirectory().createDirectory();
+    xml.writeTo (settingsFile());
+}
+
+void Hamamatsu108Processor::loadUserDefaults()
+{
+    if (auto xml = juce::parseXML (settingsFile()))
+    {
+        skin.store (juce::jlimit (0, 9, xml->getIntAttribute ("skin", 0)));
+        zoneOctave.store (juce::jlimit (0, 3, xml->getIntAttribute ("zoneOctave", 1)));
+        chordZones.store (xml->getBoolAttribute ("chordZones", true));
+        tuningA4.store ((float) juce::jlimit (400.0, 480.0, xml->getDoubleAttribute ("tuning", 440.0)));
+        maxVoices.store (juce::jlimit (8, numVoices, xml->getIntAttribute ("voices", numVoices)));
+        mtsEnabled.store (xml->getBoolAttribute ("mts", true));
+    }
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::createParameterLayout()
@@ -323,15 +417,15 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
     {
         const int n = m.getNoteNumber();
         lastVelocity = m.getFloatVelocity();
-        if (n >= rootZoneLow && n <= rootZoneHigh)
+        if (chordZones.load() && n >= rootZoneLow() && n <= rootZoneHigh())
         {
-            lastRoot = n - rootZoneLow;
+            lastRoot = n - rootZoneLow();
             rootHeldMask |= 1 << lastRoot;
             latchedChord = -1;
         }
-        else if (n >= typeZoneLow && n <= typeZoneHigh)
+        else if (chordZones.load() && n >= typeZoneLow() && n <= typeZoneHigh())
         {
-            if (numTypesHeld < 16) typeHeldStack[numTypesHeld++] = n - typeZoneLow;
+            if (numTypesHeld < 16) typeHeldStack[numTypesHeld++] = n - typeZoneLow();
         }
         else
         {
@@ -343,9 +437,9 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
     else if (m.isNoteOff())
     {
         const int n = m.getNoteNumber();
-        if (n >= rootZoneLow && n <= rootZoneHigh)
+        if (chordZones.load() && n >= rootZoneLow() && n <= rootZoneHigh())
         {
-            const int r = n - rootZoneLow;
+            const int r = n - rootZoneLow();
             if (rootHeldMask == (1 << r) && param (apvts, "hold") > 0.5f)
                 holdChord = resolveChord();   // keep the chord after release
             rootHeldMask &= ~(1 << r);
@@ -355,9 +449,9 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
             if (rootHeldMask == 0 && param (apvts, "hold") <= 0.5f)
                 holdChord = -1;
         }
-        else if (n >= typeZoneLow && n <= typeZoneHigh)
+        else if (chordZones.load() && n >= typeZoneLow() && n <= typeZoneHigh())
         {
-            const int t = n - typeZoneLow;
+            const int t = n - typeZoneLow();
             for (int i = 0; i < numTypesHeld; ++i)
                 if (typeHeldStack[i] == t)
                 {
@@ -367,8 +461,23 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
                 }
         }
     }
-    else if (m.isController() && m.getControllerNumber() == 1)
-        modWheel = m.getControllerValue() / 127.0f;
+    else if (m.isController())
+    {
+        const int cc = m.getControllerNumber();
+        if (cc == 1) modWheel = m.getControllerValue() / 127.0f;
+        const int learn = learnParam.load();
+        if (learn >= 0 && cc != 120 && cc != 123)
+        {
+            for (auto& c : ccMap) if (c.load() == learn) c.store (-1);
+            ccMap[(size_t) cc].store (learn);
+            learnParam.store (-1);
+        }
+        if (ccMap[(size_t) cc].load() >= 0)
+        {
+            ccPending[(size_t) cc].store (m.getControllerValue() / 127.0f);
+            if (cc < 64) ccDirtyLo.fetch_or (1ull << cc); else ccDirtyHi.fetch_or (1ull << (cc - 64));
+        }
+    }
     else if (m.isChannelPressure())
         aftertouch = m.getChannelPressureValue() / 127.0f;
     else if (m.isAftertouch())
@@ -485,18 +594,19 @@ void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note,
 {
     harp::Voice* target = nullptr;
 
-    for (auto& v : voices)
-        if (! v.isActive()) { target = &v; break; }
+    const int limit = juce::jlimit (1, numVoices, maxVoices.load());
+    for (int i = 0; i < limit; ++i)
+        if (! voices[(size_t) i].isActive()) { target = &voices[(size_t) i]; break; }
 
     if (target == nullptr)   // steal the oldest
     {
         target = &voices[0];
-        for (auto& v : voices)
-            if (v.getAge() > target->getAge()) target = &v;
+        for (int i = 0; i < limit; ++i)
+            if (voices[(size_t) i].getAge() > target->getAge()) target = &voices[(size_t) i];
     }
 
     const float pan = juce::jlimit (-0.6f, 0.6f, (float) (note - 60) / 30.0f);
-    target->start (note, velocity, pan, settings, rng);
+    target->start (note, velocity, pan, settings, rng, noteHz (note));
 }
 
 // one arpeggio step: pattern over the chord tones, Chance thins notes out, Regen re-rolls the variation
@@ -574,7 +684,7 @@ void Hamamatsu108Processor::updateChordLayer (int chord, int transpose)
         layers::SustainVoice* target = nullptr;
         for (auto& v : chordVoices) if (! v.isActive()) { target = &v; break; }
         if (target == nullptr) for (auto& v : chordVoices) if (v.isReleasing()) { target = &v; break; }
-        if (target != nullptr) target->start (note, 0.8f, kind, rng);
+        if (target != nullptr) target->start (note, 0.8f, kind, rng, noteHz (note));
     }
 }
 
@@ -603,7 +713,7 @@ void Hamamatsu108Processor::startBassNote()
     const auto kind = type == 1 ? layers::Kind::bassSub : type == 2 ? layers::Kind::bassOrgan : layers::Kind::bassSynth;
     bassVoices[(size_t) bassVoiceIndex].release();
     bassVoiceIndex = 1 - bassVoiceIndex;
-    bassVoices[(size_t) bassVoiceIndex].start (bassNext, 0.85f, kind, rng);
+    bassVoices[(size_t) bassVoiceIndex].start (bassNext, 0.85f, kind, rng, noteHz (bassNext));
 }
 
 //==============================================================================
@@ -976,6 +1086,20 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
     state.setProperty ("memory", mem.joinIntoString (","), nullptr);
     state.setProperty ("memLength", lens.joinIntoString (","), nullptr);
     state.setProperty ("memBank", memBank.load(), nullptr);
+    const int cur = presetManager->getCurrent();
+    state.setProperty ("preset", cur >= 0 ? presetManager->all()[(size_t) cur].key() : juce::String(), nullptr);
+    state.setProperty ("presetModified", presetManager->isModified(), nullptr);
+    state.setProperty ("skin", skin.load(), nullptr);
+    state.setProperty ("zoneOctave", zoneOctave.load(), nullptr);
+    state.setProperty ("chordZones", chordZones.load(), nullptr);
+    state.setProperty ("tuning", tuningA4.load(), nullptr);
+    state.setProperty ("voices", maxVoices.load(), nullptr);
+    juce::StringArray learn;
+    for (auto& c : ccMap) learn.add (juce::String (c.load()));
+    state.setProperty ("midiLearn", learn.joinIntoString (","), nullptr);
+    juce::StringArray locks;
+    for (auto& l : presetManager->locked) locks.add (l);
+    state.setProperty ("locked", locks.joinIntoString (","), nullptr);
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -994,7 +1118,21 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
             for (size_t i = 0; i < memLength.size(); ++i)
                 memLength[i].store (i < (size_t) lens.size() ? juce::jlimit (0, memSteps, lens[(int) i].getIntValue()) : 0);
             memBank.store (juce::jlimit (0, memBanks - 1, (int) state.getProperty ("memBank", 0)));
+            skin.store (juce::jlimit (0, 9, (int) state.getProperty ("skin", skin.load())));
+            zoneOctave.store (juce::jlimit (0, 3, (int) state.getProperty ("zoneOctave", zoneOctave.load())));
+            chordZones.store ((bool) state.getProperty ("chordZones", chordZones.load()));
+            tuningA4.store ((float) (double) state.getProperty ("tuning", (double) tuningA4.load()));
+            maxVoices.store (juce::jlimit (8, numVoices, (int) state.getProperty ("voices", maxVoices.load())));
+            const auto learn = juce::StringArray::fromTokens (state.getProperty ("midiLearn").toString(), ",", {});
+            for (size_t i = 0; i < ccMap.size(); ++i) ccMap[i].store (i < (size_t) learn.size() ? learn[(int) i].getIntValue() : -1);
+            presetManager->locked.clear();
+            for (auto& l : juce::StringArray::fromTokens (state.getProperty ("locked").toString(), ",", {}))
+                if (l.isNotEmpty()) presetManager->locked.insert (l);
+            const auto presetKey = state.getProperty ("preset").toString();
+            const bool presetModified = (bool) state.getProperty ("presetModified", false);
             apvts.replaceState (state);
+            presetManager->restoreCurrent (presetKey, presetModified);
+            undoManager.clearUndoHistory();
         }
 }
 

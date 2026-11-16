@@ -9,9 +9,10 @@
 #include "Layers.h"
 #include "Effects.h"
 #include "Modulation.h"
+#include "Presets.h"
 
 // Kuprell Hamamatsu 108 - step 2: 108 chords, strum plate, Live Strum, harp voices, basic FX.
-class Hamamatsu108Processor : public juce::AudioProcessor
+class Hamamatsu108Processor : public juce::AudioProcessor, private juce::Timer
 {
 public:
     static constexpr int numStrings = 26;       // strings drawn on the strum plate
@@ -19,12 +20,33 @@ public:
     static constexpr int memBanks = 8, memSteps = 16;
 
     // MIDI zones (fixed for now; editable in Settings later). FL Studio names: C2-B2, C3-G#3, A3 and up.
-    static constexpr int rootZoneLow = 24, rootZoneHigh = 35;    // chord root
-    static constexpr int typeZoneLow = 36, typeZoneHigh = 44;    // chord type
+    // chord zones start at an adjustable octave (Settings); default C1 = MIDI 24 (FL: C2)
+    std::atomic<int> zoneOctave { 1 };      // 0..3 -> root zone starts at C0..C3
+    std::atomic<bool> chordZones { true };  // off: every key plays the harp
+    int rootZoneLow() const  { return 12 * (zoneOctave.load() + 1); }
+    int rootZoneHigh() const { return rootZoneLow() + 11; }
+    int typeZoneLow() const  { return rootZoneLow() + 12; }
+    int typeZoneHigh() const { return rootZoneLow() + 20; }
+
+    //== Settings (saved with the project and as the user's defaults)
+    std::atomic<int> skin { 0 };
+    std::atomic<float> tuningA4 { 440.0f };
+    std::atomic<int> maxVoices { 64 };
+    std::atomic<bool> mtsEnabled { true };
+    float noteHz (int midiNote) const;
+    bool mtsConnected() const;
+    void saveUserDefaults() const;
+    void loadUserDefaults();
+
+    //== MIDI Learn: CC -> parameter
+    std::array<std::atomic<int>, 128> ccMap;        // index into getParameters(), -1 = none
+    std::atomic<int> learnParam { -1 };             // parameter waiting for a CC
+    juce::String ccName (int cc) const;
+    int ccForParam (int paramIndex) const;
     // every other note plays the harp at exactly its written pitch
 
     Hamamatsu108Processor();
-    ~Hamamatsu108Processor() override = default;
+    ~Hamamatsu108Processor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -50,7 +72,9 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    juce::UndoManager undoManager;
     juce::AudioProcessorValueTreeState apvts;
+    std::unique_ptr<presets::Manager> presetManager;
 
     //== GUI -> audio requests (lock free)
     void clickChord (int chordIndex)   { pendingChordClick.store (chordIndex); }
@@ -178,6 +202,12 @@ private:
     mod::Random randomSrc;
     std::array<float, 32> modOffset {};
     float lastVelocity = 0.8f, modWheel = 0.0f, aftertouch = 0.0f;
+
+    // MIDI learn hand-over from the audio thread
+    std::array<std::atomic<float>, 128> ccPending;
+    std::atomic<std::uint64_t> ccDirtyLo { 0 }, ccDirtyHi { 0 };
+    void timerCallback() override;
+    void* mtsClient = nullptr;
     double bpm = 120.0;
     juce::int64 sampleClock = 0;
 

@@ -18,7 +18,14 @@ target_sources(Hamamatsu108 PRIVATE
     source/PluginProcessor.cpp
     source/PluginEditor.cpp
     source/Instrument.cpp
-    source/EditView.cpp)
+    source/EditView.cpp
+    source/Presets.cpp
+    source/BrowserView.cpp
+    source/Overlays.cpp
+    ${CMAKE_SOURCE_DIR}/third_party/mts-esp/libMTSClient.cpp)
+
+# MTS-ESP microtuning client (ODDSound, permissive licence)
+target_include_directories(Hamamatsu108 PRIVATE ${CMAKE_SOURCE_DIR}/third_party/mts-esp)
 
 target_include_directories(Hamamatsu108 PRIVATE source)
 
@@ -26,7 +33,8 @@ target_compile_definitions(Hamamatsu108 PUBLIC
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
-    JUCE_DISPLAY_SPLASH_SCREEN=0)
+    JUCE_DISPLAY_SPLASH_SCREEN=0
+    HAMA_MTS=1)
 
 target_link_libraries(Hamamatsu108
     PRIVATE

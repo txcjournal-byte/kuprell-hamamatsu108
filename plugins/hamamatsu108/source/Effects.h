@@ -169,14 +169,15 @@ namespace fx
                 }
                 case 2: // compressor
                 {
-                    comp.setThreshold (-6.0f - a * 30.0f);
-                    comp.setRatio (2.0f + a * 6.0f);
+                    const float thr = -6.0f - a * 30.0f, ratio = 2.0f + a * 6.0f;
+                    comp.setThreshold (thr);
+                    comp.setRatio (ratio);
                     comp.setAttack (5.0f);
                     comp.setRelease (40.0f + b * 400.0f);
                     float* chans[] = { wl, wr };
                     juce::dsp::AudioBlock<float> blk (chans, 2, (size_t) n);
                     comp.process (juce::dsp::ProcessContextReplacing<float> (blk));
-                    const float makeup = juce::Decibels::decibelsToGain (a * 12.0f);
+                    const float makeup = juce::Decibels::decibelsToGain (-thr * (1.0f - 1.0f / ratio) * 0.75f);   // automatic make-up gain
                     for (int i = 0; i < n; ++i) { wl[i] *= makeup; wr[i] *= makeup; }
                     break;
                 }
@@ -295,7 +296,7 @@ namespace fx
                 case 12: case 13: // delay, ping-pong
                 {
                     const float d = (float) (delayQuarters (a) * 60.0 / bpm * sr);
-                    const float fb = b * 0.9f;
+                    const float fb = b * 0.78f;
                     const float c = 0.4f;
                     for (int i = 0; i < n; ++i)
                     {
@@ -310,15 +311,18 @@ namespace fx
                 case 14: case 15: // reverb, shimmer
                 {
                     juce::Reverb::Parameters p;
-                    p.roomSize = 0.5f + a * 0.48f;
+                    p.roomSize = type == 15 ? 0.5f + a * 0.32f : 0.5f + a * 0.48f;
                     p.damping = type == 15 ? 0.2f : b;
                     p.width = 1.0f; p.wetLevel = 1.0f; p.dryLevel = 0.0f;
                     reverb.setParameters (p);
                     if (type == 15)
-                        for (int i = 0; i < n; ++i) { wl[i] += shimmerFbL[(size_t) i] * b * 0.32f; wr[i] += shimmerFbR[(size_t) i] * b * 0.32f; }
+                        for (int i = 0; i < n; ++i)
+                        {
+                            // octave-up copy of the input feeds the reverb (no feedback loop: always stable)
+                            wl[i] += shLp.lp (shL.process (wl[i]), 0.3f) * b * 0.8f;
+                            wr[i] += shRp.lp (shR.process (wr[i]), 0.3f) * b * 0.8f;
+                        }
                     reverb.processStereo (wl, wr, n);
-                    if (type == 15)
-                        for (int i = 0; i < n; ++i) { shimmerFbL[(size_t) i] = shL.process (wl[i]); shimmerFbR[(size_t) i] = shR.process (wr[i]); }
                     for (int i = 0; i < n; ++i) { wl[i] *= 0.6f; wr[i] *= 0.6f; }
                     break;
                 }
@@ -350,7 +354,7 @@ namespace fx
         juce::dsp::Compressor<float> comp;
         juce::dsp::Limiter<float> limiter;
         layers::Svf svfL, svfR, spkL, spkR, spk2L, spk2R;
-        OnePole toneL, toneR, eqLowL, eqLowR, eqHiL, eqHiR;
+        OnePole toneL, toneR, eqLowL, eqLowR, eqHiL, eqHiR, shLp, shRp;
         OctaveUp shL, shR;
         std::array<Ap, 12> ap {};
         std::array<float, 2> phFb {};

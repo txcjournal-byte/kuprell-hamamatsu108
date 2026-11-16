@@ -3,8 +3,11 @@
 
 namespace kuprell
 {
+    juce::Colour Knob::themeAccent { colours::accent }, Knob::themeSoft { colours::accentSoft }, Knob::themeDeep { colours::accentDeep };
+
     namespace
     {
+        float clipboardValue = -1.0f;
         constexpr float startAngle = -0.75f * juce::MathConstants<float>::pi;
         constexpr float endAngle   =  0.75f * juce::MathConstants<float>::pi;
     }
@@ -24,7 +27,9 @@ namespace kuprell
 
         void paint (juce::Graphics& g) override
         {
-            const auto& st = owner.style;
+            auto st = owner.style;
+            if (st.themed == 1) st.ring = Knob::themeAccent;
+            if (st.themed == 2) st.ring = Knob::themeDeep;
             auto box = getLocalBounds().toFloat();
             const float size = juce::jmin (box.getWidth(), box.getHeight());
             auto area = box.withSizeKeepingCentre (size, size);
@@ -185,6 +190,15 @@ namespace kuprell
         m.addSectionHeader (parameter->getName (64) + ":  " + getValueText());
         m.addItem (1, "Reset to default");
         m.addItem (2, "Type value...");
+        m.addSeparator();
+        m.addItem (3, "Copy value");
+        m.addItem (4, "Paste value", clipboardValue >= 0.0f);
+        auto* provider = findParentComponentOfClass<KnobMenuProvider>();
+        if (provider != nullptr)
+        {
+            m.addSeparator();
+            provider->addKnobMenuItems (m, parameter->getParameterID());
+        }
         juce::Component::SafePointer<Knob> safe (this);
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (dial.get()), [safe] (int r)
         {
@@ -195,6 +209,18 @@ namespace kuprell
                 p->beginChangeGesture();
                 p->setValueNotifyingHost (p->getDefaultValue());
                 p->endChangeGesture();
+            }
+            else if (r == 3) clipboardValue = p->getValue();
+            else if (r == 4 && clipboardValue >= 0.0f)
+            {
+                p->beginChangeGesture();
+                p->setValueNotifyingHost (clipboardValue);
+                p->endChangeGesture();
+            }
+            else if (r >= 100)
+            {
+                if (auto* prov = safe->findParentComponentOfClass<KnobMenuProvider>())
+                    prov->knobMenuResult (r, p->getParameterID());
             }
             else if (r == 2)
             {
@@ -236,7 +262,8 @@ namespace kuprell
         if (style.showValue)
         {
             g.setFont (LookAndFeel::monoFont (10.5f));
-            g.setColour (enabled ? style.value : style.value.withAlpha (0.4f));
+            const auto valueColour = style.themed == 1 ? Knob::themeSoft : style.value;
+            g.setColour (enabled ? valueColour : valueColour.withAlpha (0.4f));
             g.drawText (enabled ? getValueText() : juce::String::fromUTF8 ("\xe2\x80\x94"), r.removeFromTop (12), juce::Justification::centredTop, false);
         }
     }

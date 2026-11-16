@@ -1,5 +1,6 @@
 #include "Instrument.h"
 #include "Look.h"
+#include "Skins.h"
 #include "KuprellLookAndFeel.h"
 #include "KuprellBrandAssets.h"
 
@@ -103,6 +104,18 @@ namespace hama
             juce::Graphics::ScopedSaveState save (g);
             g.reduceClipRegion (p);
 
+            const auto& sk = skins::get (skin);
+            if (sk.cheek != skins::Cheek::walnut)
+            {
+                juce::ColourGradient flat (sk.cheekB, r.getX(), 0.0f, sk.cheekB, r.getRight(), 0.0f, false);
+                flat.addColour (0.45, sk.cheekA);
+                g.setGradientFill (flat);
+                g.fillRect (r);
+                skins::paintCheekPattern (g, r, sk);
+                g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.3f), 0.0f, r.getY(), juce::Colours::transparentWhite, 0.0f, r.getY() + r.getHeight() * 0.2f, false));
+                g.fillRect (r);
+                return;
+            }
             juce::ColourGradient wood (juce::Colour (0xff3e2412), r.getX(), 0.0f, juce::Colour (0xff3a2110), r.getRight(), 0.0f, false);
             wood.addColour (0.4, juce::Colour (0xff7a4b2a));
             wood.addColour (0.7, juce::Colour (0xff5e3a20));
@@ -134,10 +147,12 @@ namespace hama
 
         void paintPanel (juce::Graphics& g, juce::Rectangle<float> r)
         {
-            juce::ColourGradient metal (juce::Colour (0xff555b63), 0.0f, r.getY(), juce::Colour (0xff2c3036), 0.0f, r.getBottom(), false);
-            metal.addColour (0.4, juce::Colour (0xff3a3f46));
+            const auto& sk = skins::get (skin);
+            juce::ColourGradient metal (sk.panelTop.withMultipliedAlpha (sk.panelAlpha), 0.0f, r.getY(), sk.panelBottom.withMultipliedAlpha (sk.panelAlpha), 0.0f, r.getBottom(), false);
+            metal.addColour (0.4, sk.panelMid.withMultipliedAlpha (sk.panelAlpha));
             g.setGradientFill (metal);
             g.fillRect (r);
+            skins::paintPattern (g, r, sk.pattern);
 
             // soft sheen across the metal
             juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.13f), r.getX(), r.getY(),
@@ -181,11 +196,33 @@ namespace hama
                 juce::Path p;
                 const bool left = w == woodL;
                 p.addRoundedRectangle (w.getX(), w.getY(), w.getWidth(), w.getHeight(), 16.0f, 16.0f, false, false, left, ! left);
-                g.setGradientFill (juce::ColourGradient (juce::Colour (0xff4a2c17), 0.0f, w.getY(), juce::Colour (0xff24140a), 0.0f, w.getBottom(), false));
+                const auto& skc = skins::get (skin);
+                if (skc.cheek == skins::Cheek::walnut)
+                    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff4a2c17), 0.0f, w.getY(), juce::Colour (0xff24140a), 0.0f, w.getBottom(), false));
+                else
+                    g.setGradientFill (juce::ColourGradient (skc.cheekA.darker (0.3f), 0.0f, w.getY(), skc.cheekB.darker (0.5f), 0.0f, w.getBottom(), false));
                 g.fillPath (p);
             }
-            g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2e3237), 0.0f, r.getY(), juce::Colour (0xff16181b), 0.0f, r.getBottom(), false));
-            g.fillRect (r);
+            const auto& sk = skins::get (skin);
+            if (skin == 2)   // Pool Party: swimming lane rope
+            {
+                for (float x = r.getX(); x < r.getRight(); x += 32.0f)
+                {
+                    g.setColour (juce::Colour (0xfff2f8fa)); g.fillRect (x, r.getY(), 16.0f, r.getHeight());
+                    g.setColour (juce::Colour (0xffff6fb4)); g.fillRect (x + 16.0f, r.getY(), 16.0f, r.getHeight());
+                }
+            }
+            else if (skin == 6)   // Grand Prix: chequered flag
+            {
+                for (float y = r.getY(); y < r.getBottom(); y += 7.0f)
+                    for (float x = r.getX(); x < r.getRight(); x += 7.0f)
+                    { g.setColour ((((int) ((x - r.getX()) / 7.0f) + (int) ((y - r.getY()) / 7.0f)) % 2) ? juce::Colour (0xff111111) : juce::Colour (0xfff2f2f2)); g.fillRect (x, y, 7.0f, 7.0f); }
+            }
+            else
+            {
+                g.setGradientFill (juce::ColourGradient (sk.frontTop, 0.0f, r.getY(), sk.frontBottom, 0.0f, r.getBottom(), false));
+                g.fillRect (r);
+            }
             g.setColour (juce::Colour (0xffc9ced4));
             g.fillRect (r.withHeight (2.0f));
         }
@@ -195,18 +232,10 @@ namespace hama
             using namespace geo;
             // speaker grille
             auto grille = juce::Rectangle<float> ((float) innerX, (float) rearY + 3.0f, 210.0f, 52.0f);
-            g.setGradientFill (juce::ColourGradient (juce::Colour (0xff3a3e44), 0.0f, grille.getY(), juce::Colour (0xff2a2d32), 0.0f, grille.getBottom(), false));
+            const auto& sk = skins::get (skin);
+            g.setGradientFill (juce::ColourGradient (sk.grilleA, 0.0f, grille.getY(), sk.grilleB, 0.0f, grille.getBottom(), false));
             g.fillRoundedRectangle (grille, 12.0f);
-            {
-                juce::Graphics::ScopedSaveState save (g);
-                juce::Path clip;
-                clip.addRoundedRectangle (grille.reduced (4.0f), 9.0f);
-                g.reduceClipRegion (clip);
-                g.setColour (juce::Colour (0xff040506));
-                for (float y = grille.getY() + 6.0f; y < grille.getBottom() - 2.0f; y += 8.0f)
-                    for (float x = grille.getX() + 6.0f; x < grille.getRight() - 2.0f; x += 8.0f)
-                        g.fillEllipse (x - 1.9f, y - 1.9f, 3.8f, 3.8f);
-            }
+            skins::paintGrille (g, grille, sk);
             g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.7f), 0.0f, grille.getY(), juce::Colours::transparentBlack, 0.0f, grille.getY() + 10.0f, false));
             g.fillRoundedRectangle (grille, 12.0f);
             g.setColour (juce::Colours::white.withAlpha (0.14f));
@@ -221,7 +250,22 @@ namespace hama
                 logo->drawWithin (g, { tx, (float) rearY + 8.0f, w, h }, juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yTop, 1.0f);
             }
             g.setFont (spaced (11.0f, false, 0.45f));
-            g.setColour (engrave);
+            g.setColour (sk.engrave);
+            if (juce::String (sk.edition).isNotEmpty())
+            {
+                // edition badge in place of the engraved name
+                const auto badgeText = juce::String::fromUTF8 (sk.edition);
+                g.setFont (spaced (9.5f, true, 0.2f));
+                const float bw = (float) juce::GlyphArrangement::getStringWidthInt (g.getCurrentFont(), badgeText) + 24.0f;
+                auto badge = juce::Rectangle<float> (tx, (float) rearY + 33.0f, bw, 20.0f);
+                g.setColour (juce::Colours::black.withAlpha (0.45f));
+                g.fillRoundedRectangle (badge.translated (0.0f, 2.0f), 10.0f);
+                g.setColour (sk.badgeBg);
+                g.fillRoundedRectangle (badge, 10.0f);
+                g.setColour (sk.badgeFg);
+                g.drawText (badgeText, badge, juce::Justification::centred, false);
+            }
+            else
             g.drawText ("HAMAMATSU 108", juce::Rectangle<float> (tx, (float) rearY + 36.0f, 240.0f, 14.0f), juce::Justification::centredLeft, false);
 
             // model display (models arrive in step 4)
@@ -243,7 +287,7 @@ namespace hama
         void engravedLabel (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& left, const juce::String& right = {})
         {
             g.setFont (spaced (9.0f, true, 0.28f));
-            g.setColour (engrave);
+            g.setColour (skins::get (skin).engrave);
             const float lw = (float) juce::GlyphArrangement::getStringWidthInt (g.getCurrentFont(), left) + 8.0f;
             g.drawText (left, r, juce::Justification::centredLeft, false);
             float rx = r.getRight();
@@ -274,8 +318,9 @@ namespace hama
             g.setColour (juce::Colours::black.withAlpha (0.55f));
             g.fillRoundedRectangle (r.translated (0.0f, 5.0f).expanded (1.0f), 14.0f);
 
-            juce::ColourGradient silver (juce::Colour (0xffe4e7ea), 0.0f, r.getY(), juce::Colour (0xff9da3aa), 0.0f, r.getBottom(), false);
-            silver.addColour (0.55, juce::Colour (0xffb9bec4));
+            const auto& sk = skins::get (skin);
+            juce::ColourGradient silver (sk.deckTop, 0.0f, r.getY(), sk.deckBottom, 0.0f, r.getBottom(), false);
+            silver.addColour (0.55, sk.deckMid);
             g.setGradientFill (silver);
             g.fillRoundedRectangle (r, 14.0f);
 
@@ -329,6 +374,7 @@ namespace hama
         }
 
         std::unique_ptr<juce::Drawable> logo;
+        int skin = 0;
     };
 
     //==========================================================================
@@ -1330,6 +1376,7 @@ namespace hama
 
         Knob::Style deck;
         deck.ring = th().deep;
+        deck.themed = 2;
         deck.track = juce::Colours::black.withAlpha (0.18f);
         deck.pointer = th().deep;
         deck.label = juce::Colour (0xff22262b);
@@ -1340,7 +1387,7 @@ namespace hama
             for (auto& k : gr.knobs)
             {
                 auto st = deck;
-                if (std::string (gr.name) == "MASTER") { st.ring = juce::Colour (0xff22262b); st.pointer = juce::Colour (0xff22262b); }
+                if (std::string (gr.name) == "MASTER") { st.ring = juce::Colour (0xff22262b); st.pointer = juce::Colour (0xff22262b); st.themed = 0; }
                 if (k.param != nullptr)
                 {
                     addKnob (std::make_unique<Knob> (p.apvts, k.param, k.label, k.size, st));
@@ -1398,8 +1445,37 @@ namespace hama
         }
     }
 
+    void InstrumentView::applySkin (int skinIndex)
+    {
+        const auto& sk = skins::get (skinIndex);
+        currentSkin = skinIndex;
+        th().accent = sk.accent.main;
+        th().soft = sk.accent.soft;
+        th().deep = sk.accent.deep;
+        Knob::themeAccent = sk.accent.main;
+        Knob::themeSoft = sk.accent.soft;
+        Knob::themeDeep = sk.accent.deep;
+        backdrop->skin = skinIndex;
+        backdrop->repaint();
+        for (auto* k : deckKnobs)
+        {
+            if (k->getParamID() == "master") continue;
+            Knob::Style st;
+            st.ring = sk.accent.deep; st.themed = 2;
+            st.track = juce::Colours::black.withAlpha (0.18f);
+            st.pointer = sk.accent.deep;
+            st.label = juce::Colour (0xff22262b);
+            st.value = juce::Colour (0xff4a5058);
+            st.labelHeight = 10.0f;
+            k->setStyle (st);
+        }
+        if (auto* top = getTopLevelComponent()) top->repaint();
+        repaint();
+    }
+
     void InstrumentView::timerCallback()
     {
+        if (processor.skin.load() != currentSkin) applySkin (processor.skin.load());
         const int chord = processor.activeChord.load();
         pad->update (chord, juce::roundToInt (plain (processor.apvts, "keyRoot")), plain (processor.apvts, "keyMode") > 0.5f);
         plate->update (processor.stringFlashes.exchange (0), chord);

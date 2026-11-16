@@ -48,6 +48,8 @@ namespace hama
         ~InstrumentView() override;
 
         void resized() override;
+        void applySkin (int skinIndex);
+        int getSkin() const noexcept { return currentSkin; }
 
         // text shown in the editor's status bar
         std::function<void (const juce::String& name, const juce::String& value)> onStatus;
@@ -69,6 +71,7 @@ namespace hama
         std::array<kuprell::Knob*, 3> fxKnobs {};
         juce::OwnedArray<kuprell::Knob> deckKnobs;
         juce::Array<juce::Rectangle<int>> groupBounds;
+        int currentSkin = -1;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (InstrumentView)
     };

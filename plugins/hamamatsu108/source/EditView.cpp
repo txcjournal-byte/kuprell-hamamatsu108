@@ -428,9 +428,14 @@ namespace hama
                 g.setFont (spaced (8.5f, true, 0.15f));
                 g.drawText (name, z, juce::Justification::centred, false);
             };
-            zone (Hamamatsu108Processor::rootZoneLow, Hamamatsu108Processor::rootZoneHigh, "CHORD ROOT", th().accent);
-            zone (Hamamatsu108Processor::typeZoneLow, Hamamatsu108Processor::typeZoneHigh, "CHORD TYPE", th().soft);
-            zone (48, last, "HARP NOTES (EXACT PITCH)", juce::Colour (0xff9aa0a7));
+            if (processor.chordZones.load())
+            {
+                zone (processor.rootZoneLow(), processor.rootZoneHigh(), "CHORD ROOT", th().accent);
+                zone (processor.typeZoneLow(), processor.typeZoneHigh(), "CHORD TYPE", th().soft);
+                zone (juce::jmin (last, processor.typeZoneHigh() + 1), last, "HARP NOTES (EXACT PITCH)", juce::Colour (0xff9aa0a7));
+            }
+            else
+                zone (first, last, "EVERY KEY PLAYS THE HARP (CHORD ZONES OFF)", juce::Colour (0xff9aa0a7));
 
             for (int pass = 0; pass < 2; ++pass)
                 for (int n = first; n <= last; ++n)
@@ -466,7 +471,7 @@ namespace hama
                         g.setColour (isVoiced ? th().accent : th().soft.withAlpha (0.7f));
                         g.fillEllipse (dot);
                     }
-                    if (active >= 0 && n == Hamamatsu108Processor::rootZoneLow + chords::rootOf (active))
+                    if (active >= 0 && processor.chordZones.load() && n == processor.rootZoneLow() + chords::rootOf (active))
                     {
                         g.setColour (th().accent);
                         g.fillRect (k.withTrimmedTop (k.getHeight() - 4.0f));

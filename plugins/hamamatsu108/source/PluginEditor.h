@@ -4,6 +4,8 @@
 #include "PluginProcessor.h"
 #include "Instrument.h"
 #include "EditView.h"
+#include "BrowserView.h"
+#include "Overlays.h"
 #include "KuprellLookAndFeel.h"
 #include "KuprellTopBar.h"
 
@@ -21,7 +23,7 @@ private:
     int voices = 0, zoom = 100;
 };
 
-class Hamamatsu108Editor : public juce::AudioProcessorEditor, private juce::Timer
+class Hamamatsu108Editor : public juce::AudioProcessorEditor, public kuprell::KnobMenuProvider, private juce::Timer
 {
 public:
     static constexpr int baseWidth = 1280, baseHeight = 760;
@@ -50,7 +52,25 @@ private:
     kuprell::TopBar topBar { "Hamamatsu 108" };
     hama::InstrumentView instrument;
     hama::EditView editView;
-    void showEdit (bool shouldShow);
+    hama::BrowserView browser;
+    hama::SettingsView settings;
+    hama::HelpView help;
+    hama::AboutView about;
+
+    enum class Page { play, edit, presets, settings };
+    void showPage (Page);
+    Page page = Page::play;
+
+    void compareAB();
+    void randomize (int section);
+    void showRandomMenu();
+    void addKnobMenuItems (juce::PopupMenu&, const juce::String& paramID) override;
+    void knobMenuResult (int result, const juce::String& paramID) override;
+
+    juce::ValueTree abStates[2];
+    int abActive = 0;
+    bool abReady = false;
+    int lastUndoCount = 0, undoIdleTicks = 0;
     StatusBar status;
     juce::TooltipWindow tooltips { this, 700 };
 
