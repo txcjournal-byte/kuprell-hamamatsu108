@@ -15,6 +15,8 @@ namespace hama
         juce::Colour accent { 0xff3fe0d0 }, soft { 0xffa6f7ef }, deep { 0xff139488 };
     };
     inline Theme& th() { static Theme t; return t; }
+    // product shots: draw the instrument without the studio desk behind it
+    inline bool& paintDesk() { static bool b = true; return b; }
 
     // geometry of the instrument in stage coordinates (stage = 1280 x 740 at 100 %)
     namespace geo

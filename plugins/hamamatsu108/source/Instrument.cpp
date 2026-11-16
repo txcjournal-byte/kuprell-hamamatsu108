@@ -72,15 +72,18 @@ namespace hama
             juce::ColourGradient desk (juce::Colour (0xff3a4048), bounds.getCentreX(), bounds.getHeight() * 0.22f,
                                        juce::Colour (0xff0b0c0e), bounds.getCentreX(), bounds.getHeight() * 1.25f, true);
             desk.addColour (0.48, juce::Colour (0xff1c2025));
-            g.setGradientFill (desk);
-            g.fillAll();
-            g.setGradientFill (juce::ColourGradient (juce::Colours::transparentBlack, 0.0f, bounds.getBottom() - 160.0f,
-                                                     juce::Colours::black.withAlpha (0.55f), 0.0f, bounds.getBottom(), false));
-            g.fillRect (bounds.withTop (bounds.getBottom() - 160.0f));
+            if (paintDesk())
+            {
+                g.setGradientFill (desk);
+                g.fillAll();
+                g.setGradientFill (juce::ColourGradient (juce::Colours::transparentBlack, 0.0f, bounds.getBottom() - 160.0f,
+                                                         juce::Colours::black.withAlpha (0.55f), 0.0f, bounds.getBottom(), false));
+                g.fillRect (bounds.withTop (bounds.getBottom() - 160.0f));
+            }
 
             const float bottom = (float) (bodyY + panelH + frontH);
             // floor shadow
-            juce::ColourGradient shadow (juce::Colours::black.withAlpha (0.85f), bounds.getCentreX(), bottom + 6.0f,
+            juce::ColourGradient shadow (juce::Colours::black.withAlpha (paintDesk() ? 0.85f : 0.35f), bounds.getCentreX(), bottom + 6.0f,
                                          juce::Colours::transparentBlack, bounds.getCentreX() + 560.0f, bottom + 6.0f, true);
             g.setGradientFill (shadow);
             g.fillEllipse ((float) bodyX + 20.0f, bottom - 30.0f, (float) bodyW - 40.0f, 80.0f);
