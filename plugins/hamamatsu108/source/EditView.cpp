@@ -639,58 +639,221 @@ namespace hama
     };
 
     //==========================================================================
-    // Editable function curve: 8 points, drag them up and down.
-    class FunctionEditor : public juce::Component
+    // Editable function curve: 8 points, drag them anywhere (time and level).
+    // First and last point stay on the left and right wall. Shift = fine, double-click = reset point, right-click = menu.
+    class FunctionEditor : public juce::Component, private juce::Timer
     {
     public:
-        explicit FunctionEditor (Hamamatsu108Processor& p) : processor (p) {}
+        explicit FunctionEditor (Hamamatsu108Processor& p) : processor (p) { startTimerHz (30); }
+        ~FunctionEditor() override { stopTimer(); }
+
+        static constexpr int n = mod::funcPoints;
+        juce::Rectangle<float> area() const { return getLocalBounds().toFloat().reduced (10.0f); }
+        float yOf (int i) const { return plain (processor.apvts, ("funcP" + juce::String (i + 1)).toRawUTF8()); }
+        float xOf (int i) const
+        {
+            std::array<float, n> xs {}, ys {};
+            processor.funcShape (xs, ys);
+            return xs[(size_t) i];
+        }
         juce::Point<float> point (int i) const
         {
-            auto r = getLocalBounds().toFloat().reduced (10.0f);
-            const float v = plain (processor.apvts, ("funcP" + juce::String (i + 1)).toRawUTF8());
-            return { r.getX() + r.getWidth() * i / (float) (mod::funcPoints - 1), r.getBottom() - r.getHeight() * v };
+            auto r = area();
+            return { r.getX() + r.getWidth() * xOf (i), r.getBottom() - r.getHeight() * yOf (i) };
         }
+        static float defaultY (int i) { static const float d[] = { 0.0f, 0.85f, 1.0f, 0.7f, 0.55f, 0.4f, 0.2f, 0.0f }; return d[i]; }
+        static float defaultX (int i) { return (float) i / (float) (n - 1); }
+
+        void setPoint (int i, float x, float y)
+        {
+            setParam (processor.apvts, "funcP" + juce::String (i + 1), juce::jlimit (0.0f, 1.0f, y));
+            if (i > 0 && i < n - 1)
+            {
+                const float lo = xOf (i - 1), hi = xOf (i + 1);
+                setParam (processor.apvts, "funcT" + juce::String (i + 1), juce::jlimit (lo, hi, x));
+            }
+        }
+        void setShape (std::array<float, n> xs, std::array<float, n> ys)
+        {
+            // set times from left to right so the ordering clamp never blocks a move
+            for (int i = 1; i < n - 1; ++i) setParam (processor.apvts, "funcT" + juce::String (i + 1), 0.0f);
+            for (int i = n - 2; i >= 1; --i) setParam (processor.apvts, "funcT" + juce::String (i + 1), xs[(size_t) i]);
+            for (int i = 0; i < n; ++i) setParam (processor.apvts, "funcP" + juce::String (i + 1), ys[(size_t) i]);
+            repaint();
+        }
+
         void paint (juce::Graphics& g) override
         {
             auto r = getLocalBounds().toFloat();
             drawDisplay (g, r, 6.0f);
+            auto in = area();
+            g.setColour (juce::Colours::white.withAlpha (0.06f));
+            for (int k = 1; k < 4; ++k)
+            {
+                g.drawVerticalLine ((int) (in.getX() + in.getWidth() * k / 4.0f), in.getY(), in.getBottom());
+                g.drawHorizontalLine ((int) (in.getY() + in.getHeight() * k / 4.0f), in.getX(), in.getRight());
+            }
             juce::Path path;
-            for (int i = 0; i < mod::funcPoints; ++i)
+            for (int i = 0; i < n; ++i)
                 i == 0 ? path.startNewSubPath (point (i)) : path.lineTo (point (i));
+            juce::Path fill (path);
+            fill.lineTo (in.getRight(), in.getBottom()); fill.lineTo (in.getX(), in.getBottom()); fill.closeSubPath();
+            g.setColour (th().accent.withAlpha (0.10f));
+            g.fillPath (fill);
             g.setColour (th().accent.withAlpha (0.3f));
             g.strokePath (path, juce::PathStrokeType (4.0f));
             g.setColour (th().accent);
             g.strokePath (path, juce::PathStrokeType (1.6f));
-            for (int i = 0; i < mod::funcPoints; ++i)
+            for (int i = 0; i < n; ++i)
             {
-                g.setColour (i == dragging ? juce::Colours::white : th().soft);
-                g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withCentre (point (i)));
+                const bool hot = i == dragging || i == hover;
+                g.setColour (hot ? juce::Colours::white : th().soft);
+                g.fillEllipse (juce::Rectangle<float> (hot ? 11.0f : 8.0f, hot ? 11.0f : 8.0f).withCentre (point (i)));
             }
-            // playhead
-            const float v = processor.modSources[mod::function].load();
-            auto in = r.reduced (10.0f);
-            g.setColour (juce::Colours::white.withAlpha (0.5f));
-            g.drawHorizontalLine ((int) (in.getBottom() - in.getHeight() * v), in.getX(), in.getRight());
+            // playhead: only while something sounds
+            if (processor.modActive.load())
+            {
+                const float x = in.getX() + in.getWidth() * processor.funcPhase.load();
+                const float v = processor.modSources[mod::function].load();
+                g.setColour (juce::Colours::white.withAlpha (0.35f));
+                g.drawVerticalLine ((int) x, in.getY(), in.getBottom());
+                g.setColour (juce::Colours::white);
+                g.fillEllipse (juce::Rectangle<float> (6.0f, 6.0f).withCentre ({ x, in.getBottom() - in.getHeight() * v }));
+            }
+            // exact values of the point under the mouse
+            const int shown = dragging >= 0 ? dragging : hover;
+            if (shown >= 0)
+            {
+                const juce::String txt = "P" + juce::String (shown + 1) + "  time " + juce::String (juce::roundToInt (xOf (shown) * 100.0f)) + " %  level "
+                                       + juce::String (juce::roundToInt (yOf (shown) * 100.0f)) + " %";
+                g.setFont (kuprell::LookAndFeel::monoFont (11.0f));
+                g.setColour (juce::Colours::white.withAlpha (0.8f));
+                g.drawText (txt, in.reduced (4.0f, 2.0f), juce::Justification::topRight);
+            }
         }
+
+        int nearest (juce::Point<float> p) const
+        {
+            int best = 0;
+            for (int i = 1; i < n; ++i)
+                if (point (i).getDistanceFrom (p) < point (best).getDistanceFrom (p)) best = i;
+            return best;
+        }
+        void mouseMove (const juce::MouseEvent& e) override
+        {
+            const int i = nearest (e.position);
+            const int h = point (i).getDistanceFrom (e.position) < 14.0f ? i : -1;
+            if (h != hover) { hover = h; repaint(); }
+        }
+        void mouseExit (const juce::MouseEvent&) override { hover = -1; repaint(); }
         void mouseDown (const juce::MouseEvent& e) override
         {
-            dragging = 0;
-            for (int i = 1; i < mod::funcPoints; ++i)
-                if (std::abs (point (i).x - e.position.x) < std::abs (point (dragging).x - e.position.x)) dragging = i;
-            mouseDrag (e);
+            const int i = nearest (e.position);
+            if (e.mods.isPopupMenu()) { showMenu (point (i).getDistanceFrom (e.position) < 18.0f ? i : -1); return; }
+            dragging = i;
+            grabOffset = point (i) - e.position;
+            startX = xOf (i); startY = yOf (i); startPos = e.position;
+            processor.apvts.undoManager->beginNewTransaction();
+            repaint();
         }
         void mouseDrag (const juce::MouseEvent& e) override
         {
             if (dragging < 0) return;
-            auto r = getLocalBounds().toFloat().reduced (10.0f);
-            const float v = juce::jlimit (0.0f, 1.0f, (r.getBottom() - e.position.y) / r.getHeight());
-            setParam (processor.apvts, "funcP" + juce::String (dragging + 1), v);
+            auto r = area();
+            float x, y;
+            if (e.mods.isShiftDown())   // fine adjustment: 10x slower
+            {
+                const auto d = (e.position - startPos) * 0.1f;
+                x = startX + d.x / r.getWidth();
+                y = startY - d.y / r.getHeight();
+            }
+            else
+            {
+                const auto p = e.position + grabOffset;
+                x = (p.x - r.getX()) / r.getWidth();
+                y = (r.getBottom() - p.y) / r.getHeight();
+            }
+            // snap onto the walls and the top / bottom when close
+            auto snap = [] (float v) { return v < 0.015f ? 0.0f : v > 0.985f ? 1.0f : v; };
+            setPoint (dragging, snap (juce::jlimit (0.0f, 1.0f, x)), snap (juce::jlimit (0.0f, 1.0f, y)));
             repaint();
         }
         void mouseUp (const juce::MouseEvent&) override { dragging = -1; repaint(); }
+        void mouseDoubleClick (const juce::MouseEvent& e) override
+        {
+            const int i = nearest (e.position);
+            if (point (i).getDistanceFrom (e.position) < 18.0f) setPoint (i, defaultX (i), defaultY (i));
+            repaint();
+        }
+
+        void showMenu (int i)
+        {
+            juce::PopupMenu m;
+            if (i >= 0)
+            {
+                m.addSectionHeader ("Point " + juce::String (i + 1));
+                m.addItem (1, "Reset point");
+                m.addItem (2, "Level 0 %");
+                m.addItem (3, "Level 100 %");
+                if (i > 0 && i < n - 1)
+                {
+                    m.addItem (4, "Move to previous point (jump)");
+                    m.addItem (5, "Move to next point (jump)");
+                }
+                m.addSeparator();
+            }
+            m.addSectionHeader ("Whole curve");
+            m.addItem (10, "Reset curve");
+            m.addItem (11, "Decay (no attack)");
+            m.addItem (12, "Ramp up");
+            m.addItem (13, "Triangle");
+            m.addItem (14, "Gate (square)");
+            m.addItem (15, "Flat 100 %");
+            m.addItem (16, "Invert");
+            juce::Component::SafePointer<FunctionEditor> safe (this);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition(), [safe, i] (int r)
+            {
+                if (safe == nullptr || r == 0) return;
+                safe->processor.apvts.undoManager->beginNewTransaction();
+                safe->menuAction (i, r);
+            });
+        }
+        void menuAction (int i, int r)
+        {
+            std::array<float, n> xs {}, ys {};
+            processor.funcShape (xs, ys);
+            auto even = [] { std::array<float, n> x {}; for (int k = 0; k < n; ++k) x[(size_t) k] = defaultX (k); return x; };
+            switch (r)
+            {
+                case 1: setPoint (i, defaultX (i), defaultY (i)); break;
+                case 2: setPoint (i, xs[(size_t) i], 0.0f); break;
+                case 3: setPoint (i, xs[(size_t) i], 1.0f); break;
+                case 4: setPoint (i, xs[(size_t) i - 1], ys[(size_t) i]); break;
+                case 5: setPoint (i, xs[(size_t) i + 1], ys[(size_t) i]); break;
+                case 10: { std::array<float, n> y {}; for (int k = 0; k < n; ++k) y[(size_t) k] = defaultY (k); setShape (even(), y); break; }
+                case 11: { std::array<float, n> y {}; for (int k = 0; k < n; ++k) y[(size_t) k] = std::pow (1.0f - defaultX (k), 2.0f); setShape (even(), y); break; }
+                case 12: { std::array<float, n> y {}; for (int k = 0; k < n; ++k) y[(size_t) k] = defaultX (k); setShape (even(), y); break; }
+                case 13: { std::array<float, n> y {}; for (int k = 0; k < n; ++k) y[(size_t) k] = 1.0f - std::abs (2.0f * defaultX (k) - 1.0f); setShape (even(), y); break; }
+                case 14: setShape ({ 0.0f, 0.0f, 0.5f, 0.5f, 1.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }); break;
+                case 15: { std::array<float, n> y {}; y.fill (1.0f); setShape (even(), y); break; }
+                case 16: { for (auto& v : ys) v = 1.0f - v; setShape (xs, ys); break; }
+                default: break;
+            }
+            repaint();
+        }
+
     private:
+        void timerCallback() override
+        {
+            const bool act = processor.modActive.load();
+            if (act || act != wasActive) repaint();
+            wasActive = act;
+        }
         Hamamatsu108Processor& processor;
-        int dragging = -1;
+        int dragging = -1, hover = -1;
+        bool wasActive = false;
+        juce::Point<float> grabOffset, startPos;
+        float startX = 0.0f, startY = 0.0f;
     };
 
     class ModPage : public EditPage
@@ -775,7 +938,8 @@ namespace hama
                 g.strokePath (p, juce::PathStrokeType (1.5f));
                 const float cur = processor.modSources[(size_t) (mod::lfo1 + i)].load();
                 g.setColour (juce::Colours::white);
-                g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ in.getRight() - 4.0f, in.getCentreY() - cur * in.getHeight() * 0.45f }));
+                const float ph = processor.lfoPhase[(size_t) i].load();
+                g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ in.getX() + in.getWidth() * ph, in.getCentreY() - cur * in.getHeight() * 0.45f }));
             }
 
             auto rd = randDisplay.toFloat();

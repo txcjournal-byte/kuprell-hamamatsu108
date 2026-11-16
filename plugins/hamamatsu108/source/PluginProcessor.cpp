@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include <algorithm>
 #include "PluginEditor.h"
 #if HAMA_MTS
  #include "libMTSClient.h"
@@ -54,10 +55,38 @@ float Hamamatsu108Processor::mp (const char* id) const
     return p->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, p->getValue() + modOffset[(size_t) t]));
 }
 
+// function points: times are kept in order, the first point sits at 0 and the last at 1
+void Hamamatsu108Processor::funcShape (std::array<float, mod::funcPoints>& xs, std::array<float, mod::funcPoints>& ys) const
+{
+    float prev = 0.0f;
+    for (int i = 0; i < mod::funcPoints; ++i)
+    {
+        const juce::String n (i + 1);
+        ys[(size_t) i] = apvts.getRawParameterValue ("funcP" + n)->load();
+        float x = i == 0 ? 0.0f : i == mod::funcPoints - 1 ? 1.0f : apvts.getRawParameterValue ("funcT" + n)->load();
+        x = juce::jmax (prev, x);
+        xs[(size_t) i] = x;
+        prev = x;
+    }
+}
+
 void Hamamatsu108Processor::updateModulation (int numSamples, bool hostPlaying, double ppq)
 {
     const double secs = numSamples / sr;
     auto P = [this] (const juce::String& id) { return apvts.getRawParameterValue (id)->load(); };
+
+    // the modulators rest while nothing sounds and start from the beginning with the next note
+    bool active = activeChord.load() >= 0 || numEvents > 0 || pendingPlucks.load() != 0;
+    for (auto& v : voices)      active = active || v.isActive();
+    for (auto& v : chordVoices) active = active || v.isActive();
+    for (auto& v : bassVoices)  active = active || v.isActive();
+    if (! active)
+    {
+        for (auto& l : lfos) l.phase = 0.0;
+        func.trigger();
+        randomSrc.reset();
+    }
+    modActive.store (active);
 
     std::array<float, mod::numSources> src {};
     for (int i = 0; i < 2; ++i)
@@ -66,7 +95,9 @@ void Hamamatsu108Processor::updateModulation (int numSamples, bool hostPlaying, 
         const int shape = juce::roundToInt (P (id + "Shape"));
         const int sync = juce::roundToInt (P (id + "Sync"));
         auto& l = lfos[(size_t) i];
-        if (sync > 0 && hostPlaying)
+        if (! active)
+            src[(size_t) (mod::lfo1 + i)] = l.advance (0.0, shape);
+        else if (sync > 0 && hostPlaying)
         {
             const double q = mod::syncQuarters (sync);
             l.phase = std::fmod (ppq / q, 1.0);
@@ -78,10 +109,12 @@ void Hamamatsu108Processor::updateModulation (int numSamples, bool hostPlaying, 
             src[(size_t) (mod::lfo1 + i)] = l.advance (hz * secs, shape);
         }
     }
-    std::array<float, mod::funcPoints> pts {};
-    for (int i = 0; i < mod::funcPoints; ++i) pts[(size_t) i] = P ("funcP" + juce::String (i + 1));
-    src[mod::function] = func.advance (P ("funcRate") * secs, juce::roundToInt (P ("funcMode")), pts);
-    src[mod::random] = randomSrc.advance (P ("randRate") * secs, P ("randSmooth"), P ("randChaos"), (float) secs);
+    for (int i = 0; i < 2; ++i) lfoPhase[(size_t) i].store ((float) lfos[(size_t) i].phase);
+    std::array<float, mod::funcPoints> pts {}, xs {};
+    funcShape (xs, pts);
+    src[mod::function] = func.advance (active ? P ("funcRate") * secs : 0.0, juce::roundToInt (P ("funcMode")), xs, pts);
+    funcPhase.store ((float) func.phase);
+    src[mod::random] = active ? randomSrc.advance (P ("randRate") * secs, P ("randSmooth"), P ("randChaos"), (float) secs) : 0.0f;
     src[mod::velocity] = lastVelocity;
     src[mod::modWheel] = modWheel;
     src[mod::aftertouch] = aftertouch;
@@ -321,6 +354,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
         const float pts[] = { 0.0f, 0.85f, 1.0f, 0.7f, 0.55f, 0.4f, 0.2f, 0.0f };
         for (int i = 0; i < mod::funcPoints; ++i)
             fl (("funcP" + String (i + 1)).toRawUTF8(), ("Function Point " + String (i + 1)).toRawUTF8(), 0.0f, 1.0f, pts[i], pct);
+        for (int i = 1; i < mod::funcPoints - 1; ++i)   // time of the inner points (first = 0, last = 1)
+            fl (("funcT" + String (i + 1)).toRawUTF8(), ("Function Time " + String (i + 1)).toRawUTF8(), 0.0f, 1.0f, (float) i / (mod::funcPoints - 1), pct);
     }
     fl ("randRate", "Random Rate", 0.05f, 20.0f, 2.0f, [] (float v, int) { return String (v, 2) + " Hz"; }, 1.5f);
     fl ("randSmooth", "Random Smooth", 0.0f, 1.0f, 0.5f, pct);
@@ -432,14 +467,20 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
         }
         else
         {
-            // melodic note: plays exactly the written pitch (like any pro instrument)
-            const int pitch = n;
-            schedulePitch (samplePos, pitch, m.getFloatVelocity());
+            // melodic note: in ARP mode held notes are arpeggiated (piano roll or keyboard),
+            // otherwise it plays exactly the written pitch
+            if (juce::roundToInt (param (apvts, "strumMode")) == 1)
+            {
+                if (! heldMelodic[(size_t) n]) { heldMelodic[(size_t) n] = true; ++heldMelodicCount; }
+            }
+            else
+                schedulePitch (samplePos, n, m.getFloatVelocity());
         }
     }
     else if (m.isNoteOff())
     {
         const int n = m.getNoteNumber();
+        if (heldMelodic[(size_t) n]) { heldMelodic[(size_t) n] = false; --heldMelodicCount; }
         if (chordZones.load() && n >= rootZoneLow() && n <= rootZoneHigh())
         {
             const int r = n - rootZoneLow();
@@ -490,6 +531,8 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
         rootHeldMask = 0;
         numTypesHeld = 0;
         holdChord = -1;
+        heldMelodic.fill (false);
+        heldMelodicCount = 0;
         if (m.isAllSoundOff())
             for (auto& v : voices) v.release();
     }
@@ -869,9 +912,24 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             if (plucks & (1u << (unsigned) i))
                 scheduleNote (0, juce::roundToInt ((float) i * (float) (tones.size() - 1) / (float) (numStrings - 1)), 0.8f);
 
+    // ARP over held MIDI notes (piano roll melody / chords) when no chord button is active
+    if (mode != 1 && heldMelodicCount > 0) { heldMelodic.fill (false); heldMelodicCount = 0; }
+    const bool arpHeld = ! previewing && mode == 1 && chord < 0 && heldMelodicCount > 0;
+    if (arpHeld)
+    {
+        tones.clear();
+        const int octaves = juce::jmax (1, range - 1);
+        for (int o = 0; o < octaves; ++o)
+            for (int n = 0; n < 128; ++n)
+                if (heldMelodic[(size_t) n] && n + 12 * o < 128) tones.push_back (n + 12 * o);
+        std::sort (tones.begin(), tones.end());
+        tones.erase (std::unique (tones.begin(), tones.end()), tones.end());
+        tonesChord = -3;   // rebuild chord tones next time a chord is used
+    }
+
     // Live Strum / Arp clock (MEMO uses the Live Strum hand)
-    const bool arp = chord >= 0 && mode == 1;
-    const bool strumming = ! previewing && chord >= 0 && (mode == 0 || mode == 2 || mode == 1);
+    const bool arp = (chord >= 0 && mode == 1) || arpHeld;
+    const bool strumming = ! previewing && ((chord >= 0 && (mode == 0 || mode == 2 || mode == 1)) || arpHeld);
     if (previewing && previewStroke)
     {
         scheduleStrum (0, true);

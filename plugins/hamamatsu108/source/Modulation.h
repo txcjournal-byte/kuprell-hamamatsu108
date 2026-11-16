@@ -63,13 +63,29 @@ namespace mod
         }
     };
 
-    // drawn function: 8 points, linear between them; unipolar 0..1
+    // drawn function: 8 points with free positions in time (first at 0, last at 1), linear between them; unipolar 0..1
+    inline float functionValue (float t, const std::array<float, funcPoints>& xs, const std::array<float, funcPoints>& ys)
+    {
+        t = juce::jlimit (0.0f, 1.0f, t);
+        for (int i = 0; i < funcPoints - 1; ++i)
+        {
+            const float x0 = xs[(size_t) i], x1 = xs[(size_t) i + 1];
+            if (t <= x1 || i == funcPoints - 2)
+            {
+                if (x1 - x0 < 1.0e-5f) return t < x1 ? ys[(size_t) i] : ys[(size_t) i + 1];   // vertical edge = instant jump
+                const float f = juce::jlimit (0.0f, 1.0f, (t - x0) / (x1 - x0));
+                return ys[(size_t) i] + f * (ys[(size_t) i + 1] - ys[(size_t) i]);
+            }
+        }
+        return ys.back();
+    }
+
     struct Function
     {
         double phase = 0.0;
         bool running = true;
         void trigger() { phase = 0.0; running = true; }
-        float advance (double cycles, int mode, const std::array<float, funcPoints>& pts)
+        float advance (double cycles, int mode, const std::array<float, funcPoints>& xs, const std::array<float, funcPoints>& ys)
         {
             if (running) phase += cycles;
             if (phase >= 1.0)
@@ -77,10 +93,7 @@ namespace mod
                 if (mode != 1) phase -= std::floor (phase);   // loop and key trig repeat
                 else { phase = 1.0; running = false; }        // one-shot holds the end
             }
-            const float x = (float) juce::jlimit (0.0, 1.0, phase) * (funcPoints - 1);
-            const int i = juce::jlimit (0, funcPoints - 2, (int) x);
-            const float f = x - (float) i;
-            return pts[(size_t) i] + f * (pts[(size_t) i + 1] - pts[(size_t) i]);
+            return functionValue ((float) phase, xs, ys);
         }
     };
 
@@ -89,6 +102,7 @@ namespace mod
     {
         double phase = 0.0;
         float value = 0.0f, target = 0.0f;
+        void reset() { phase = 0.0; value = target = 0.0f; }
         juce::Random rnd { 108 };
         float advance (double cycles, float smooth, float chaos, float blockSeconds)
         {

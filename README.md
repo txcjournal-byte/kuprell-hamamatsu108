@@ -9,7 +9,8 @@ Elektronická drnkací harfa: 108 akordů, Live Strum a šest zvukových modelů
 
 ### PLAY (hlavní okno)
 - **108 akordových tlačítek** (12 tónin × 9 typů), tečka = akord patří do tóniny. Klik myší akord zapne (zůstane svítit), další klik ho vypne, klik na jiný akord přepne. Pak můžeš brnkat myší po STRUM PLATE. **HOLD** platí pro MIDI klávesy: zapnutý = akord zní i po puštění kláves, vypnutý = jen dokud držíš.
-- **Strumplate** s 26 strunami (myš), **Live Strum** v tempu FL (RATE, FEEL, SPEED), **ARP** (6 vzorů, CHANCE, REGEN po kliknutí na ARP), **MEMO** (přehrává paměť akordů), **OFF**.
+- **Preset:** klik zahraje jeden krátký úder v tónině, nic nepřepíná a nic nenahrává.
+- **Strumplate** s 26 strunami (myš), **Live Strum** v tempu FL (RATE, FEEL, SPEED), **ARP** (6 vzorů, CHANCE, REGEN po kliknutí na ARP; arpeggiuje i noty z piano rollu nebo klávesnice mimo akordové zóny, dokud je držíš), **MEMO** (přehrává paměť akordů), **OFF**.
 - **VOICE** (10 barev harfy), **MORPH** (prolnutí vrstev A a B), **DUAL** (klik = výběr druhé barvy).
 - **MODEL** (klik na displej): Early 81, System 84, Tone Bank 89, Late 90s, Cartridge 99, Modern Strum.
 - **Pult:** HARP, CHORD (klik na štítek = Organ / Pad / Strings / Choir a voicing), BASS (Sub / Organ / Synth, Root / Root+5th / Walking), VIBRATO, FX 1–3, MACROS (AGE, DREAM, WOBBLE), MASTER.
@@ -17,7 +18,7 @@ Elektronická drnkací harfa: 108 akordů, Live Strum a šest zvukových modelů
 - **MIDI CAPTURE:** zachytí, co plugin zahraje sám (Live Strum, ARP, strumplate), přetáhni do FL.
 
 ### EDIT (7 záložek)
-Engine (vrstvy A/B, model, akordová vrstva, bas, vibrato, 8 cílů Morphu) · Strum & Arp (náhled ruky a vzoru) · Chords (tónina, voicing, akordy tóniny, klaviatura se zónami) · Memory (8 bank × 16) · Mod (2 LFO, kreslená Function, Random, matice 8 slotů) · FX (8 slotů × 16 efektů, přetahování pořadí) · Character (makra, karty modelů).
+Engine (vrstvy A/B, model, akordová vrstva, bas, vibrato, 8 cílů Morphu) · Strum & Arp (náhled ruky a vzoru) · Chords (tónina, voicing, akordy tóniny, klaviatura se zónami) · Memory (8 bank × 16) · Mod (2 LFO, Function s 8 body posuvnými v čase i úrovni: Shift = jemně, dvojklik = reset bodu, pravé tlačítko = menu s tvary; Random; matice 8 slotů; modulace stojí, když nic nehraje) · FX (8 slotů × 16 efektů, přetahování pořadí) · Character (makra, karty modelů).
 
 ### PRESETS
 144 továrních presetů (Harp, Pluck, Bell, Keys, Pad, Texture; 4 na model), hledání, filtr podle typu a modelu, oblíbené (srdíčko), vlastní presety (Save, Save As, Delete) v `Dokumenty/Kuprell/Hamamatsu 108/Presets`.

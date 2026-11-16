@@ -84,7 +84,11 @@ public:
     void pluckString (int visualIndex) { pendingPlucks.fetch_or (1u << (unsigned) visualIndex); }
 
     //== audio -> GUI state
-    std::atomic<int> activeChord { -1 };          // chord sounding now (-1 = none)
+    std::atomic<int> activeChord { -1 };
+    std::atomic<bool> modActive { false };         // modulators run only while something sounds
+    std::atomic<float> funcPhase { 0.0f };         // Function playhead 0..1
+    std::array<std::atomic<float>, 2> lfoPhase {};  // LFO playheads 0..1
+    void funcShape (std::array<float, mod::funcPoints>& xs, std::array<float, mod::funcPoints>& ys) const;          // chord sounding now (-1 = none)
     std::atomic<std::uint32_t> stringFlashes { 0 }; // strings plucked since the GUI last looked
     std::atomic<float> meterLeft { 0.0f }, meterRight { 0.0f };
     std::atomic<int> voicesInUse { 0 };
@@ -164,6 +168,8 @@ private:
     int rootHeldMask = 0, lastRoot = -1, typeHeldStack[16] {}, numTypesHeld = 0;
     int sounding = -1;
     std::vector<int> tones;
+    std::array<bool, 128> heldMelodic {};   // MIDI notes held outside the chord zones (ARP plays them)
+    int heldMelodicCount = 0;
     int tonesChord = -2, tonesTranspose = 0, tonesRange = 0;
 
     // strum clock
