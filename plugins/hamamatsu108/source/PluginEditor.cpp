@@ -128,12 +128,12 @@ int Hamamatsu108Editor::initialWidth() const
     if (saved >= juce::roundToInt (baseWidth * 0.6))
         return juce::jlimit (juce::roundToInt (baseWidth * minScale), juce::roundToInt (baseWidth * maxScale), saved);
 
-    // first open: 100 % if it fits, otherwise as big as fits on the screen
-    double scale = 1.0;
+    // first open: 85 % if it fits, otherwise as big as fits on the screen
+    double scale = 0.85;
     if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
     {
         const auto area = display->userArea;
-        scale = juce::jmin (1.0, (area.getHeight() - 150) / (double) baseHeight, area.getWidth() * 0.9 / baseWidth);
+        scale = juce::jmin (0.85, (area.getHeight() - 150) / (double) baseHeight, area.getWidth() * 0.9 / baseWidth);
     }
     scale = juce::jmax (0.6, std::floor (scale * 20.0) / 20.0);   // round down to 5 % steps
     return juce::roundToInt (baseWidth * scale);
@@ -336,7 +336,7 @@ void Hamamatsu108Editor::timerCallback()
                                             (ua.getRight() - juce::jmax (sb.getX(), ua.getX()) - 16) / (double) baseWidth);
             if (sb.getBottom() > ua.getBottom() || sb.getRight() > ua.getRight())
             {
-                const double scale = juce::jlimit (minScale, 1.0, std::floor (room * 20.0) / 20.0);
+                const double scale = juce::jlimit (minScale, 0.85, std::floor (room * 20.0) / 20.0);
                 const int w = juce::roundToInt (baseWidth * scale);
                 if (w < getWidth())
                 {
