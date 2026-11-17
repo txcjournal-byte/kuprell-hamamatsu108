@@ -311,7 +311,7 @@ namespace hama
             choice ("voicing", "CHORD LAYER VOICING", { v.getX(), v.getY(), 268, 44 });
             voiceArea = { v.getX(), v.getY() + 60, v.getWidth(), 130 };
 
-            inKey = panel ("CHORDS IN KEY  \xc2\xb7  CLICK TO PLAY", 624, 0, 608, 250);
+            inKey = panel ("CHORDS IN KEY  \xc2\xb7  CLICK = ON / OFF", 624, 0, 608, 250);
             keyboard = panel ("KEYBOARD  \xc2\xb7  ZONES AND SOUNDING NOTES", 0, 262, 1232, 268);
         }
 
@@ -342,9 +342,8 @@ namespace hama
         void mouseDown (const juce::MouseEvent& e) override
         {
             for (int i = 0; i < 7; ++i)
-                if (diatonicButton (i).contains (e.position)) { pressed = diatonicChord (i); processor.clickChord (pressed); return; }
+                if (diatonicButton (i).contains (e.position)) { processor.latchChord (diatonicChord (i)); return; }   // same as the chord buttons: click on, click again off
         }
-        void mouseUp (const juce::MouseEvent&) override { if (pressed >= 0) processor.releaseChord (pressed); pressed = -1; }
 
         void paintExtras (juce::Graphics& g) override
         {
@@ -383,7 +382,7 @@ namespace hama
                 g.setFont (LookAndFeel::uiFont (16.0f, true));
                 g.drawText (chords::shortName (c), b.withTrimmedTop (36.0f).withTrimmedBottom (20.0f), juce::Justification::centred, false);
             }
-            text (g, "These seven chords always sound good together in this key.", { inKey.getX(), inKey.getY() + 130, inKey.getWidth(), 40 });
+            text (g, "These seven chords always sound good together in this key. A click selects the chord like the chord buttons (click again = off); strum the plate or play keys to hear it.", { inKey.getX(), inKey.getY() + 130, inKey.getWidth(), 40 });
 
             paintKeyboard (g, keyboard.toFloat().withTrimmedTop (34.0f), voiced, active);
         }

@@ -44,6 +44,7 @@ private:
 
     juce::uint32 openedAt = juce::Time::getMillisecondCounter();
     int intendedWidth = 0, sizeFixes = 0;
+    bool fitChecked = false, userSized = false;
     void say (const juce::String& text);
 
     Hamamatsu108Processor& audioProcessor;

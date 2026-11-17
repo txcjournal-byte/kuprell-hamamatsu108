@@ -108,6 +108,7 @@ Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
     };
     noFocus (*this);
 
+    userSized = audioProcessor.editorWidth.load() >= juce::roundToInt (baseWidth * 0.6);
     const int w = initialWidth();
     intendedWidth = w;
     setSize (w, juce::roundToInt (w * (double) baseHeight / (double) baseWidth));
@@ -320,6 +321,32 @@ void Hamamatsu108Editor::timerCallback()
     {
         ++sizeFixes;
         setSize (intendedWidth, juce::roundToInt (intendedWidth * (double) baseHeight / (double) baseWidth));
+    }
+
+    // first open without a size chosen by the user: once the window is really on screen, make sure
+    // it fits the monitor it landed on (hosts may add DPI scaling or place the window low)
+    if (! fitChecked && ! userSized && isShowing() && juce::Time::getMillisecondCounter() - openedAt > 600)
+    {
+        fitChecked = true;
+        const auto sb = getScreenBounds();
+        if (auto* d = juce::Desktop::getInstance().getDisplays().getDisplayForRect (sb))
+        {
+            const auto ua = d->userArea;
+            const double room = juce::jmin ((ua.getBottom() - juce::jmax (sb.getY(), ua.getY()) - 24) / (double) baseHeight,
+                                            (ua.getRight() - juce::jmax (sb.getX(), ua.getX()) - 16) / (double) baseWidth);
+            if (sb.getBottom() > ua.getBottom() || sb.getRight() > ua.getRight())
+            {
+                const double scale = juce::jlimit (minScale, 1.0, std::floor (room * 20.0) / 20.0);
+                const int w = juce::roundToInt (baseWidth * scale);
+                if (w < getWidth())
+                {
+                    intendedWidth = w;
+                    sizeFixes = 0;
+                    openedAt = juce::Time::getMillisecondCounter() - 600;   // keep the size guard active a bit longer
+                    setSize (w, juce::roundToInt (w * (double) baseHeight / (double) baseWidth));
+                }
+            }
+        }
     }
 
     status.setInfo (audioProcessor.voicesInUse.load(), juce::roundToInt (100.0 * getWidth() / baseWidth));
