@@ -23,7 +23,12 @@ public:
     // chord zones start at an adjustable octave (Settings); default C1 = MIDI 24 (FL: C2)
     std::atomic<int> zoneOctave { 1 };      // 0..3 -> root zone starts at C0..C3
     std::atomic<bool> keyswitches { true };   // C0-B0 pick the LIVE pattern, C-1..D#-1 the mode (below the chord zones)
-    std::atomic<bool> pcKeys { false };       // the computer keyboard plays chords / strings while the plugin window has focus
+    std::atomic<bool> pcKeys { false };
+    std::atomic<bool> midiOut { true };       // send the harp (ch 1), chord layer (ch 2) and bass (ch 3) as MIDI
+    //== custom strum pattern (pattern "Custom"): one stroke character per step, see strumPatternSteps()
+    std::array<std::atomic<int>, 16> customSteps;
+    std::atomic<int> customLen { 16 };
+    juce::String patternString (int index) const;       // the computer keyboard plays chords / strings while the plugin window has focus
     std::atomic<int> pendingPattern { -1 }, pendingMode { -1 };   // keyswitch requests (applied on the message thread)
     //== rhythmic gate (32 steps): chops the harp or everything in time
     static constexpr int gateSteps = 32;
@@ -69,7 +74,7 @@ public:
 
     const juce::String getName() const override { return JucePlugin_Name; }
     bool acceptsMidi() const override { return true; }
-    bool producesMidi() const override { return false; }
+    bool producesMidi() const override { return true; }   // MIDI OUT: what the plugin plays can drive any other instrument
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 4.0; }
 
@@ -172,6 +177,14 @@ private:
     void scheduleStrum (int offset, bool down, float velScale = 1.0f, float speedMul = 1.0f);
     void sweep (int offset, bool down, int first, int count, float vel, float speedMul);
     void stroke (int offset, char type, float accent);
+    void midiNote (int samplePos, int channel, int note, float velocity, bool on);
+    juce::MidiBuffer midiOutBuffer;
+    struct PendingOff { int samples; int channel; int note; };
+    std::array<PendingOff, 256> pendingOffs {};
+    int numPendingOffs = 0;
+    std::array<std::array<std::uint8_t, 128>, 3> outOn {};
+    int blockSamples = 0;
+    juce::int64 patOrigin = 0;
     void patternStep (int offset, juce::int64 k);
     void scheduleNote (int delay, int toneIndex, float velocity);
     void schedulePitch (int delay, int note, float velocity, bool record = false);

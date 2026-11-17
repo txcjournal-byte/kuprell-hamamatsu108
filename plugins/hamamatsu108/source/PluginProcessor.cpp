@@ -27,7 +27,7 @@ const juce::StringArray& Hamamatsu108Processor::strumModeNames()
 const juce::StringArray& Hamamatsu108Processor::strumPatternNames()
 {
     static const juce::StringArray n { "Even", "Ballad", "Folk", "Pop 8ths", "Pop 16ths", "Tap", "Brush", "Fingerpick",
-                                       "Bossa", "Reggae", "Waltz 3/4", "Half Time", "Shimmer" };
+                                       "Bossa", "Reggae", "Waltz 3/4", "Half Time", "Shimmer", "Custom" };
     return n;
 }
 
@@ -51,9 +51,17 @@ const char* Hamamatsu108Processor::strumPatternSteps (int index)
     return steps[juce::jlimit (0, 12, index)];
 }
 
+juce::String Hamamatsu108Processor::patternString (int index) const
+{
+    if (index != 13) return strumPatternSteps (index);
+    juce::String s;
+    for (int i = 0; i < juce::jlimit (1, 16, customLen.load()); ++i) s += juce::String::charToString ((juce::juce_wchar) customSteps[(size_t) i].load());
+    return s;
+}
+
 const juce::StringArray& Hamamatsu108Processor::keysPlayNames()
 {
-    static const juce::StringArray n { "Notes", "Strum", "Pattern" };
+    static const juce::StringArray n { "Notes", "Strum", "Pattern", "Plate only" };
     return n;
 }
 
@@ -322,6 +330,7 @@ Hamamatsu108Processor::Hamamatsu108Processor()
     for (auto& m : memory) m.store (-1);
     for (auto& l : memLength) l.store (0);
     seqLoadPreset (0);
+    { const char* def = "D..dU.D.d.U.D.u."; for (int i = 0; i < 16; ++i) customSteps[(size_t) i].store (def[i]); }
     stackParts.reserve (8);
     blockNotes.reserve (16); prevBlock.reserve (16);
 }
@@ -396,6 +405,7 @@ void Hamamatsu108Processor::saveUserDefaults() const
     xml.setAttribute ("mts", mtsEnabled.load());
     xml.setAttribute ("keyswitches", keyswitches.load());
     xml.setAttribute ("pcKeys", pcKeys.load());
+    xml.setAttribute ("midiOut", midiOut.load());
     settingsFile().getParentDirectory().createDirectory();
     xml.writeTo (settingsFile());
 }
@@ -412,6 +422,7 @@ void Hamamatsu108Processor::loadUserDefaults()
         mtsEnabled.store (xml->getBoolAttribute ("mts", true));
         keyswitches.store (xml->getBoolAttribute ("keyswitches", true));
         pcKeys.store (xml->getBoolAttribute ("pcKeys", false));
+        midiOut.store (xml->getBoolAttribute ("midiOut", true));
     }
 }
 
@@ -511,6 +522,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumPattern", 1 }, "Strum Pattern", strumPatternNames(), 2));
     fl ("strumSwing", "Strum Swing", 0.0f, 1.0f, 0.0f, pct);
     fl ("strumVary", "Strum Variation", 0.0f, 1.0f, 0.35f, pct);
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumShape", 1 }, "Stroke Shape", StringArray { "Linear", "Natural", "Fast start", "Fast finish" }, 1));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumSpeedMul", 1 }, "Pattern Speed", StringArray { "Half", "Normal", "Double" }, 1));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumRestart", 1 }, "Pattern Start", StringArray { "Follow the bar", "Restart on chord" }, 0));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "keysPlay", 1 }, "Keys Play", keysPlayNames(), 0));
 
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "hold", 1 }, "Hold", true));
@@ -562,6 +576,9 @@ void Hamamatsu108Processor::prepareToPlay (double sampleRate, int samplesPerBloc
     numReleases = 0;
     pitchMul.assign ((size_t) juce::jmax (32, samplesPerBlock), 1.0f);
     gateBuf.assign ((size_t) juce::jmax (32, samplesPerBlock), 1.0f);
+    midiOutBuffer.ensureSize (4096);
+    numPendingOffs = 0;
+    for (auto& ch : outOn) ch.fill (0);
     limLook = juce::jlimit (16, limLookMax, (int) std::round (sampleRate * 0.0015));
     soundboard.prepare (sampleRate); boardModel = -1;
     limDelL.fill (0.0f); limDelR.fill (0.0f); limNeed.fill (1.0f); limPos = 0; limGain = 1.0f;
@@ -854,6 +871,7 @@ void Hamamatsu108Processor::sweep (int offset, bool down, int first, int count, 
 
     const int lead = juce::roundToInt ((rnd() - 0.3f) * feel * 0.012f * (float) sr);
     const float stepMs = speedMs * (1.0f + (rnd() - 0.5f) * 0.6f * feel);
+    const int shape = juce::roundToInt (param (apvts, "strumShape"));
     float t = (float) juce::jmax (0, offset + lead);
     for (int i = 0; i < count; ++i)
     {
@@ -862,7 +880,13 @@ void Hamamatsu108Processor::sweep (int offset, bool down, int first, int count, 
         const float v = vel * (1.0f - 0.25f * (float) i / (float) count) * (1.0f + (rnd() - 0.5f) * 0.25f * feel);
         scheduleNote (juce::roundToInt (t), tone, v);
         const float jitter = 1.0f + (rnd() - 0.5f) * 0.5f * feel;
-        t += stepMs * 0.001f * (float) sr * jitter;
+        // stroke shape: how the hand moves across the strings (even, eased, accelerating, braking)
+        const float f = count > 1 ? (float) i / (float) (count - 1) : 0.0f;
+        float shapeMul = 1.0f;
+        if (shape == 1) shapeMul = 0.55f + 1.8f * (f - 0.5f) * (f - 0.5f) * 2.0f;
+        else if (shape == 2) shapeMul = 0.4f + 1.2f * f;
+        else if (shape == 3) shapeMul = 1.6f - 1.2f * f;
+        t += stepMs * 0.001f * (float) sr * jitter * shapeMul;
     }
 }
 
@@ -922,7 +946,7 @@ void Hamamatsu108Processor::stroke (int offset, char type, float accent)
 // pattern step k (counted in 1/16 from the bar start): accents, variation and fills like a player
 void Hamamatsu108Processor::patternStep (int offset, juce::int64 k)
 {
-    const juce::String steps (strumPatternSteps (juce::roundToInt (param (apvts, "strumPattern"))));
+    const juce::String steps (patternString (juce::roundToInt (param (apvts, "strumPattern"))));
     const int len = steps.length();
     if (len == 0) return;
     const int i = (int) (k % len);
@@ -988,8 +1012,29 @@ void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note,
     target->start (note, velocity, pan, settings, rng, noteHz (note));
 }
 
+// MIDI OUT: harp on channel 1, chord layer on 2, bass on 3 (FL Studio: set the plugin's MIDI output port)
+void Hamamatsu108Processor::midiNote (int samplePos, int channel, int note, float velocity, bool on)
+{
+    if (! midiOut.load() || note < 0 || note > 127 || channel < 0 || channel > 2) return;
+    const int pos = juce::jlimit (0, juce::jmax (0, blockSamples - 1), samplePos);
+    auto& count = outOn[(size_t) channel][(size_t) note];
+    if (on)
+    {
+        if (count > 0) midiOutBuffer.addEvent (juce::MidiMessage::noteOff (channel + 1, note), pos);   // retrigger: close the old one first
+        midiOutBuffer.addEvent (juce::MidiMessage::noteOn (channel + 1, note, (juce::uint8) juce::jlimit (1, 127, juce::roundToInt (velocity * 127.0f))), pos);
+        count = 1;
+    }
+    else if (count > 0)
+    {
+        midiOutBuffer.addEvent (juce::MidiMessage::noteOff (channel + 1, note), pos);
+        count = 0;
+    }
+}
+
 void Hamamatsu108Processor::capture (double seconds, int note, float velocity, int layer, bool on)
 {
+    if ((layer == 1 || layer == 2) && ! previewMute)
+        midiNote ((int) (seconds * sr - (double) sampleClock), layer, note, velocity, on);
     if (previewMute) return;   // preset previews never end up in the MIDI capture
     if (note < 0 || note > 127 || layer < 0 || layer > 3) return;
     auto& wasOn = capturedOn[(size_t) layer][(size_t) note];
@@ -1281,6 +1326,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
     const int numSamples = buffer.getNumSamples();
+    blockSamples = numSamples;
     if ((int) pitchMul.size() < numSamples) pitchMul.resize ((size_t) numSamples, 1.0f);
 
     // parameters
@@ -1481,7 +1527,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
         else keyStrumAt -= numSamples;
     }
-    else if (keysMode && keysPlay == 2)
+    else if (keysMode && keysPlay >= 2)
         keyNotes.fill (false);
     const bool keysPattern = keysMode && keysPlay == 2 && heldMelodicCount > 0;
 
@@ -1495,7 +1541,9 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     }
     const int pattern = juce::roundToInt (param (apvts, "strumPattern"));
     const bool usePattern = ! arp && pattern > 0;
-    const double stepQuarters = usePattern ? 0.25 : rateInQuarters (rateIndex);
+    static const double speedMuls[] = { 2.0, 1.0, 0.5 };
+    const double stepQuarters = usePattern ? 0.25 * speedMuls[juce::jlimit (0, 2, juce::roundToInt (param (apvts, "strumSpeedMul")))] : rateInQuarters (rateIndex);
+    const bool restartOnChord = usePattern && juce::roundToInt (param (apvts, "strumRestart")) == 1;
     const double samplesPerStep = stepQuarters * 60.0 / bpm * sr;
     const float swing = usePattern ? mp ("strumSwing") : (arp ? param (apvts, "arpSwing") : 0.0f);
     auto hit = [&] (int offset, juce::int64 k)
@@ -1504,8 +1552,9 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         else if (usePattern)
         {
             // swing: every second 1/16 comes late (up to a triplet feel)
-            const int late = (k % 2 == 1) ? (int) (swing * 0.33 * samplesPerStep) : 0;
-            patternStep (offset + late, k);
+            const juce::int64 kk = restartOnChord ? k - patOrigin : k;
+            const int late = (kk % 2 == 1) ? (int) (swing * 0.33 * samplesPerStep) : 0;
+            patternStep (offset + late, kk);
         }
         else scheduleStrum (offset, (k % 2) == 0);
     };
@@ -1516,11 +1565,18 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         if (strumId != lastStrumId || ! wasStrumming)
         {
             if (! arp || ! wasStrumming) arpCounter = 0;
-            if (usePattern)
+            if (hostPlaying) patOrigin = (juce::int64) std::floor (ppq / stepQuarters);
+            if (usePattern && rootHeldMask != 0)
+            {
+                // a chord key on the MIDI keyboard: harder = stronger and faster first stroke
+                scheduleStrum (0, true, 0.5f + 0.6f * lastVelocity, 1.45f - 0.85f * lastVelocity);
+            }
+            else if (usePattern)
             {
                 // a new chord: the hand hits it at once (a thumb pattern starts on the bass)
-                const char first = strumPatternSteps (pattern)[0];
-                stroke (0, first == 'B' ? 'B' : (first == 'T' ? 'T' : 'D'), 1.0f);
+                const auto ps = patternString (pattern);
+                const char first = ps.isNotEmpty() ? (char) ps[0] : 'D';
+                stroke (0, first == 'B' ? 'B' : (first == 'T' ? 'T' : (first == 'H' ? 'H' : 'D')), 1.0f);
             }
             else hit (0, 0);   // instant stroke on a new chord
             samplesToNextStrum = samplesPerStep - numSamples;
@@ -1742,6 +1798,16 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             if (events[(size_t) e].delay < start + len)
             {
                 startVoice (events[(size_t) e].note, events[(size_t) e].velocity);
+                if (midiOut.load() && ! previewMute)
+                {
+                    const int pos = juce::jmax (start, events[(size_t) e].delay);
+                    midiNote (pos, 0, events[(size_t) e].note, events[(size_t) e].velocity, true);
+                    // the note lasts about as long as it rings
+                    const int len = (int) (juce::jlimit (0.05f, 4.0f, voiceSettings.decay * 0.5f) * (float) sr);
+                    for (int q = 0; q < numPendingOffs; ++q)
+                        if (pendingOffs[(size_t) q].note == events[(size_t) e].note && pendingOffs[(size_t) q].channel == 0) { pendingOffs[(size_t) q] = pendingOffs[(size_t) --numPendingOffs]; break; }
+                    if (numPendingOffs < (int) pendingOffs.size()) pendingOffs[(size_t) numPendingOffs++] = { pos + len, 0, events[(size_t) e].note };
+                }
                 if (events[(size_t) e].capture)
                     capture ((double) (sampleClock + start) / sr, events[(size_t) e].note, events[(size_t) e].velocity, 0, true);
                 flashes |= 1u << (unsigned) events[(size_t) e].visual;
@@ -1803,6 +1869,18 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     }
     if (bassPendingOffset >= 0) bassPendingOffset -= numSamples;
 
+    // MIDI OUT: note-offs that fall in this block, then hand the notes to the host
+    for (int q = 0; q < numPendingOffs;)
+    {
+        if (pendingOffs[(size_t) q].samples < numSamples)
+        {
+            midiNote (pendingOffs[(size_t) q].samples, pendingOffs[(size_t) q].channel, pendingOffs[(size_t) q].note, 0.0f, false);
+            pendingOffs[(size_t) q] = pendingOffs[(size_t) --numPendingOffs];
+        }
+        else { pendingOffs[(size_t) q].samples -= numSamples; ++q; }
+    }
+    midi.clear();
+    if (! midiOutBuffer.isEmpty()) { midi.addEvents (midiOutBuffer, 0, numSamples, 0); midiOutBuffer.clear(); }
     for (int e = 0; e < numEvents; ++e) events[(size_t) e].delay -= numSamples;
     for (int e = 0; e < numReleases; ++e) releases[(size_t) e].delay -= numSamples;
     sampleClock += numSamples;
@@ -1984,6 +2062,7 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
     state.setProperty ("captureQuant", captureQuant.load(), nullptr);
     state.setProperty ("gateMask", (juce::int64) gateMask.load(), nullptr);
     state.setProperty ("gateLen", gateLen.load(), nullptr);
+    state.setProperty ("customPattern", patternString (13), nullptr);
     {
         juce::StringArray seq;
         seq.add (juce::String (seqLen.load()));
@@ -2028,6 +2107,14 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
             captureQuant.store (juce::jlimit (0, 4, (int) state.getProperty ("captureQuant", 1)));
             if (state.hasProperty ("gateMask")) gateMask.store ((std::uint32_t) (juce::int64) state.getProperty ("gateMask"));
             gateLen.store (juce::jlimit (1, gateSteps, (int) state.getProperty ("gateLen", 16)));
+            {
+                const auto cp = state.getProperty ("customPattern").toString();
+                if (cp.length() >= 1 && cp.length() <= 16)
+                {
+                    customLen.store (cp.length());
+                    for (int i = 0; i < cp.length(); ++i) customSteps[(size_t) i].store (juce::String ("DUduBHTxS.").containsChar (cp[i]) ? (int) cp[i] : '.');
+                }
+            }
             {
                 const auto seq = juce::StringArray::fromTokens (state.getProperty ("arpSteps").toString(), ",", {});
                 if (seq.size() == seqSteps + 1)

@@ -900,11 +900,25 @@ namespace hama
                 m.addItem (1 + i, Hamamatsu108Processor::strumPatternNames()[i] + (i == 0 ? juce::String (" (plain down / up at RATE)") : juce::String()), true, strumPat == i);
             m.addSeparator();
             m.addSectionHeader ("Your keys / piano roll notes (outside the chord zones)");
-            static const char* keyText[] = { "Notes: play the exact pitch", "Strum: each key press strums the held notes", "Pattern: the pattern plays the held notes" };
-            for (int i = 0; i < 3; ++i) m.addItem (100 + i, keyText[i], true, keysPlay == i);
+            static const char* keyText[] = { "Notes: play the exact pitch", "Strum: each key press strums the held notes", "Pattern: the pattern plays the held notes",
+                                             "Plate only: hold the keys, strum them on the plate / pitch wheel" };
+            for (int i = 0; i < 4; ++i) m.addItem (100 + i, keyText[i], true, keysPlay == i);
+            m.addSeparator();
+            juce::PopupMenu shape, speed, start;
+            static const char* shapes[] = { "Linear", "Natural", "Fast start", "Fast finish" };
+            const int sh = juce::roundToInt (plain (processor.apvts, "strumShape")), sp = juce::roundToInt (plain (processor.apvts, "strumSpeedMul")), st = juce::roundToInt (plain (processor.apvts, "strumRestart"));
+            for (int i = 0; i < 4; ++i) shape.addItem (200 + i, shapes[i], true, sh == i);
+            speed.addItem (210, "Half", true, sp == 0); speed.addItem (211, "Normal", true, sp == 1); speed.addItem (212, "Double", true, sp == 2);
+            start.addItem (220, "Follow the bar", true, st == 0); start.addItem (221, "Restart on every chord", true, st == 1);
+            m.addSubMenu ("Stroke shape", shape);
+            m.addSubMenu ("Pattern speed", speed);
+            m.addSubMenu ("Pattern start", start);
             popup (m, modeArea (0), [this] (int r)
             {
-                if (r >= 100) setParam (processor.apvts, "keysPlay", (float) (r - 100));
+                if (r >= 220) setParam (processor.apvts, "strumRestart", (float) (r - 220));
+                else if (r >= 210) setParam (processor.apvts, "strumSpeedMul", (float) (r - 210));
+                else if (r >= 200) setParam (processor.apvts, "strumShape", (float) (r - 200));
+                else if (r >= 100) setParam (processor.apvts, "keysPlay", (float) (r - 100));
                 else setParam (processor.apvts, "strumPattern", (float) (r - 1));
             });
         }

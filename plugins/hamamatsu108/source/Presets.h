@@ -25,7 +25,7 @@ namespace presets
     // parameters a preset never changes (performance settings)
     inline bool isPerformanceParam (const juce::String& id)
     {
-        return id == "keyRoot" || id == "keyMode" || id == "transpose" || id == "hold" || id == "strumMode" || id == "strumPattern" || id == "strumSwing" || id == "strumVary" || id == "keysPlay" || id == "master";
+        return id == "keyRoot" || id == "keyMode" || id == "transpose" || id == "hold" || id == "strumMode" || id == "strumPattern" || id == "strumSwing" || id == "strumVary" || id == "keysPlay" || id == "strumShape" || id == "strumSpeedMul" || id == "strumRestart" || id == "master";
     }
 
     class Manager : private juce::AudioProcessorValueTreeState::Listener

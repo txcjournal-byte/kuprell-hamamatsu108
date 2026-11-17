@@ -393,7 +393,11 @@ namespace hama
             knobAt ("strumVary", "Variation", 44, s.getX() + 440, s.getY() + 58, 106);
             helpS = { s.getX(), s.getY() + 160, s.getWidth(), 40 };
 
-            preview = panel ("ONE BAR OF THE HAND  \xc2\xb7  LOW STRINGS AT THE BOTTOM", 612, 0, 620, 250);
+            preview = panel ("ONE BAR OF THE HAND  \xc2\xb7  CLICK A STEP TO EDIT (CUSTOM PATTERN)", 612, 0, 620, 250);
+            choice ("strumShape", "STROKE SHAPE", { preview.getX(), preview.getY(), 140, 44 });
+            choice ("strumSpeedMul", "SPEED", { preview.getX() + 150, preview.getY(), 110, 44 });
+            choice ("strumRestart", "PATTERN START", { preview.getX() + 270, preview.getY(), 160, 44 });
+            preview = preview.withTrimmedTop (54).withTrimmedBottom (16);
 
             auto a = panel ("ARPEGGIO", 0, 262, 600, 268);
             choice ("arpPattern", "PATTERN", { a.getX(), a.getY(), 150, 44 });
@@ -417,6 +421,7 @@ namespace hama
             juce::String sig;
             for (auto* id : { "strumFeel", "strumSpeed", "strumRate", "arpPattern", "arpChance", "arpRegen", "harpRange", "strumPattern", "strumSwing", "strumVary", "keysPlay" })
                 sig << processor.apvts.getRawParameterValue (id)->load() << ",";
+            sig << processor.patternString (13);
             if (seq != nullptr) seq->tick();
             if (sig != lastSig) { lastSig = sig; repaint(); }
         }
@@ -433,7 +438,7 @@ namespace hama
             juce::Random rnd (42);
             if (patIdx > 0)
             {
-                const juce::String steps (Hamamatsu108Processor::strumPatternSteps (patIdx));
+                const juce::String steps (processor.patternString (patIdx));
                 const int len = steps.length();
                 const float swing = plain (processor.apvts, "strumSwing");
                 const float colW = r.getWidth() / (float) len;
@@ -483,6 +488,17 @@ namespace hama
                 g.setFont (spaced (8.5f, true, 0.15f));
                 for (int b = 0; b < len / 4; ++b)
                     g.drawText (juce::String (b + 1), juce::Rectangle<float> (r.getX() + b * 4 * colW + 4.0f, r.getY(), 20.0f, 12.0f), juce::Justification::left, false);
+                // the stroke letter of every step (click to change it)
+                static const char* names[] = { "D", "U", "d", "u", "B", "H", "T", "x", "S" };
+                juce::ignoreUnused (names);
+                g.setFont (LookAndFeel::monoFont (10.0f));
+                for (int i = 0; i < len; ++i)
+                {
+                    const char c = (char) steps[i];
+                    g.setColour (c == '.' ? juce::Colours::white.withAlpha (0.2f) : th().soft);
+                    g.drawText (c == '.' ? juce::String::fromUTF8 ("\xc2\xb7") : juce::String::charToString ((juce::juce_wchar) c),
+                                juce::Rectangle<float> (r.getX() + i * colW, r.getBottom() + 1.0f, colW, 14.0f), juce::Justification::centred, false);
+                }
             }
             else
             {
@@ -517,6 +533,57 @@ namespace hama
         }
 
         void resized() override {}
+
+        // click a step of the hand: it becomes the CUSTOM pattern (a copy of the shown one) and the step changes
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            if (! preview.expanded (0, 16).contains (e.getPosition())) return;
+            auto& pr = processor;
+            int pat = juce::roundToInt (plain (pr.apvts, "strumPattern"));
+            if (pat == 0) { owner.status ("Pattern", "Pick a pattern first (Even has no steps)"); return; }
+            if (pat != 13)
+            {
+                const auto src = pr.patternString (pat);
+                const int len = juce::jmin (16, src.length());
+                pr.customLen.store (len);
+                for (int i = 0; i < 16; ++i) pr.customSteps[(size_t) i].store (i < len ? (int) src[i] : '.');
+                setParam (pr.apvts, "strumPattern", 13.0f);
+                pat = 13;
+            }
+            const int len = juce::jlimit (1, 16, pr.customLen.load());
+            if (e.mods.isPopupMenu())
+            {
+                juce::PopupMenu m, lenM, from;
+                for (int l : { 4, 6, 8, 12, 16 }) lenM.addItem (100 + l, juce::String (l) + " steps" + (l == 12 ? juce::String (" (3/4)") : juce::String()), true, len == l);
+                for (int i = 1; i <= 12; ++i) from.addItem (200 + i, Hamamatsu108Processor::strumPatternNames()[i]);
+                m.addSubMenu ("Length", lenM);
+                m.addSubMenu ("Start from a pattern", from);
+                m.addItem (1, "Clear all steps");
+                m.addSectionHeader ("Strokes: D down, U up, d light down, u light up, B bass (thumb), H high string, T tap, x ghost, S slow sweep");
+                juce::Component::SafePointer<StrumPage> safe (this);
+                m.showMenuAsync (juce::PopupMenu::Options(), [safe] (int r)
+                {
+                    if (safe == nullptr || r <= 0) return;
+                    auto& p2 = safe->processor;
+                    if (r == 1) for (auto& c : p2.customSteps) c.store ('.');
+                    if (r >= 100 && r < 200) p2.customLen.store (r - 100);
+                    if (r >= 200)
+                    {
+                        const juce::String src (Hamamatsu108Processor::strumPatternSteps (r - 200));
+                        p2.customLen.store (src.length());
+                        for (int i = 0; i < 16; ++i) p2.customSteps[(size_t) i].store (i < src.length() ? (int) src[i] : '.');
+                    }
+                    safe->repaint();
+                });
+                return;
+            }
+            const int i = juce::jlimit (0, len - 1, (int) ((e.position.x - (float) preview.getX()) / ((float) preview.getWidth() / (float) len)));
+            static const juce::String cycle (".DdUuBHTxS");
+            const int cur = juce::jmax (0, cycle.indexOfChar ((juce::juce_wchar) pr.customSteps[(size_t) i].load()));
+            pr.customSteps[(size_t) i].store ((int) cycle[(cur + 1) % cycle.length()]);
+            owner.status ("Step " + juce::String (i + 1), juce::String::charToString ((juce::juce_wchar) pr.customSteps[(size_t) i].load()));
+            repaint();
+        }
 
     private:
         juce::Rectangle<int> preview, pattern, helpS, helpA;
@@ -618,7 +685,7 @@ namespace hama
 
         void paintKeyboard (juce::Graphics& g, juce::Rectangle<float> r, const std::vector<int>& voiced, int active)
         {
-            const int first = 24, last = 96;   // C1 .. C7 (FL: C2 .. C8)
+            const int first = 12, last = 96;   // FL: C1 .. C8 (the keyswitches sit at C1 - B1)
             int whites = 0;
             for (int n = first; n <= last; ++n) if (! juce::MidiMessage::isMidiNoteBlack (n)) ++whites;
             const float ww = r.getWidth() / (float) whites;
@@ -656,6 +723,8 @@ namespace hama
                 g.setFont (spaced (8.5f, true, 0.15f));
                 g.drawText (name, z, juce::Justification::centred, false);
             };
+            if (processor.keyswitches.load() && (! processor.chordZones.load() || processor.rootZoneLow() >= 24))
+                zone (12, 23, "PATTERN KEYSWITCHES", juce::Colour (0xffe0b25a));
             if (processor.chordZones.load())
             {
                 zone (processor.rootZoneLow(), processor.rootZoneHigh(), "CHORD ROOT", th().accent);

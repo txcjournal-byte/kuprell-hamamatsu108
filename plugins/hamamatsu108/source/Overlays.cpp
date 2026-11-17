@@ -161,9 +161,14 @@ namespace hama
         choiceButton (g, { 1046.0f, 448.0f, 80.0f, 34.0f }, "Off", ! processor.pcKeys.load());
         g.setFont (LookAndFeel::uiFont (11.5f));
         g.setColour (juce::Colour (0xff9aa0a7));
+        label (g, "MIDI OUT", { 830.0f, 496.0f, 120.0f, 34.0f });
+        choiceButton (g, { 960.0f, 496.0f, 80.0f, 34.0f }, "On", processor.midiOut.load());
+        choiceButton (g, { 1046.0f, 496.0f, 80.0f, 34.0f }, "Off", ! processor.midiOut.load());
+        g.setFont (LookAndFeel::uiFont (11.0f));
         g.drawFittedText ("Keyswitches (FL note names): C0..D#0 = LIVE / ARP / MEMO / OFF, C1..B1 = the LIVE pattern - write them in the piano roll. "
                           "PC keyboard (while the plugin window has focus): Q-row major, A-row minor, Z-row 7th chords, Shift = stack, "
-                          "number row = strings. Pitch wheel strums, mod wheel shortens the notes.", juce::Rectangle<int> (830, 492, 410, 100), juce::Justification::topLeft, 7);
+                          "number row = strings. Pitch wheel strums, mod wheel shortens the notes. MIDI OUT: harp ch 1, chord layer ch 2, bass ch 3 - "
+                          "in FL set this plugin's MIDI output port and another instrument's input port to the same number.", juce::Rectangle<int> (830, 536, 410, 62), juce::Justification::topLeft, 6);
         drawHardButton (g, { 830.0f, 600.0f, 398.0f, 40.0f }, "BACK TO PLAY", true, true, false);
     }
 
@@ -180,6 +185,8 @@ namespace hama
         if (juce::Rectangle<float> (960.0f, 298.0f, 80.0f, 34.0f).contains (p)) { processor.mtsEnabled.store (! processor.mtsEnabled.load()); changed = true; }
         if (juce::Rectangle<float> (960.0f, 400.0f, 80.0f, 34.0f).contains (p))  { processor.keyswitches.store (true); changed = true; }
         if (juce::Rectangle<float> (1046.0f, 400.0f, 80.0f, 34.0f).contains (p)) { processor.keyswitches.store (false); changed = true; }
+        if (juce::Rectangle<float> (960.0f, 496.0f, 80.0f, 34.0f).contains (p))  { processor.midiOut.store (true); changed = true; }
+        if (juce::Rectangle<float> (1046.0f, 496.0f, 80.0f, 34.0f).contains (p)) { processor.midiOut.store (false); changed = true; }
         if (juce::Rectangle<float> (960.0f, 448.0f, 80.0f, 34.0f).contains (p))  { processor.pcKeys.store (true); changed = true; if (onPcKeys) onPcKeys(); }
         if (juce::Rectangle<float> (1046.0f, 448.0f, 80.0f, 34.0f).contains (p)) { processor.pcKeys.store (false); changed = true; if (onPcKeys) onPcKeys(); }
         if (rowButton (0, 0).contains (p)) { processor.chordZones.store (true); changed = true; }
