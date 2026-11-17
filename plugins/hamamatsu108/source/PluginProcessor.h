@@ -37,7 +37,7 @@ public:
     std::atomic<int> gateStepGui { -1 };
     static const juce::StringArray& gatePresetNames();
     void gateLoadPreset (int index);
-    std::atomic<bool> chordZones { true };  // off: every key plays the harp
+    std::atomic<bool> chordZones { false };  // off: every key plays the harp
     int rootZoneLow() const  { return 12 * (zoneOctave.load() + 1); }
     int rootZoneHigh() const { return rootZoneLow() + 11; }
     int typeZoneLow() const  { return rootZoneLow() + 12; }

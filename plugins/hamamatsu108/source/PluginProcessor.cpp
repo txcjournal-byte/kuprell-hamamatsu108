@@ -400,6 +400,7 @@ void Hamamatsu108Processor::saveUserDefaults() const
     xml.setAttribute ("skin", skin.load());
     xml.setAttribute ("zoneOctave", zoneOctave.load());
     xml.setAttribute ("chordZones", chordZones.load());
+    xml.setAttribute ("version", 2);
     xml.setAttribute ("tuning", tuningA4.load());
     xml.setAttribute ("voices", maxVoices.load());
     xml.setAttribute ("mts", mtsEnabled.load());
@@ -416,7 +417,9 @@ void Hamamatsu108Processor::loadUserDefaults()
     {
         skin.store (juce::jlimit (0, 9, xml->getIntAttribute ("skin", 0)));
         zoneOctave.store (juce::jlimit (0, 3, xml->getIntAttribute ("zoneOctave", 1)));
-        chordZones.store (xml->getBoolAttribute ("chordZones", true));
+        // from settings version 2 every key plays by default (chord zones are an option): piano-roll notes in
+        // octave 2-3 used to fall into the zones and stay silent
+        chordZones.store (xml->getIntAttribute ("version", 1) >= 2 ? xml->getBoolAttribute ("chordZones", false) : false);
         tuningA4.store ((float) juce::jlimit (400.0, 480.0, xml->getDoubleAttribute ("tuning", 440.0)));
         maxVoices.store (juce::jlimit (8, numVoices, xml->getIntAttribute ("voices", numVoices)));
         mtsEnabled.store (xml->getBoolAttribute ("mts", true));
@@ -2123,6 +2126,7 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
     state.setProperty ("skin", skin.load(), nullptr);
     state.setProperty ("zoneOctave", zoneOctave.load(), nullptr);
     state.setProperty ("chordZones", chordZones.load(), nullptr);
+    state.setProperty ("zonesVersion", 2, nullptr);
     state.setProperty ("tuning", tuningA4.load(), nullptr);
     state.setProperty ("voices", maxVoices.load(), nullptr);
     juce::StringArray learn;
@@ -2181,7 +2185,8 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
             memBank.store (juce::jlimit (0, memBanks - 1, (int) state.getProperty ("memBank", 0)));
             skin.store (juce::jlimit (0, 9, (int) state.getProperty ("skin", skin.load())));
             zoneOctave.store (juce::jlimit (0, 3, (int) state.getProperty ("zoneOctave", zoneOctave.load())));
-            chordZones.store ((bool) state.getProperty ("chordZones", chordZones.load()));
+            if ((int) state.getProperty ("zonesVersion", 1) >= 2)   // older projects: zones off (every key plays)
+                chordZones.store ((bool) state.getProperty ("chordZones", chordZones.load()));
             tuningA4.store ((float) (double) state.getProperty ("tuning", (double) tuningA4.load()));
             maxVoices.store (juce::jlimit (8, numVoices, (int) state.getProperty ("voices", maxVoices.load())));
             const auto learn = juce::StringArray::fromTokens (state.getProperty ("midiLearn").toString(), ",", {});

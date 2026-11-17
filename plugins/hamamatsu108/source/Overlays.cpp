@@ -121,7 +121,7 @@ namespace hama
         choiceButton (g, rowButton (0, 1), "Off", ! processor.chordZones.load());
         g.setFont (LookAndFeel::uiFont (11.5f));
         g.setColour (juce::Colour (0xff9aa0a7));
-        g.drawText ("Off: every key plays the harp", 380, 404, 300, 34, juce::Justification::centredLeft, false);
+        g.drawText ("On: C2-B2 (FL) = chord root, C3-B3 = chord type. Off (default): every key plays", 380, 404, 300, 34, juce::Justification::centredLeft, false);
 
         label (g, "ZONES START AT", { 40.0f, 452.0f, 130.0f, 34.0f });
         for (int i = 0; i < 4; ++i)
