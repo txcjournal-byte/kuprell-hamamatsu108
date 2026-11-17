@@ -1118,21 +1118,27 @@ namespace hama
                 auto l = panel ("LFO " + n, i * 312, 0, 300, 250);
                 choice ("lfo" + n + "Shape", "SHAPE", { l.getX(), l.getY(), 128, 44 });
                 choice ("lfo" + n + "Sync", "SYNC", { l.getX() + 140, l.getY(), 128, 44 });
-                knobAt ("lfo" + n + "Rate", "Rate", 40, l.getX(), l.getY() + 60, 90);
-                lfoDisplay[(size_t) i] = { l.getX() + 100, l.getY() + 64, l.getWidth() - 100, 86 };
+                knobAt ("lfo" + n + "Rate", "Rate", 34, l.getX(), l.getY() + 52, 80);
+                lfoDisplay[(size_t) i] = { l.getX() + 90, l.getY() + 56, l.getWidth() - 90, 70 };
+                choice ("lfo" + n + "QDst", juce::String::fromUTF8 ("\xe2\x86\x92 MODULATES"), { l.getX(), l.getY() + 142, 170, 44 });
+                knobAt ("lfo" + n + "QAmt", "Depth", 30, l.getX() + 180, l.getY() + 132, 88);
             }
             auto f = panel ("FUNCTION", 624, 0, 360, 250);
             funcEditor = std::make_unique<FunctionEditor> (p);
             addAndMakeVisible (*funcEditor);
-            funcEditor->setBounds (f.getX(), f.getY(), f.getWidth(), 120);
-            choice ("funcMode", "MODE", { f.getX(), f.getY() + 132, 130, 44 });
-            knobAt ("funcRate", "Rate", 36, f.getX() + 150, f.getY() + 126, 80);
+            funcEditor->setBounds (f.getX(), f.getY(), f.getWidth(), 110);
+            choice ("funcMode", "MODE", { f.getX(), f.getY() + 122, 90, 44 });
+            choice ("funcQDst", juce::String::fromUTF8 ("\xe2\x86\x92 MODULATES"), { f.getX() + 98, f.getY() + 122, 120, 44 });
+            knobAt ("funcRate", "Rate", 28, f.getX() + 222, f.getY() + 116, 52);
+            knobAt ("funcQAmt", "Depth", 28, f.getX() + 276, f.getY() + 116, 52);
 
             auto rnd = panel ("RANDOM", 996, 0, 236, 250);
             knobAt ("randRate", "Rate", 34, rnd.getX(), rnd.getY(), 68);
             knobAt ("randSmooth", "Smooth", 34, rnd.getX() + 70, rnd.getY(), 68);
             knobAt ("randChaos", "Chaos", 34, rnd.getX() + 140, rnd.getY(), 68);
-            randDisplay = { rnd.getX(), rnd.getY() + 96, rnd.getWidth(), 92 };
+            randDisplay = { rnd.getX(), rnd.getY() + 84, rnd.getWidth(), 50 };
+            choice ("randQDst", juce::String::fromUTF8 ("\xe2\x86\x92 MODULATES"), { rnd.getX(), rnd.getY() + 142, 140, 44 });
+            knobAt ("randQAmt", "Depth", 28, rnd.getX() + 146, rnd.getY() + 136, 58);
 
             matrix = panel ("MOD MATRIX  \xc2\xb7  SOURCE  \xe2\x86\x92  TARGET  \xc2\xb7  AMOUNT", 0, 262, 1232, 268);
             for (int i = 0; i < mod::matrixSlots; ++i)

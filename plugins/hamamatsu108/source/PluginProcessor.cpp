@@ -173,6 +173,20 @@ void Hamamatsu108Processor::updateModulation (int numSamples, bool hostPlaying, 
             if (std::abs (P ("mod" + n + "Amt")) > 1.0e-4f) modRouted[(size_t) dIdx] = true;
         }
     }
+    {
+        const char* ids[] = { "lfo1", "lfo2", "func", "rand" };
+        const int srcIdx[] = { mod::lfo1, mod::lfo2, mod::function, mod::random };
+        for (int i = 0; i < 4; ++i)
+        {
+            const int dIdx = juce::roundToInt (P (juce::String (ids[i]) + "QDst"));
+            const float amt = P (juce::String (ids[i]) + "QAmt");
+            if (dIdx > 0 && std::abs (amt) > 1.0e-4f)
+            {
+                modOffset[(size_t) dIdx] += amt * src[(size_t) srcIdx[i]];
+                modRouted[(size_t) dIdx] = true;
+            }
+        }
+    }
     const float morphValue = P ("morph");
     for (int i = 1; i <= mod::morphSlots; ++i)
     {
@@ -454,6 +468,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     fl ("randRate", "Random Rate", 0.05f, 20.0f, 2.0f, [] (float v, int) { return String (v, 2) + " Hz"; }, 1.5f);
     fl ("randSmooth", "Random Smooth", 0.0f, 1.0f, 0.5f, pct);
     fl ("randChaos", "Random Chaos", 0.0f, 1.0f, 0.3f, pct);
+    // quick routing in every modulator panel: one target + depth, no matrix needed
+    {
+        const char* ids[] = { "lfo1", "lfo2", "func", "rand" };
+        const char* names[] = { "LFO 1", "LFO 2", "Function", "Random" };
+        const int defDst[] = { 21, 23, 22, 24 };   // Harp Filter, Harp Pan, Harp Volume, Harp Pitch
+        for (int i = 0; i < 4; ++i)
+        {
+            layout.add (std::make_unique<AudioParameterChoice> (ParameterID { String (ids[i]) + "QDst", 1 }, String (names[i]) + " Target", mod::targetNames(), defDst[i]));
+            fl ((String (ids[i]) + "QAmt").toRawUTF8(), (String (names[i]) + " Depth").toRawUTF8(), -1.0f, 1.0f, 0.0f,
+                [] (float v, int) { return (v > 0 ? "+" : "") + String (roundToInt (v * 100.0f)) + " %"; });
+        }
+    }
     for (int i = 1; i <= mod::matrixSlots; ++i)
     {
         const String n (i);
@@ -1166,6 +1192,8 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     voiceSettings.model = (harp::Model) juce::roundToInt (param (apvts, "harpVoice"));
     voiceSettings.tone = juce::jlimit (0.0f, 1.0f, mp ("harpTone") * model.tone * (1.0f - 0.35f * age));
     voiceSettings.decay = mp ("harpDecay") * model.decay * (1.0f + 1.2f * dream);
+    // long ringing strings pile up under dense strum patterns: trim the harp bus a little for long decays
+    const float decayComp = 1.0f / (1.0f + 0.09f * juce::jmax (0.0f, voiceSettings.decay - 2.0f));
     const int range = juce::roundToInt (param (apvts, "harpRange"));
     const int transpose = juce::roundToInt (param (apvts, "transpose"));
     const int mode = juce::roundToInt (param (apvts, "strumMode"));
@@ -1598,7 +1626,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
                 busCut += (cutTarget - busCut) * 0.003f;
                 busVol += (volTarget - busVol) * 0.003f;
                 busPan += (panTarget - busPan) * 0.003f;
-                float x = hl[i], y = hr[i];
+                float x = hl[i] * decayComp, y = hr[i] * decayComp;
                 if (filterOn)
                 {
                     // TPT state-variable low-pass, 120 Hz .. 20 kHz

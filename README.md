@@ -32,6 +32,18 @@ Tah, kolečko, dvojklik = výchozí hodnota, Ctrl + tah = jemně. Pravé tlačí
 ### MIDI (názvy not jako ve FL Studiu)
 C2–B2 základní tón akordu, C3–G#3 typ (C3 dur, C#3 moll, D3 7, D#3 maj7, E3 m7, F3 dim, F#3 aug, G3 sus4, G#3 add9). Ostatní noty hrají harfu přesně v napsané výšce. Zóny jdou posunout nebo vypnout v Settings. CC1 (mod wheel) a aftertouch jsou zdroje modulace.
 
+## Novinky 0.3 – hraní pro producenty
+
+- **LIVE = lidská ruka**: 12 vzorců úderů (Ballad, Folk, Pop 8ths/16ths, Tap, Brush, Fingerpick, Bossa, Reggae, Waltz 3/4, Half Time, Shimmer) + Swing a Variation (ghost údery, vynechání, fill každý 4. takt). Klik na LIVE, když svítí = menu.
+- **YOUR KEYS**: Notes (přesná výška) / Strum (stisk kláves = přejezd přes držené noty, síla = rychlost) / Pattern (vzorec hraje akord z piano rollu).
+- **Skládání akordů**: Ctrl/Shift+klik na tlačítko akordu přidá další akord (C + Em = Cmaj7, víc = rozšířené akordy); na MIDI více kořenových kláves najednou.
+- **MIDI CAPTURE**: pravý klik → Chords (dlouhé noty pod sebou, mřížka 1/16–takt) / Detail / Both.
+- **MEMO**: hotové progrese v tónině (Pop, Ballad, Jazz ii-V-I, Lo-fi, City pop, Blues, moll…), klik na prázdný krok = výběr akordu tóniny, hraje vzorcem LIVE.
+- **ARP pro**: Octaves, Gate, Swing, nové vzorce Converge/Pinky/Steps a 16krokový řádek NOTE / VELOCITY / OCT / RATCHET / CHANCE / TIE + předvolby.
+- **Modulace**: každý LFO / Function / Random má vlastní cíl + Depth (bez matice); presety Pad/Bell/Keys/Texture je používají.
+- **Presety**: Save As s vlastním bankem (vlastní kategorie), pravý klik = přejmenovat / přesunout / smazat, filtr bank v MY PRESETS.
+- Cartridge 99 bez šumu, okno se otevírá na 85 %, tlačítka Chords in key přepínají.
+
 ## Instalace (Windows)
 
 1. Otevři **Releases** tohoto repozitáře a stáhni nejnovější `Kuprell_Hamamatsu108_…_Windows.exe`.

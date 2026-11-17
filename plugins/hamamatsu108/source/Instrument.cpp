@@ -854,6 +854,21 @@ namespace hama
                         sub.addItem (1 + i, pm.all()[(size_t) i].name + (pm.all()[(size_t) i].factory ? juce::String() : juce::String (" (user)")), true, i == pm.getCurrent());
                 m.addSubMenu (presets::categories()[c], sub);
             }
+            {
+                juce::PopupMenu mine;
+                juce::StringArray banks { "" };
+                banks.addArray (pm.userBanks());
+                for (auto& bk : banks)
+                {
+                    juce::PopupMenu sub;
+                    for (int i = 0; i < (int) pm.all().size(); ++i)
+                        if (! pm.all()[(size_t) i].factory && pm.all()[(size_t) i].bank == bk)
+                            sub.addItem (1 + i, pm.all()[(size_t) i].name, true, i == pm.getCurrent());
+                    if (sub.getNumItems() == 0) continue;
+                    if (bk.isEmpty()) mine.addSubMenu ("(no bank)", sub); else mine.addSubMenu (bk, sub);
+                }
+                if (mine.getNumItems() > 0) { m.addSeparator(); m.addSubMenu ("My presets", mine); }
+            }
             popup (m, { 12.0f, 12.0f, 192.0f, 42.0f }, [this] (int r)
             {
                 processor.presetManager->load (r - 1);

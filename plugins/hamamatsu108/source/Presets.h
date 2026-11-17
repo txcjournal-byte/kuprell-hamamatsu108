@@ -12,12 +12,12 @@ namespace presets
 
     struct Preset
     {
-        juce::String name, category;
+        juce::String name, category, bank;   // bank: the user's own folder / collection (user presets)
         int model = 1;
         bool factory = true;
         juce::File file;                                   // user presets
         std::vector<std::pair<juce::String, float>> values; // factory: plain values that differ from the defaults
-        juce::String key() const { return (factory ? "factory:" : "user:") + name; }
+        juce::String key() const { return (factory ? "factory:" : "user:" + (bank.isNotEmpty() ? bank + "/" : juce::String())) + name; }
     };
 
     std::vector<Preset> makeFactory();
@@ -44,7 +44,10 @@ namespace presets
 
         void load (int index);
         void loadNext (int delta, const std::vector<int>& order);
-        bool saveUser (const juce::String& name, const juce::String& category, int model);   // creates or overwrites
+        bool saveUser (const juce::String& name, const juce::String& category, int model, const juce::String& bank = {});   // creates or overwrites
+        bool renameUser (int index, const juce::String& newName, const juce::String& newBank);
+        juce::StringArray userBanks() const;   // the user's own banks (folders)
+        juce::String currentBank() const;
         bool deleteUser (int index);
 
         bool isFavourite (int index) const;

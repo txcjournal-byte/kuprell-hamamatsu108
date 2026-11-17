@@ -97,6 +97,7 @@ namespace presets
                         b.set ("strumSpeed", b.range (30.0f, 55.0f));
                         if (b.chance (0.5f)) { b.set ("fx4Type", 15.0f); b.set ("fx4Mix", b.range (0.15f, 0.28f)); b.set ("fx4A", 0.7f); b.set ("fx4B", 0.5f); }
                         b.set ("macroDream", b.range (0.08f, 0.22f));
+                        if (b.chance (0.6f)) { b.set ("lfo2QAmt", b.range (0.15f, 0.28f)); b.set ("lfo2Rate", b.range (0.12f, 0.35f)); }   // bells drift across the stereo field
                         b.set ("fx3Mix", b.range (0.38f, 0.5f));
                         b.set ("fx3A", b.range (0.75f, 0.88f));
                         break;
@@ -115,14 +116,18 @@ namespace presets
                         b.set ("bassLevel", b.range (-18.0f, -12.0f));
                         b.set ("bassTone", b.range (0.3f, 0.5f));
                         if (b.chance (0.4f)) { b.set ("fx4Type", 11.0f); b.set ("fx4Mix", b.range (0.25f, 0.45f)); b.set ("fx4A", 0.3f); b.set ("fx4B", 0.25f); }
+                        if (b.chance (0.45f)) { b.set ("lfo1QDst", 22.0f); b.set ("lfo1QAmt", b.range (0.12f, 0.22f)); b.set ("lfo1Rate", b.range (3.8f, 5.6f)); }   // tine tremolo
                         break;
                     case 4: // Pad: slow strums over a warm layer
                         b.set ("harpVoice", (float) b.pick ({ 9, 5, 9, 1, 0, 9 }));
                         b.set ("harpTone", b.range (0.4f, 0.6f));
                         b.set ("harpDecay", b.range (4.0f, 6.5f));
                         b.set ("chordType", (float) b.pick ({ 2, 3, 4 }));
-                        b.set ("chordLevel", b.range (-19.0f, -13.0f));
+                        b.set ("chordLevel", b.range (-21.0f, -15.5f));
                         b.set ("chordFilter", b.range (0.4f, 0.6f));
+                        b.set ("lfo1QAmt", b.range (0.18f, 0.35f));   // slow filter breathing
+                        b.set ("lfo1Rate", b.range (0.08f, 0.25f));
+                        if (b.chance (0.5f)) { b.set ("lfo2QAmt", b.range (0.2f, 0.35f)); b.set ("lfo2Rate", b.range (0.1f, 0.2f)); }
                         b.set ("strumRate", (float) b.pick ({ 0, 1 }));
                         b.set ("strumFeel", b.range (0.3f, 0.5f));
                         b.set ("strumSpeed", b.range (40.0f, 70.0f));
@@ -138,6 +143,7 @@ namespace presets
                         if (b.chance (0.6f)) { b.set ("strumMode", 1.0f); b.set ("arpPattern", (float) b.pick ({ 5, 4, 2 })); b.set ("arpChance", b.range (0.65f, 0.85f)); b.set ("arpRegen", (float) b.pick ({ 1, 2, 3 })); b.set ("strumRate", (float) b.pick ({ 2, 4 })); }
                         b.set ("macroAge", b.range (0.15f, 0.45f));
                         b.set ("macroWobble", b.range (0.1f, 0.3f));
+                        if (b.chance (0.6f)) { b.set ("randQAmt", b.range (0.02f, 0.05f)); b.set ("randSmooth", b.range (0.7f, 0.9f)); b.set ("randRate", b.range (0.5f, 1.5f)); }   // tape pitch drift
                         b.set ("fx4Type", (float) b.pick ({ 11, 11, 9, 8, 4 }));
                         b.set ("fx4Mix", b.range (0.25f, 0.45f));
                         b.set ("fx4A", b.range (0.25f, 0.5f));
@@ -182,12 +188,13 @@ namespace presets
         const auto keep = current >= 0 && current < (int) list.size() ? list[(size_t) current].key() : juce::String();
         list = makeFactory();
         auto dir = userFolder();
-        for (auto& f : dir.findChildFiles (juce::File::findFiles, false, "*.h108preset"))
+        for (auto& f : dir.findChildFiles (juce::File::findFiles, true, "*.h108preset"))
             if (auto xml = juce::parseXML (f))
             {
                 Preset p;
                 p.factory = false;
                 p.file = f;
+                p.bank = f.getParentDirectory() == dir ? xml->getStringAttribute ("bank") : f.getParentDirectory().getFileName();
                 p.name = xml->getStringAttribute ("name", f.getFileNameWithoutExtension());
                 p.category = xml->getStringAttribute ("category", "Harp");
                 p.model = xml->getIntAttribute ("model", 1);
@@ -249,9 +256,45 @@ namespace presets
         load (order[(size_t) pos]);
     }
 
-    bool Manager::saveUser (const juce::String& name, const juce::String& category, int model)
+    juce::StringArray Manager::userBanks() const
+    {
+        juce::StringArray b;
+        for (auto& p : list) if (! p.factory && p.bank.isNotEmpty()) b.addIfNotAlreadyThere (p.bank);
+        for (auto& d : userFolder().findChildFiles (juce::File::findDirectories, false)) b.addIfNotAlreadyThere (d.getFileName());
+        b.sortNatural();
+        return b;
+    }
+
+    juce::String Manager::currentBank() const { return current >= 0 ? list[(size_t) current].bank : juce::String(); }
+
+    bool Manager::renameUser (int index, const juce::String& newName, const juce::String& newBank)
+    {
+        if (index < 0 || index >= (int) list.size() || list[(size_t) index].factory) return false;
+        const auto old = list[(size_t) index];
+        auto xml = juce::parseXML (old.file);
+        if (xml == nullptr) return false;
+        auto dir = userFolder();
+        const auto bankName = juce::File::createLegalFileName (newBank.trim());
+        if (bankName.isNotEmpty()) dir = dir.getChildFile (bankName);
+        if (! dir.createDirectory()) return false;
+        const auto safeName = juce::File::createLegalFileName (newName.trim());
+        if (safeName.isEmpty()) return false;
+        xml->setAttribute ("name", newName.trim());
+        xml->setAttribute ("bank", bankName);
+        auto file = dir.getChildFile (safeName + ".h108preset");
+        if (! xml->writeTo (file)) return false;
+        if (file != old.file) old.file.deleteFile();
+        rescanUser();
+        for (size_t i = 0; i < list.size(); ++i) if (! list[i].factory && list[i].file == file) current = (int) i;
+        if (onChange) onChange();
+        return true;
+    }
+
+    bool Manager::saveUser (const juce::String& name, const juce::String& category, int model, const juce::String& bank)
     {
         auto dir = userFolder();
+        const auto bankName = juce::File::createLegalFileName (bank.trim());
+        if (bankName.isNotEmpty()) dir = dir.getChildFile (bankName);
         if (! dir.createDirectory()) return false;
         const auto safeName = juce::File::createLegalFileName (name.trim());
         if (safeName.isEmpty()) return false;
@@ -260,6 +303,7 @@ namespace presets
         juce::XmlElement xml ("HAMAMATSU108PRESET");
         xml.setAttribute ("name", name.trim());
         xml.setAttribute ("category", category);
+        xml.setAttribute ("bank", bankName);
         xml.setAttribute ("model", model);
         for (auto* prm : state.processor.getParameters())
             if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (prm))

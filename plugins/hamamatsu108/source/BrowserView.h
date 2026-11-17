@@ -40,6 +40,10 @@ namespace hama
         juce::TextEditor search;
         std::vector<int> shown;
         int category = 0;   // 0 all, 1..6 categories, 7 favourites, 8 user
+        juce::String bankFilter, lastBank;   // "My presets": one of the user's banks (empty = all)
+        void showBankMenu();
+        void showRowMenu (int idx);
+        void askName (const juce::String& title, const juce::String& name, const juce::String& bank, std::function<void (juce::String, juce::String)> done);
         int model = -1;     // -1 all
         int lastCurrent = -2;
     };
