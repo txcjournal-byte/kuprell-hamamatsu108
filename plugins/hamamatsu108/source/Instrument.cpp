@@ -901,8 +901,10 @@ namespace hama
             m.addSeparator();
             m.addSectionHeader ("Your keys / piano roll notes (outside the chord zones)");
             static const char* keyText[] = { "Notes: play the exact pitch", "Strum: each key press strums the held notes", "Pattern: the pattern plays the held notes",
-                                             "Plate only: hold the keys, strum them on the plate / pitch wheel" };
-            for (int i = 0; i < 4; ++i) m.addItem (100 + i, keyText[i], true, keysPlay == i);
+                                             "Plate only: hold the keys, strum them on the plate / pitch wheel",
+                                             "Flourish up: one key = a harp run (octave = chord type, harder = faster)",
+                                             "Flourish down: the same run falling" };
+            for (int i = 0; i < 6; ++i) m.addItem (100 + i, keyText[i], true, keysPlay == i);
             m.addSeparator();
             juce::PopupMenu shape, speed, start;
             static const char* shapes[] = { "Linear", "Natural", "Fast start", "Fast finish" };

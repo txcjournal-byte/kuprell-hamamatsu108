@@ -61,7 +61,7 @@ juce::String Hamamatsu108Processor::patternString (int index) const
 
 const juce::StringArray& Hamamatsu108Processor::keysPlayNames()
 {
-    static const juce::StringArray n { "Notes", "Strum", "Pattern", "Plate only" };
+    static const juce::StringArray n { "Notes", "Strum", "Pattern", "Plate only", "Flourish up", "Flourish down" };
     return n;
 }
 
@@ -525,7 +525,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumShape", 1 }, "Stroke Shape", StringArray { "Linear", "Natural", "Fast start", "Fast finish" }, 1));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumSpeedMul", 1 }, "Pattern Speed", StringArray { "Half", "Normal", "Double" }, 1));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumRestart", 1 }, "Pattern Start", StringArray { "Follow the bar", "Restart on chord" }, 0));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "keysPlay", 1 }, "Keys Play", keysPlayNames(), 0));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "keysPlay", 1 }, "Keys Play", keysPlayNames(), 4));
 
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "hold", 1 }, "Hold", true));
 
@@ -703,7 +703,12 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
             }
             const int strumModeNow = juce::roundToInt (param (apvts, "strumMode"));
             const int keysPlay = juce::roundToInt (param (apvts, "keysPlay"));
-            if (strumModeNow == 0 && keysPlay > 0)
+            if ((strumModeNow == 0 || strumModeNow == 3) && keysPlay >= 4)
+            {
+                // FLOURISH: one key = a whole harp run of the chord on that key (the octave picks the chord type)
+                flourish (samplePos, n, m.getFloatVelocity(), keysPlay == 4);
+            }
+            else if (strumModeNow == 0 && keysPlay > 0)
             {
                 // KEYS: the held keys are the strings. Strum = every key press strums them (a chord pressed
                 // together = one stroke, harder = stronger and faster); Pattern = the LIVE pattern plays them
@@ -887,6 +892,35 @@ void Hamamatsu108Processor::sweep (int offset, bool down, int first, int count, 
         else if (shape == 2) shapeMul = 0.4f + 1.2f * f;
         else if (shape == 3) shapeMul = 1.6f - 1.2f * f;
         t += stepMs * 0.001f * (float) sr * jitter * shapeMul;
+    }
+}
+
+// FLOURISH: the key is the root, its octave the chord type (from the first harp octave up: major, minor, 7, maj7, m7),
+// harder = faster run. The run climbs (or falls) through the chord over the harp RANGE.
+void Hamamatsu108Processor::flourish (int samplePos, int key, float velocity, bool up)
+{
+    const int base = chordZones.load() ? juce::jmax (48, typeZoneHigh() + 1) : 36;
+    static const int typeByOctave[] = { 0, 1, 2, 3, 4 };
+    const int type = typeByOctave[juce::jlimit (0, 4, (key - base) / 12)];
+    const int chord = chords::index (key % 12, type);
+    flourishChord = chord;
+    const int range = juce::jlimit (1, 4, juce::roundToInt (param (apvts, "harpRange")));
+    const int mask = chords::pitchClassMask (chord, juce::roundToInt (param (apvts, "transpose")));
+    const int low = 48 + key % 12;   // start on the root around C3
+    std::vector<int> run;
+    for (int n = low; n <= juce::jmin (108, low + 12 * range); ++n)
+        if (mask & (1 << (n % 12))) run.push_back (n);
+    if (! up) std::reverse (run.begin(), run.end());
+    const float v = juce::jlimit (0.05f, 1.0f, velocity);
+    const float stepMs = 60.0f - 46.0f * v;   // soft = slow, hard = fast
+    const float feel = mp ("strumFeel");
+    float t = (float) samplePos;
+    for (size_t i = 0; i < run.size(); ++i)
+    {
+        const float f = run.size() > 1 ? (float) i / (float) (run.size() - 1) : 0.0f;
+        const float vel = (0.45f + 0.5f * v) * (0.85f + 0.3f * std::sin (f * juce::MathConstants<float>::pi)) * (1.0f + (rng.nextFloat() - 0.5f) * 0.2f * feel);
+        schedulePitch (juce::roundToInt (t), run[i], vel, true);
+        t += stepMs * 0.001f * (float) sr * (1.0f + (rng.nextFloat() - 0.5f) * 0.3f * feel);
     }
 }
 
@@ -1495,7 +1529,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     // KEYS (LIVE): the held keys become the strings, spread over the RANGE like a harp
     const int keysPlay = juce::roundToInt (param (apvts, "keysPlay"));
-    const bool keysMode = ! previewing && mode == 0 && keysPlay > 0;
+    const bool keysMode = ! previewing && mode == 0 && keysPlay > 0 && keysPlay < 4;
     bool anyKeyNote = false;
     for (int n = 0; n < 128 && keysMode; ++n) anyKeyNote = anyKeyNote || keyNotes[(size_t) n] || heldMelodic[(size_t) n];
     int keysSig = -1;
@@ -1628,6 +1662,11 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         std::vector<int> notesNow;
         if (id >= 0)
             notesNow = chords::voicing (id, transpose, juce::roundToInt (param (apvts, "voicing")), prevBlock);
+        else if (keysPlay >= 4 && flourishChord >= 0 && heldMelodicCount > 0)
+        {
+            id = flourishChord;
+            notesNow = chords::voicing (id, transpose, juce::roundToInt (param (apvts, "voicing")), prevBlock);
+        }
         else if (keysMode && heldMelodicCount > 0 && layerGateLeft > 0)
         {
             id = keysSig;
@@ -1644,10 +1683,10 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
     }
     layersFromHost = false;
-    if (heldMelodicCount == 0) detectedChord.store (-1);
+    if (heldMelodicCount == 0) { detectedChord.store (-1); flourishChord = -1; }
     if (chord < 0 && ! previewing && heldMelodicCount > 0)
     {
-        chord = chordFromHeldNotes();
+        chord = (keysPlay >= 4 && flourishChord >= 0) ? flourishChord : chordFromHeldNotes();
         layersFromHost = chord >= 0;
         detectedChord.store (chord);
     }
