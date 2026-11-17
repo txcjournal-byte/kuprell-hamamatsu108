@@ -684,6 +684,8 @@ namespace hama
             const int newMode = juce::roundToInt (plain (s, "strumMode"));
             const int newRate = juce::roundToInt (plain (s, "strumRate"));
             const int newPattern = juce::roundToInt (plain (s, "arpPattern"));
+            const int newStrumPat = juce::roundToInt (plain (s, "strumPattern"));
+            const int newKeys = juce::roundToInt (plain (s, "keysPlay"));
             const int newBank = processor.memBank.load();
             const int newStep = processor.memPlayStep.load();
             const bool newHold = plain (s, "hold") > 0.5f;
@@ -692,7 +694,7 @@ namespace hama
             const int newTr = juce::roundToInt (plain (s, "transpose"));
 
             if (newVoice != voice || newVoice2 != voice2 || newDual != dual || newMode != mode || newRate != rate || newPattern != pattern
-                || newBank != bank || newStep != step || newHold != hold || newKey != key || newMinor != minor || newTr != transpose || chord != chordIndex)
+                || newStrumPat != strumPat || newKeys != keysPlay || newBank != bank || newStep != step || newHold != hold || newKey != key || newMinor != minor || newTr != transpose || chord != chordIndex)
             {
                 if (newMode != mode)
                 {
@@ -700,7 +702,7 @@ namespace hama
                     knobs[3]->setVisible (! arp); knobs[4]->setVisible (! arp);
                     knobs[5]->setVisible (arp);   knobs[6]->setVisible (arp);
                 }
-                voice = newVoice; voice2 = newVoice2; dual = newDual; mode = newMode; rate = newRate; pattern = newPattern;
+                voice = newVoice; voice2 = newVoice2; dual = newDual; mode = newMode; rate = newRate; pattern = newPattern; strumPat = newStrumPat; keysPlay = newKeys;
                 bank = newBank; step = newStep; hold = newHold; key = newKey; minor = newMinor; transpose = newTr; chordIndex = chord;
                 repaint();
             }
@@ -734,7 +736,8 @@ namespace hama
             juce::String left = "STRUM", right;
             switch (mode)
             {
-                case 0: right = "LIVE " + rateText; break;
+                case 0: right = (keysPlay > 0 ? juce::String ("KEYS ") : juce::String ("LIVE "))
+                              + (strumPat == 0 ? rateText : Hamamatsu108Processor::strumPatternNames()[strumPat].toUpperCase().removeCharacters (" /34")); break;
                 case 1: left = "ARP"; right = Hamamatsu108Processor::arpPatternNames()[pattern].toUpperCase().removeCharacters (" ") + " " + rateText; break;
                 case 2: left = "MEMO " + juce::String::charToString ((juce::juce_wchar) ('A' + bank));
                         right = step >= 0 ? "STEP " + juce::String (step + 1) : juce::String ("EMPTY"); break;
@@ -805,11 +808,13 @@ namespace hama
                 for (int i = 0; i < 4; ++i)
                     if (modeArea (i).contains (p))
                     {
-                        if (i == mode && i == 1)      showArpMenu();
+                        if (i == mode && i == 0)      showLiveMenu();
+                        else if (i == mode && i == 1) showArpMenu();
                         else if (i == mode && i == 2) showMemoMenu();
                         else
                         {
                             setParam (s, "strumMode", (float) i);
+                            if (i == 0) message ("LIVE: the hand plays the chord like a person. Click LIVE again to pick the strum pattern and how your keys play.");
                             if (i == 1) message ("ARP: arpeggio over the chord. PATTERN and CHANCE knobs, click ARP again for Regen.");
                             if (i == 2) message ("MEMO: plays the chord sequence on the front rail. Press REC there and click chords to record.");
                         }
@@ -865,6 +870,23 @@ namespace hama
             });
         }
 
+        void showLiveMenu()
+        {
+            juce::PopupMenu m;
+            m.addSectionHeader ("LIVE: how the hand plays");
+            for (int i = 0; i < Hamamatsu108Processor::strumPatternNames().size(); ++i)
+                m.addItem (1 + i, Hamamatsu108Processor::strumPatternNames()[i] + (i == 0 ? juce::String (" (plain down / up at RATE)") : juce::String()), true, strumPat == i);
+            m.addSeparator();
+            m.addSectionHeader ("Your keys / piano roll notes (outside the chord zones)");
+            static const char* keyText[] = { "Notes: play the exact pitch", "Strum: each key press strums the held notes", "Pattern: the pattern plays the held notes" };
+            for (int i = 0; i < 3; ++i) m.addItem (100 + i, keyText[i], true, keysPlay == i);
+            popup (m, modeArea (0), [this] (int r)
+            {
+                if (r >= 100) setParam (processor.apvts, "keysPlay", (float) (r - 100));
+                else setParam (processor.apvts, "strumPattern", (float) (r - 1));
+            });
+        }
+
         void showArpMenu()
         {
             juce::PopupMenu m;
@@ -909,6 +931,7 @@ namespace hama
         }
 
         Hamamatsu108Processor& processor;
+        int strumPat = -1, keysPlay = -1;
         int voice = 0, voice2 = 9, mode = -1, rate = 2, pattern = 0, bank = 0, step = -1, key = 0, transpose = 0, chordIndex = -1, meterL = 0, meterR = 0;
         bool hold = false, minor = false, dual = false;
     };
@@ -920,7 +943,7 @@ namespace hama
     public:
         explicit MidiCapture (Hamamatsu108Processor& p) : processor (p)
         {
-            setTooltip (juce::String::fromUTF8 ("MIDI capture \xc2\xb7 harp, chord layer and bass the plugin plays are recorded here (3 tracks). Drag it into the FL Studio playlist or piano roll. Right-click: clear."));
+            setTooltip (juce::String::fromUTF8 ("MIDI capture \xc2\xb7 what you play is recorded here. Drag it into the FL Studio playlist or piano roll. Right-click: CHORDS (long stacked notes) / DETAIL (every plucked note) / BOTH, chord grid, clear."));
             setMouseCursor (juce::MouseCursor::DraggingHandCursor);
         }
 
@@ -967,7 +990,10 @@ namespace hama
             drawLed (g, juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ r.getX() + 14.0f, r.getY() + 14.0f }), live);
             auto text = r.reduced (26.0f, 5.0f).withTrimmedLeft (-2.0f);
             g.setFont (LookAndFeel::monoFont (11.0f));
-            glowText (g, "MIDI CAPTURE", text.removeFromTop (17.0f), juce::Justification::centredLeft, 0.7f);
+            static const char* modeNames[] = { "DETAIL", "CHORDS", "BOTH" };
+            auto top = text.removeFromTop (17.0f);
+            glowText (g, "MIDI CAPTURE", top, juce::Justification::centredLeft, 0.7f);
+            glowText (g, modeNames[juce::jlimit (0, 2, processor.captureMode.load())], top, juce::Justification::centredRight, 0.5f);
             g.setFont (LookAndFeel::monoFont (13.0f));
             if (notes.empty())
                 glowText (g, "play, then drag", text, juce::Justification::centredLeft, 0.55f);
@@ -977,7 +1003,11 @@ namespace hama
                 const double bars = secs * processor.hostBpm.load() / 240.0;
                 int ons = 0;
                 for (auto& n : notes) if (n.on) ++ons;
-                glowText (g, juce::String::fromUTF8 ("DRAG \xe2\x87\xa2 ") + juce::String (ons) + " notes " + juce::String (juce::jmax (1, (int) std::ceil (bars))) + " bar",
+                int blocks = 0;
+                for (auto& n : notes) if (n.on && n.layer == 3) ++blocks;
+                const int mode = processor.captureMode.load();
+                const juce::String what = mode == 1 ? juce::String (blocks) + " chord notes" : juce::String (ons) + " notes";
+                glowText (g, juce::String::fromUTF8 ("DRAG \xe2\x87\xa2 ") + what + " " + juce::String (juce::jmax (1, (int) std::ceil (bars))) + " bar",
                           text, juce::Justification::centredLeft);
             }
         }
@@ -987,11 +1017,36 @@ namespace hama
 
         void mouseDown (const juce::MouseEvent& e) override
         {
-            if (e.mods.isPopupMenu())
+            if (e.mods.isPopupMenu() || (notes.empty() && ! e.mods.isAnyModifierKeyDown()))
+                showMenu();
+        }
+
+        void showMenu()
+        {
+            const int mode = processor.captureMode.load(), q = processor.captureQuant.load();
+            juce::PopupMenu m;
+            m.addSectionHeader ("Drag the take as...");
+            m.addItem (1, "Chords: long stacked notes (piano roll ready)", true, mode == 1);
+            m.addItem (2, "Detail: every plucked note, as played", true, mode == 0);
+            m.addItem (3, "Both: chords + detail on separate tracks", true, mode == 2);
+            m.addSeparator();
+            juce::PopupMenu grid;
+            static const char* qn[] = { "Off (as played)", "1/16", "1/8", "1/4", "1 bar" };
+            for (int i = 0; i < 5; ++i) grid.addItem (10 + i, qn[i], true, q == i);
+            m.addSubMenu ("Chord grid (snap chord blocks)", grid);
+            m.addSeparator();
+            m.addItem (20, "Clear take", ! notes.empty());
+            juce::Component::SafePointer<MidiCapture> safe (this);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int r)
             {
-                notes.clear();
-                repaint();
-            }
+                if (safe == nullptr || r <= 0) return;
+                if (r == 1) safe->processor.captureMode.store (1);
+                if (r == 2) safe->processor.captureMode.store (0);
+                if (r == 3) safe->processor.captureMode.store (2);
+                if (r >= 10 && r < 15) safe->processor.captureQuant.store (r - 10);
+                if (r == 20) safe->notes.clear();
+                safe->repaint();
+            });
         }
 
         void mouseDrag (const juce::MouseEvent& e) override
@@ -1013,24 +1068,36 @@ namespace hama
             const double bpm = processor.hostBpm.load();
             const int ppq = 960;
             const double t0 = notes.front().seconds;
-            auto toTicks = [&] (double s) { return (s - t0) * bpm / 60.0 * ppq; };
+            auto toTicks = [&] (double sec) { return (sec - t0) * bpm / 60.0 * ppq; };
+            const int mode = processor.captureMode.load();
+            static const double gridQ[] = { 0.0, 0.25, 0.5, 1.0, 4.0 };
+            const double grid = gridQ[juce::jlimit (0, 4, processor.captureQuant.load())] * ppq;
+            auto snap = [grid] (double t) { return grid > 0.0 ? std::round (t / grid) * grid : t; };
 
-            // three tracks: harp, chord layer, bass (FL Studio puts each on its own channel)
+            // tracks: chord blocks / harp detail / chord layer / bass (FL Studio puts each on its own channel)
+            juce::Array<int> layers;
+            if (mode != 0) layers.add (3);
+            if (mode != 1) layers.add (0);
+            layers.add (1);
+            layers.add (2);
+
             juce::MidiFile mf;
             mf.setTicksPerQuarterNote (ppq);
             const double endTicks = toTicks (notes.back().seconds) + ppq;
-            for (int layer = 0; layer < 3; ++layer)
+            bool first = true;
+            for (int layer : layers)
             {
                 juce::MidiMessageSequence seq;
-                if (layer == 0) seq.addEvent (juce::MidiMessage::tempoMetaEvent (juce::roundToInt (60000000.0 / bpm)), 0.0);
-                static const char* trackNames[] = { "Hamamatsu harp", "Hamamatsu chords", "Hamamatsu bass" };
+                if (first) seq.addEvent (juce::MidiMessage::tempoMetaEvent (juce::roundToInt (60000000.0 / bpm)), 0.0);
+                static const char* trackNames[] = { "Hamamatsu harp (detail)", "Hamamatsu chord layer", "Hamamatsu bass", "Hamamatsu chords" };
                 seq.addEvent (juce::MidiMessage::textMetaEvent (3, trackNames[layer]), 0.0);
+                const int channel = layer == 3 ? 1 : (mode == 0 ? 1 + layer : 2 + layer);
                 int count = 0;
                 for (size_t i = 0; i < notes.size(); ++i)
                 {
                     const auto& n = notes[i];
                     if (n.layer != layer || ! n.on) continue;
-                    const double on = toTicks (n.seconds);
+                    double on = toTicks (n.seconds);
                     double off = layer == 0 ? on + ppq / 2.0 : endTicks;
                     for (size_t j = i + 1; j < notes.size(); ++j)
                         if (notes[j].layer == layer && notes[j].note == n.note)
@@ -1040,14 +1107,19 @@ namespace hama
                             else { off = t; }
                             break;
                         }
+                    if (layer == 3)
+                    {
+                        on = snap (on);
+                        off = juce::jmax (on + (grid > 0.0 ? grid : ppq / 4.0), snap (off + 1.0) - 1.0);
+                    }
                     const auto vel = (juce::uint8) juce::jlimit (1, 127, juce::roundToInt (n.velocity * 127.0f));
-                    seq.addEvent (juce::MidiMessage::noteOn (1 + layer, n.note, vel), on);
-                    seq.addEvent (juce::MidiMessage::noteOff (1 + layer, n.note), juce::jmax (on + 1.0, off));
+                    seq.addEvent (juce::MidiMessage::noteOn (channel, n.note, vel), on);
+                    seq.addEvent (juce::MidiMessage::noteOff (channel, n.note), juce::jmax (on + 1.0, off));
                     ++count;
                 }
                 seq.updateMatchedPairs();
                 seq.sort();
-                if (count > 0 || layer == 0) mf.addTrack (seq);
+                if (count > 0 || first) { mf.addTrack (seq); first = false; }
             }
 
             auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Kuprell Hamamatsu 108");

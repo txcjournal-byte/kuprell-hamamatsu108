@@ -96,7 +96,9 @@ public:
 
     // notes the plugin creates itself (Live Strum, strum plate), for "drag MIDI to the DAW".
     // Notes coming in from the host are not captured: the DAW already has them.
-    struct CapturedNote { double seconds; int note; float velocity; int layer = 0; bool on = true; };   // layer: 0 harp, 1 chord, 2 bass
+    struct CapturedNote { double seconds; int note; float velocity; int layer = 0; bool on = true; };   // layer: 0 harp, 1 chord layer, 2 bass, 3 chord blocks
+    std::atomic<int> captureMode { 2 };    // what a dragged take contains: 0 detail (every plucked note), 1 chords (long notes stacked), 2 both
+    std::atomic<int> captureQuant { 1 };   // chord blocks snap to: 0 off, 1 1/16, 2 1/8, 3 1/4, 4 bar
     juce::AbstractFifo captureFifo { 2048 };
     std::array<CapturedNote, 2048> captureBuffer {};
 
@@ -115,6 +117,9 @@ public:
     std::atomic<int> editorWidth { 0 };
 
     static const juce::StringArray& strumModeNames();
+    static const juce::StringArray& strumPatternNames();
+    static const juce::StringArray& keysPlayNames();
+    static const char* strumPatternSteps (int index);   // one bar, 1/16 per step (see stroke())
     static const juce::StringArray& strumRateNames();
     static const juce::StringArray& arpPatternNames();
     static const juce::StringArray& modelNames();
@@ -136,7 +141,10 @@ private:
 
     void handleMidi (const juce::MidiMessage&, int samplePos);
     void updateTones (int chordIndex, int transpose, int rangeOctaves);
-    void scheduleStrum (int offset, bool down);
+    void scheduleStrum (int offset, bool down, float velScale = 1.0f, float speedMul = 1.0f);
+    void sweep (int offset, bool down, int first, int count, float vel, float speedMul);
+    void stroke (int offset, char type, float accent);
+    void patternStep (int offset, juce::int64 k);
     void scheduleNote (int delay, int toneIndex, float velocity);
     void schedulePitch (int delay, int note, float velocity);
     void startVoice (int note, float velocity);
@@ -175,7 +183,7 @@ private:
     bool layersFromHost = false;
     int layerGateLeft = 0;
     bool hostDriven = false;
-    std::array<std::array<bool, 128>, 3> capturedOn {};   // note-offs are recorded only for recorded note-ons          // the piano roll is playing the plugin: MIDI capture records nothing            // chord layer + bass sound while the harp is being played, then release      // chord layer / bass following piano-roll notes: never captured
+    std::array<std::array<bool, 128>, 4> capturedOn {};   // note-offs are recorded only for recorded note-ons          // the piano roll is playing the plugin: MIDI capture records nothing            // chord layer + bass sound while the harp is being played, then release      // chord layer / bass following piano-roll notes: never captured
     int chordFromHeldNotes();   // chord that fits the held MIDI notes (for chord layer and bass)
     int tonesChord = -2, tonesTranspose = 0, tonesRange = 0;
 
@@ -186,6 +194,16 @@ private:
     bool wasStrumming = false;
     bool lastHoldOn = true;
     int lastMode = -1;
+
+    // strum patterns and KEYS play
+    int bassAlt = 0;
+    bool sweepDown = true;
+    int keyStrumAt = -1;              // KEYS Strum: samples until the collected keys are strummed
+    float keyStrumVel = 0.0f;
+    std::array<bool, 128> keyNotes {}; // keys pressed since the stroke was armed
+    int lastStrumId = -1;              // chord or held-key set the hand is playing (a change = instant stroke)
+    std::vector<int> blockNotes, prevBlock;   // chord block for the MIDI capture
+    int blockId = -1;
 
     // arpeggio
     juce::int64 arpCounter = 0;

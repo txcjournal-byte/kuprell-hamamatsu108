@@ -199,15 +199,19 @@ namespace hama
     public:
         StrumPage (Hamamatsu108Processor& p, EditView& o) : EditPage (p, o)
         {
-            auto s = panel ("LIVE STRUM", 0, 0, 600, 250);
-            choice ("strumMode", "MODE", { s.getX(), s.getY(), 140, 44 });
-            toggle ("hold", "HOLD", { s.getX() + 156, s.getY() + 14, 100, 30 });
-            knobAt ("strumRate", "Rate", 48, s.getX(), s.getY() + 64, 120);
-            knobAt ("strumFeel", "Feel", 48, s.getX() + 140, s.getY() + 64, 120);
-            knobAt ("strumSpeed", "Speed", 48, s.getX() + 280, s.getY() + 64, 120);
-            helpS = { s.getX() + 410, s.getY() + 56, 150, 120 };
+            auto s = panel ("LIVE STRUM  \xc2\xb7  HOW THE HAND PLAYS", 0, 0, 600, 250);
+            choice ("strumMode", "MODE", { s.getX(), s.getY(), 110, 44 });
+            choice ("strumPattern", "PATTERN", { s.getX() + 122, s.getY(), 150, 44 });
+            choice ("keysPlay", "YOUR KEYS", { s.getX() + 284, s.getY(), 120, 44 });
+            toggle ("hold", "HOLD", { s.getX() + 418, s.getY() + 14, 90, 30 });
+            knobAt ("strumRate", "Rate", 44, s.getX(), s.getY() + 58, 106);
+            knobAt ("strumFeel", "Feel", 44, s.getX() + 110, s.getY() + 58, 106);
+            knobAt ("strumSpeed", "Speed", 44, s.getX() + 220, s.getY() + 58, 106);
+            knobAt ("strumSwing", "Swing", 44, s.getX() + 330, s.getY() + 58, 106);
+            knobAt ("strumVary", "Variation", 44, s.getX() + 440, s.getY() + 58, 106);
+            helpS = { s.getX(), s.getY() + 160, s.getWidth(), 40 };
 
-            preview = panel ("HAND PREVIEW", 612, 0, 620, 250);
+            preview = panel ("ONE BAR OF THE HAND  \xc2\xb7  LOW STRINGS AT THE BOTTOM", 612, 0, 620, 250);
 
             auto a = panel ("ARPEGGIO", 0, 262, 600, 268);
             choice ("arpPattern", "PATTERN", { a.getX(), a.getY(), 160, 44 });
@@ -222,19 +226,76 @@ namespace hama
         void tick() override
         {
             juce::String sig;
-            for (auto* id : { "strumFeel", "strumSpeed", "strumRate", "arpPattern", "arpChance", "arpRegen", "harpRange" })
+            for (auto* id : { "strumFeel", "strumSpeed", "strumRate", "arpPattern", "arpChance", "arpRegen", "harpRange", "strumPattern", "strumSwing", "strumVary", "keysPlay" })
                 sig << processor.apvts.getRawParameterValue (id)->load() << ",";
             if (sig != lastSig) { lastSig = sig; repaint(); }
         }
 
         void paintExtras (juce::Graphics& g) override
         {
-            text (g, "Pick a chord and the hand plays it in time. FEEL loosens the hand (timing, force, skipped up-strokes), SPEED is how fast it sweeps the strings.", helpS);
+            text (g, "PATTERN = how a player strums (Even = plain down/up at RATE). FEEL loosens timing and force, SPEED = how fast a stroke crosses the strings, SWING delays every 2nd 1/16, VARIATION adds ghost strokes, leaves notes out and plays a fill every 4th bar. YOUR KEYS: Notes = exact pitch, Strum = each key press strums the keys you hold, Pattern = the pattern plays them.", helpS);
             text (g, "ARP plays the chord tones one by one in the PATTERN. CHANCE drops random notes; REGEN rolls a new variation every 1, 2 or 4 bars (Off keeps one variation).", helpA);
 
-            // hand preview: two beats of strokes, strings bottom (low) to top (high)
-            auto r = preview.toFloat();
+            // hand preview: one bar of the pattern (or two beats of the plain clock), low strings at the bottom
+            auto r = preview.toFloat().reduced (0.0f, 6.0f);
             const float feel = plain (processor.apvts, "strumFeel"), speed = plain (processor.apvts, "strumSpeed");
+            const int patIdx = juce::roundToInt (plain (processor.apvts, "strumPattern"));
+            juce::Random rnd (42);
+            if (patIdx > 0)
+            {
+                const juce::String steps (Hamamatsu108Processor::strumPatternSteps (patIdx));
+                const int len = steps.length();
+                const float swing = plain (processor.apvts, "strumSwing");
+                const float colW = r.getWidth() / (float) len;
+                for (int i = 0; i <= len; ++i)
+                {
+                    g.setColour (juce::Colours::white.withAlpha (i % 4 == 0 ? 0.12f : 0.04f));
+                    g.drawVerticalLine ((int) (r.getX() + i * colW), r.getY(), r.getBottom());
+                }
+                auto yOf = [&] (float f) { return r.getBottom() - 6.0f - (r.getHeight() - 12.0f) * f; };
+                bool sweepDn = false;
+                for (int i = 0; i < len; ++i)
+                {
+                    const char c = (char) steps[i];
+                    if (c == '.') continue;
+                    const float x = r.getX() + (i + 0.5f + (i % 2 == 1 ? swing * 0.33f : 0.0f)) * colW;
+                    const float accent = i == 0 ? 1.0f : (i % 4 == 0 ? 0.9f : 0.75f);
+                    float lo = 0.0f, hi = 1.0f, a = 0.9f * accent; bool up = false;
+                    float w = juce::jmin (colW * 0.9f, speed * 0.25f);
+                    switch (c)
+                    {
+                        case 'D': break;
+                        case 'U': up = true; lo = 0.3f; a *= 0.75f; break;
+                        case 'd': lo = 0.35f; a *= 0.65f; break;
+                        case 'u': up = true; lo = 0.65f; a *= 0.5f; break;
+                        case 'x': lo = 0.4f; hi = 0.6f; a *= 0.25f; w *= 0.5f; break;
+                        case 'B': lo = 0.0f; hi = 0.08f; w = 0.0f; break;
+                        case 'H': lo = 0.9f; hi = 1.0f; w = 0.0f; a *= 0.65f; break;
+                        case 'T': lo = 0.3f + 0.4f * rnd.nextFloat(); hi = lo + 0.15f; w = 2.0f; a *= 0.7f; break;
+                        case 'S': sweepDn = ! sweepDn; up = ! sweepDn; w = colW * 3.0f; break;
+                        default: break;
+                    }
+                    const float y0 = yOf (up ? hi : lo), y1 = yOf (up ? lo : hi);
+                    g.setColour (th().accent.withAlpha (0.2f + 0.8f * a));
+                    if (w < 1.0f) g.fillEllipse (x - 4.0f, (y0 + y1) * 0.5f - 4.0f, 8.0f, 8.0f);
+                    else
+                    {
+                        juce::Path p;
+                        p.startNewSubPath (x, y0);
+                        p.lineTo (x + w, y1);
+                        g.strokePath (p, juce::PathStrokeType (2.0f + 2.0f * a, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+                        juce::Path head;
+                        head.addArrow ({ x + w * 0.6f, y0 + (y1 - y0) * 0.6f, x + w, y1 }, 0.0f, 9.0f, 8.0f);
+                        g.fillPath (head);
+                    }
+                }
+                g.setColour (juce::Colours::white.withAlpha (0.35f));
+                g.setFont (spaced (8.5f, true, 0.15f));
+                for (int b = 0; b < len / 4; ++b)
+                    g.drawText (juce::String (b + 1), juce::Rectangle<float> (r.getX() + b * 4 * colW + 4.0f, r.getY(), 20.0f, 12.0f), juce::Justification::left, false);
+            }
+            else
+            {
             const int rateIdx = juce::roundToInt (plain (processor.apvts, "strumRate"));
             static const double rq[] = { 2.0, 1.0, 0.5, 1.0 / 3.0, 0.25 };
             const double stepQ = rq[juce::jlimit (0, 4, rateIdx)];
@@ -242,7 +303,6 @@ namespace hama
             const float beatW = r.getWidth() / 2.0f;
             g.setColour (juce::Colours::white.withAlpha (0.06f));
             for (int b = 0; b <= 2; ++b) g.drawVerticalLine ((int) (r.getX() + b * beatW), r.getY(), r.getBottom());
-            juce::Random rnd (42);
             const int n = 12;
             for (int s = 0; s < strokes; ++s)
             {
@@ -261,6 +321,7 @@ namespace hama
                     g.fillEllipse (x - 3.0f, y - 3.0f, 6.0f, 6.0f);
                     x += speed * 0.001f * beatW * 2.0f * (1.0f + (rnd.nextFloat() - 0.5f) * 0.5f * feel);
                 }
+            }
             }
 
             // arp pattern: 16 steps over 4 chord tones x range

@@ -22,6 +22,41 @@ const juce::StringArray& Hamamatsu108Processor::strumModeNames()
     return n;
 }
 
+// How the LIVE hand plays. "Even" is the plain clock (Rate knob, down / up alternating);
+// the others are one bar of 1/16 steps played like a person would.
+const juce::StringArray& Hamamatsu108Processor::strumPatternNames()
+{
+    static const juce::StringArray n { "Even", "Ballad", "Folk", "Pop 8ths", "Pop 16ths", "Tap", "Brush", "Fingerpick",
+                                       "Bossa", "Reggae", "Waltz 3/4", "Half Time", "Shimmer" };
+    return n;
+}
+
+//  D full down  U full up  d light down (upper strings)  u light up (top strings)
+//  B thumb on the bass strings  H one high string  T finger tap (2-3 strings)  x ghost brush  S slow full sweep  . rest
+const char* Hamamatsu108Processor::strumPatternSteps (int index)
+{
+    static const char* steps[] = { "",
+                                   "D.....u.d.....u.",   // Ballad
+                                   "D...D.U...U.D.U.",   // Folk
+                                   "D.u.D.U.d.u.D.U.",   // Pop 8ths
+                                   "D.dUx.dUD.dUx.dU",   // Pop 16ths
+                                   "T..TT.x.T..TT.x.",   // Tap
+                                   "S.......S.......",   // Brush
+                                   "B.H.T.H.B.H.T.H.",   // Fingerpick
+                                   "B..dB.d.B..dB.d.",   // Bossa
+                                   "....d.x.....d.x.",   // Reggae
+                                   "B...d.u.d.u.",       // Waltz 3/4 (12 steps)
+                                   "D.......d...u...",   // Half Time
+                                   "S...H.u.S...H.u." }; // Shimmer
+    return steps[juce::jlimit (0, 12, index)];
+}
+
+const juce::StringArray& Hamamatsu108Processor::keysPlayNames()
+{
+    static const juce::StringArray n { "Notes", "Strum", "Pattern" };
+    return n;
+}
+
 const juce::StringArray& Hamamatsu108Processor::modelNames()
 {
     static const juce::StringArray n { "Early 81", "System 84", "Tone Bank 89", "Late 90s", "Cartridge 99", "Modern Strum" };
@@ -386,6 +421,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumRate", 1 }, "Strum Rate", strumRateNames(), 2));
     fl ("strumFeel", "Strum Feel", 0.0f, 1.0f, 0.62f, pct);
     fl ("strumSpeed", "Strum Speed", 4.0f, 80.0f, 22.0f, [] (float v, int) { return String (roundToInt (v)) + " ms"; }, 20.0f);
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumPattern", 1 }, "Strum Pattern", strumPatternNames(), 2));
+    fl ("strumSwing", "Strum Swing", 0.0f, 1.0f, 0.0f, pct);
+    fl ("strumVary", "Strum Variation", 0.0f, 1.0f, 0.35f, pct);
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "keysPlay", 1 }, "Keys Play", keysPlayNames(), 0));
 
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "hold", 1 }, "Hold", true));
 
@@ -508,7 +547,20 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
             // melodic note: in ARP mode held notes are arpeggiated (piano roll or keyboard),
             // otherwise it plays exactly the written pitch
             if (! heldMelodic[(size_t) n]) { heldMelodic[(size_t) n] = true; ++heldMelodicCount; }
-            if (juce::roundToInt (param (apvts, "strumMode")) != 1)
+            const int strumModeNow = juce::roundToInt (param (apvts, "strumMode"));
+            const int keysPlay = juce::roundToInt (param (apvts, "keysPlay"));
+            if (strumModeNow == 0 && keysPlay > 0)
+            {
+                // KEYS: the held keys are the strings. Strum = every key press strums them (a chord pressed
+                // together = one stroke, harder = stronger and faster); Pattern = the LIVE pattern plays them
+                keyNotes[(size_t) n] = true;
+                if (keysPlay == 1)
+                {
+                    if (keyStrumAt < 0) { keyStrumAt = samplePos + (int) (0.012 * sr); keyStrumVel = 0.0f; }
+                    keyStrumVel = juce::jmax (keyStrumVel, m.getFloatVelocity());
+                }
+            }
+            else if (strumModeNow != 1)
                 schedulePitch (samplePos, n, m.getFloatVelocity());
         }
     }
@@ -620,21 +672,19 @@ void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity)
 }
 
 // one hand gesture across the strings, with human variation driven by Feel
-void Hamamatsu108Processor::scheduleStrum (int offset, bool down)
+void Hamamatsu108Processor::scheduleStrum (int offset, bool down, float velScale, float speedMul)
 {
     const int n = (int) tones.size();
     if (n == 0) return;
 
     const float feel = mp ("strumFeel");
-    const float speedMs = mp ("strumSpeed");
     auto rnd = [this] { return rng.nextFloat(); };
 
     // a loose hand sometimes skips a light up-stroke
     if (! down && rnd() < 0.3f * feel) return;
 
     const float accent = down ? 0.85f : 0.62f;
-    const float baseVel = juce::jlimit (0.15f, 1.0f, accent + (rnd() - 0.5f) * 0.4f * feel);
-    const int lead = juce::roundToInt ((rnd() - 0.3f) * feel * 0.012f * (float) sr);
+    const float baseVel = juce::jlimit (0.15f, 1.0f, (accent + (rnd() - 0.5f) * 0.4f * feel) * velScale);
 
     int count, first;
     if (down)
@@ -647,18 +697,112 @@ void Hamamatsu108Processor::scheduleStrum (int offset, bool down)
         count = juce::jmax (2, juce::roundToInt ((float) n * (0.35f + 0.35f * rnd())));
         first = n - 1 - juce::roundToInt ((float) (n - count) * rnd() * 0.3f);
     }
+    sweep (offset, down, first, count, baseVel, speedMul);
+}
 
+// strings first .. first+count (down) or first .. first-count (up), one after another
+void Hamamatsu108Processor::sweep (int offset, bool down, int first, int count, float vel, float speedMul)
+{
+    const int n = (int) tones.size();
+    if (n == 0 || count <= 0) return;
+    const float feel = mp ("strumFeel");
+    const float speedMs = mp ("strumSpeed") * speedMul;
+    auto rnd = [this] { return rng.nextFloat(); };
+
+    const int lead = juce::roundToInt ((rnd() - 0.3f) * feel * 0.012f * (float) sr);
     const float stepMs = speedMs * (1.0f + (rnd() - 0.5f) * 0.6f * feel);
     float t = (float) juce::jmax (0, offset + lead);
     for (int i = 0; i < count; ++i)
     {
         const int tone = down ? first + i : first - i;
         if (tone < 0 || tone >= n) break;
-        const float v = baseVel * (1.0f - 0.25f * (float) i / (float) count) * (1.0f + (rnd() - 0.5f) * 0.25f * feel);
+        const float v = vel * (1.0f - 0.25f * (float) i / (float) count) * (1.0f + (rnd() - 0.5f) * 0.25f * feel);
         scheduleNote (juce::roundToInt (t), tone, v);
         const float jitter = 1.0f + (rnd() - 0.5f) * 0.5f * feel;
         t += stepMs * 0.001f * (float) sr * jitter;
     }
+}
+
+// one stroke of a pattern (see strumPatternSteps)
+void Hamamatsu108Processor::stroke (int offset, char type, float accent)
+{
+    const int n = (int) tones.size();
+    if (n == 0) return;
+    const float feel = mp ("strumFeel");
+    auto rnd = [this] { return rng.nextFloat(); };
+    auto human = [&] (float v) { return juce::jlimit (0.06f, 1.0f, v * accent * (1.0f + (rnd() - 0.5f) * 0.35f * feel)); };
+
+    switch (type)
+    {
+        case 'D': scheduleStrum (offset, true, accent); break;
+        case 'U': scheduleStrum (offset, false, accent); break;
+        case 'd':
+        {
+            const int first = juce::roundToInt ((float) n * (0.3f + 0.15f * rnd()));
+            sweep (offset, true, first, juce::jmax (2, n - first), human (0.6f), 0.85f);
+            break;
+        }
+        case 'u':
+            sweep (offset, false, n - 1, juce::jlimit (2, 5, juce::roundToInt ((float) n * 0.35f)), human (0.46f), 0.8f);
+            break;
+        case 'x':
+        {
+            const int first = juce::roundToInt ((float) juce::jmax (0, n - 3) * (0.3f + 0.4f * rnd()));
+            sweep (offset, true, first, juce::jmin (3, n), human (0.22f), 0.55f);
+            break;
+        }
+        case 'B':
+        {
+            // thumb: root, then the next chord tone up (alternating bass)
+            const int idx = (bassAlt++ % 2 == 0) ? 0 : juce::jmin (n - 1, 2);
+            scheduleNote (juce::jmax (0, offset), idx, human (0.8f));
+            break;
+        }
+        case 'H':
+            scheduleNote (juce::jmax (0, offset), n - 1 - (int) (rnd() * (float) juce::jmin (3, n)), human (0.56f));
+            break;
+        case 'T':
+        {
+            const int k = rnd() < 0.5f ? 2 : 3;
+            const int first = (int) (rnd() * (float) juce::jmax (1, n - k));
+            sweep (offset, rnd() < 0.7f, first + (rnd() < 0.7f ? 0 : k - 1), juce::jmin (k, n), human (0.62f), 0.15f);
+            break;
+        }
+        case 'S':
+            sweepDown = ! sweepDown;
+            sweep (offset, ! sweepDown, sweepDown ? n - 1 : 0, n, human (0.7f), 3.5f);
+            break;
+        default: break;
+    }
+}
+
+// pattern step k (counted in 1/16 from the bar start): accents, variation and fills like a player
+void Hamamatsu108Processor::patternStep (int offset, juce::int64 k)
+{
+    const juce::String steps (strumPatternSteps (juce::roundToInt (param (apvts, "strumPattern"))));
+    const int len = steps.length();
+    if (len == 0) return;
+    const int i = (int) (k % len);
+    const juce::int64 bar = k / len;
+    const float vary = mp ("strumVary");
+    auto rnd = [this] { return rng.nextFloat(); };
+
+    char c = (char) steps[i];
+    // every 4th bar the last beat turns into a small fill
+    if (vary > 0.05f && bar % 4 == 3 && i >= len - 4 && rnd() < vary * 0.8f)
+        c = "dudu"[i - (len - 4)];
+    else if (c == '.')
+    {
+        if (i % 2 == 1 && rnd() < 0.14f * vary) c = 'x';                 // ghost brush between strokes
+    }
+    else if (i != 0 && (c == 'd' || c == 'u' || c == 'x' || c == 'H') && rnd() < 0.22f * vary)
+        c = '.';                                                          // a light stroke left out
+    else if (c == 'U' && rnd() < 0.2f * vary)
+        c = 'u';
+    if (c == '.') return;
+
+    const float accent = i == 0 ? 1.0f : (i % 4 == 0 ? 0.9f : 0.78f);
+    stroke (offset, c, accent);
 }
 
 void Hamamatsu108Processor::startVoice (int note, float velocity)
@@ -704,12 +848,12 @@ void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note,
 void Hamamatsu108Processor::capture (double seconds, int note, float velocity, int layer, bool on)
 {
     if (previewMute) return;   // preset previews never end up in the MIDI capture
-    if (note < 0 || note > 127 || layer < 0 || layer > 2) return;
+    if (note < 0 || note > 127 || layer < 0 || layer > 3) return;
     auto& wasOn = capturedOn[(size_t) layer][(size_t) note];
     if (! on && ! wasOn) return;  // the matching note-on was never recorded
     if (on && hostDriven) return; // piano roll playback is not recorded again
     wasOn = on;
-    if (layer >= 1 && layersFromHost) return;   // layers that only follow the piano roll are not recorded
+    if ((layer == 1 || layer == 2) && layersFromHost) return;   // layers that only follow the piano roll are not recorded
     const auto scope = captureFifo.write (1);
     const CapturedNote cn { seconds, note, velocity, layer, on };
     if (scope.blockSize1 > 0) captureBuffer[(size_t) scope.startIndex1] = cn;
@@ -1000,28 +1144,82 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         tonesChord = -3;   // rebuild chord tones next time a chord is used
     }
 
+    // KEYS (LIVE): the held keys become the strings, spread over the RANGE like a harp
+    const int keysPlay = juce::roundToInt (param (apvts, "keysPlay"));
+    const bool keysMode = ! previewing && mode == 0 && keysPlay > 0;
+    bool anyKeyNote = false;
+    for (int n = 0; n < 128 && keysMode; ++n) anyKeyNote = anyKeyNote || keyNotes[(size_t) n] || heldMelodic[(size_t) n];
+    int keysSig = -1;
+    if (keysMode && anyKeyNote)
+    {
+        tones.clear();
+        std::uint32_t h = 2166136261u;
+        const int copies = juce::jmax (1, range - 1);
+        for (int n = 0; n < 128; ++n)
+            if (heldMelodic[(size_t) n] || keyNotes[(size_t) n])
+            {
+                h = (h ^ (std::uint32_t) n) * 16777619u;
+                for (int o = 0; o < copies && n + 12 * o < 128; ++o) tones.push_back (n + 12 * o);
+            }
+        std::sort (tones.begin(), tones.end());
+        tones.erase (std::unique (tones.begin(), tones.end()), tones.end());
+        tonesChord = -3;
+        keysSig = 1000 + (int) (h & 0xfffff);
+    }
+    if (keyStrumAt >= 0)
+    {
+        if (! keysMode) { keyStrumAt = -1; keyNotes.fill (false); }
+        else if (keyStrumAt < numSamples)
+        {
+            // harder keys = stronger and faster stroke
+            sweep (keyStrumAt, true, 0, (int) tones.size(), juce::jlimit (0.2f, 1.0f, 0.35f + 0.65f * keyStrumVel), 1.5f - 0.9f * keyStrumVel);
+            keyStrumAt = -1;
+            keyNotes.fill (false);
+        }
+        else keyStrumAt -= numSamples;
+    }
+    else if (keysMode && keysPlay == 2)
+        keyNotes.fill (false);
+    const bool keysPattern = keysMode && keysPlay == 2 && heldMelodicCount > 0;
+
     // Live Strum / Arp clock (MEMO uses the Live Strum hand)
     const bool arp = (chord >= 0 && mode == 1) || arpHeld;
-    const bool strumming = ! previewing && ((chord >= 0 && (mode == 0 || mode == 2 || mode == 1)) || arpHeld);
+    const bool strumming = ! previewing && ((chord >= 0 && (mode == 0 || mode == 2 || mode == 1)) || arpHeld || keysPattern);
     if (previewing && previewStroke)
     {
         scheduleStrum (0, true);
         previewStroke = false;
     }
-    const double stepQuarters = rateInQuarters (rateIndex);
+    const int pattern = juce::roundToInt (param (apvts, "strumPattern"));
+    const bool usePattern = ! arp && pattern > 0;
+    const double stepQuarters = usePattern ? 0.25 : rateInQuarters (rateIndex);
     const double samplesPerStep = stepQuarters * 60.0 / bpm * sr;
+    const float swing = usePattern ? mp ("strumSwing") : 0.0f;
     auto hit = [&] (int offset, juce::int64 k)
     {
         if (arp) scheduleArpStep (offset);
+        else if (usePattern)
+        {
+            // swing: every second 1/16 comes late (up to a triplet feel)
+            const int late = (k % 2 == 1) ? (int) (swing * 0.33 * samplesPerStep) : 0;
+            patternStep (offset + late, k);
+        }
         else scheduleStrum (offset, (k % 2) == 0);
     };
+    const int strumId = keysPattern && chord < 0 ? keysSig : chord;
 
     if (strumming)
     {
-        if (chord != sounding || ! wasStrumming)
+        if (strumId != lastStrumId || ! wasStrumming)
         {
             if (! arp || ! wasStrumming) arpCounter = 0;
-            hit (0, 0);   // instant stroke on a new chord
+            if (usePattern)
+            {
+                // a new chord: the hand hits it at once (a thumb pattern starts on the bass)
+                const char first = strumPatternSteps (pattern)[0];
+                stroke (0, first == 'B' ? 'B' : (first == 'T' ? 'T' : 'D'), 1.0f);
+            }
+            else hit (0, 0);   // instant stroke on a new chord
             samplesToNextStrum = samplesPerStep - numSamples;
             strumCount = 1;
             samplesSinceTrigger = 0;
@@ -1057,10 +1255,34 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     const int playedChord = chord;
     {
         const double stepQ = rateInQuarters (rateIndex);
-        const int gateLen = juce::jmax ((int) (0.6 * sr), (int) (stepQ * 60.0 / bpm * sr * 1.15));
+        int gateLen = juce::jmax ((int) (0.6 * sr), (int) (stepQ * 60.0 / bpm * sr * 1.15));
+        if (usePattern) gateLen = juce::jmax (gateLen, (int) (4.0 * 60.0 / bpm * sr * 0.75));   // patterns leave longer gaps
         if (numEvents > eventsBefore) layerGateLeft = gateLen;
         else layerGateLeft = juce::jmax (0, layerGateLeft - numSamples);
         if (chord >= 0 && rootHeldMask == 0 && layerGateLeft <= 0) chord = -1;
+    }
+
+    // MIDI capture, "chords" view: what is being played as one long block of stacked notes
+    // (what a producer would write in the piano roll), voiced like the chord layer
+    {
+        int id = previewing ? -1 : chord;
+        std::vector<int> notesNow;
+        if (id >= 0)
+            notesNow = chords::voicing (id, transpose, juce::roundToInt (param (apvts, "voicing")), prevBlock);
+        else if (keysMode && heldMelodicCount > 0 && layerGateLeft > 0)
+        {
+            id = keysSig;
+            for (int n = 0; n < 128; ++n) if (heldMelodic[(size_t) n]) notesNow.push_back (n);
+        }
+        if (id != blockId)
+        {
+            const double now = (double) sampleClock / sr;
+            for (int n : blockNotes) capture (now, n, 0.0f, 3, false);
+            blockNotes = notesNow;
+            for (int n : blockNotes) capture (now, n, 0.8f, 3, true);
+            if (! blockNotes.empty()) prevBlock = blockNotes;
+            blockId = id;
+        }
     }
     layersFromHost = false;
     if (chord < 0 && ! previewing && heldMelodicCount > 0)
@@ -1119,6 +1341,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         func.trigger();   // one-shot and key trig restart on every new chord
     sounding = previewing ? -1 : chord;
     wasStrumming = strumming;
+    lastStrumId = strumming ? strumId : -1;
     if (! previewing) previewMute = false;
     samplesSinceTrigger = juce::jmin (samplesSinceTrigger + numSamples, 1 << 29);
 
@@ -1410,6 +1633,8 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
     state.setProperty ("uiWidth", editorWidth.load(), nullptr);
+    state.setProperty ("captureMode", captureMode.load(), nullptr);
+    state.setProperty ("captureQuant", captureQuant.load(), nullptr);
     juce::StringArray mem;
     for (auto& m : memory) mem.add (juce::String (m.load()));
     juce::StringArray lens;
@@ -1442,6 +1667,8 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
         {
             auto state = juce::ValueTree::fromXml (*xml);
             editorWidth.store ((int) state.getProperty ("uiWidth", 0));
+            captureMode.store (juce::jlimit (0, 2, (int) state.getProperty ("captureMode", 2)));
+            captureQuant.store (juce::jlimit (0, 4, (int) state.getProperty ("captureQuant", 1)));
             const auto mem = juce::StringArray::fromTokens (state.getProperty ("memory").toString(), ",", {});
             const auto lens = juce::StringArray::fromTokens (state.getProperty ("memLength").toString(), ",", {});
             for (size_t i = 0; i < memory.size(); ++i)
