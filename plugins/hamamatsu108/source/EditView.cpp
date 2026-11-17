@@ -1251,26 +1251,124 @@ namespace hama
 
     //==========================================================================
     // FX: 8 slot cards. Drag a card by its header onto another slot to move it.
+    //==========================================================================
+    // GATE grid: 32 steps, click / drag to open or close a step
+    class GateEditor : public juce::Component
+    {
+    public:
+        explicit GateEditor (Hamamatsu108Processor& p) : processor (p) {}
+
+        void tick()
+        {
+            const juce::String sig = juce::String ((juce::int64) processor.gateMask.load()) + "|" + juce::String (processor.gateLen.load()) + "|" + juce::String (processor.gateStepGui.load());
+            if (sig != last) { last = sig; repaint(); }
+        }
+        juce::Rectangle<float> menuButton() const { return { (float) getWidth() - 110.0f, 0.0f, 110.0f, 20.0f }; }
+        juce::Rectangle<float> cell (int i) const
+        {
+            const float top = 28.0f, h = (float) getHeight() - top - 4.0f;
+            const float w = (float) getWidth() / 16.0f;
+            const int row = i / 16, col = i % 16;
+            return { col * w + 1.5f, top + row * (h * 0.5f) + 1.5f, w - 3.0f, h * 0.5f - 3.0f };
+        }
+        void paint (juce::Graphics& g) override
+        {
+            const auto mask = processor.gateMask.load();
+            const int len = processor.gateLen.load(), playing = processor.gateStepGui.load();
+            g.setFont (spaced (8.0f, true, 0.12f));
+            g.setColour (juce::Colour (0xff9aa0a7));
+            g.drawText ("STEPS: LIT = SOUND, DARK = CLOSED", juce::Rectangle<float> (0.0f, 0.0f, 320.0f, 20.0f), juce::Justification::centredLeft, false);
+            drawDisplay (g, menuButton(), 5.0f);
+            g.setFont (LookAndFeel::monoFont (11.0f));
+            glowText (g, juce::String::fromUTF8 ("STEPS \xe2\x96\xbe  ") + juce::String (len), menuButton(), juce::Justification::centred);
+            for (int i = 0; i < Hamamatsu108Processor::gateSteps; ++i)
+            {
+                auto c = cell (i);
+                const bool on = (mask >> (unsigned) i) & 1u, in = i < len;
+                g.setColour (on ? th().accent.withAlpha (in ? 0.85f : 0.2f) : juce::Colour (in ? 0xff1b1e22 : 0xff121416));
+                g.fillRoundedRectangle (c, 3.0f);
+                if (i % 4 == 0) { g.setColour (juce::Colours::white.withAlpha (0.18f)); g.fillRect (c.withHeight (2.0f)); }
+                if (i == playing) { g.setColour (juce::Colours::white.withAlpha (0.8f)); g.drawRoundedRectangle (c.expanded (1.0f), 3.0f, 1.5f); }
+            }
+        }
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            if (menuButton().contains (e.position)) { showMenu(); return; }
+            const int i = stepAt (e.position);
+            if (i < 0) return;
+            paintOn = ! ((processor.gateMask.load() >> (unsigned) i) & 1u);
+            setStep (i);
+        }
+        void mouseDrag (const juce::MouseEvent& e) override { const int i = stepAt (e.position); if (i >= 0) setStep (i); }
+
+    private:
+        int stepAt (juce::Point<float> p) const { for (int i = 0; i < Hamamatsu108Processor::gateSteps; ++i) if (cell (i).expanded (1.5f).contains (p)) return i; return -1; }
+        void setStep (int i)
+        {
+            auto m = processor.gateMask.load();
+            m = paintOn ? (m | (1u << (unsigned) i)) : (m & ~(1u << (unsigned) i));
+            processor.gateMask.store (m);
+            if (paintOn) setParam (processor.apvts, "gateOn", 1.0f);
+            tick();
+        }
+        void showMenu()
+        {
+            juce::PopupMenu m, pre, lenM;
+            for (int i = 0; i < Hamamatsu108Processor::gatePresetNames().size(); ++i) pre.addItem (100 + i, Hamamatsu108Processor::gatePresetNames()[i]);
+            m.addSubMenu ("Load pattern", pre);
+            for (int l : { 4, 8, 12, 16, 24, 32 }) lenM.addItem (200 + l, juce::String (l) + " steps", true, processor.gateLen.load() == l);
+            m.addSubMenu ("Length", lenM);
+            m.addItem (1, "All open");
+            m.addItem (2, "Invert");
+            m.addItem (3, "Randomise");
+            juce::Component::SafePointer<GateEditor> safe (this);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int r)
+            {
+                if (safe == nullptr || r <= 0) return;
+                auto& pr = safe->processor;
+                if (r >= 200) pr.gateLen.store (r - 200);
+                else if (r >= 100) { pr.gateLoadPreset (r - 100); setParam (pr.apvts, "gateOn", 1.0f); }
+                else if (r == 1) pr.gateMask.store (0xFFFFFFFFu);
+                else if (r == 2) pr.gateMask.store (~pr.gateMask.load());
+                else if (r == 3) { juce::Random rr; std::uint32_t mm = 1; for (int i = 1; i < 32; ++i) if (rr.nextFloat() < 0.6f) mm |= 1u << (unsigned) i; pr.gateMask.store (mm); setParam (pr.apvts, "gateOn", 1.0f); }
+                safe->tick();
+            });
+        }
+        Hamamatsu108Processor& processor;
+        juce::String last;
+        bool paintOn = true;
+    };
+
     class FxPage : public EditPage
     {
     public:
-        static constexpr int cardW = 146, gap = 8;
+        static constexpr int cardW = 146, gap = 8, slotH = 330;
 
         FxPage (Hamamatsu108Processor& p, EditView& o) : EditPage (p, o)
         {
             for (int i = 0; i < fx::numSlots; ++i)
             {
                 const juce::String n (i + 1), id ("fx" + n);
-                auto c = panel ("SLOT " + n, i * (cardW + gap), 0, cardW, 470);
+                auto c = panel ("SLOT " + n, i * (cardW + gap), 0, cardW, slotH);
                 auto* t = choice (id + "Type", "EFFECT", { c.getX() - 6, c.getY(), c.getWidth() + 12, 44 });
                 t->onChange = [this] { updateLabels(); };
-                toggle (id + "On", "ON", { c.getX() + 14, c.getY() + 56, c.getWidth() - 28, 28 });
-                aKnobs[(size_t) i] = knobAt (id + "A", "A", 44, c.getX() - 4, c.getY() + 100, c.getWidth() + 8);
-                bKnobs[(size_t) i] = knobAt (id + "B", "B", 44, c.getX() - 4, c.getY() + 196, c.getWidth() + 8);
-                knobAt (id + "Mix", "Mix", 44, c.getX() - 4, c.getY() + 292, c.getWidth() + 8);
+                toggle (id + "On", "ON", { c.getX() + 14, c.getY() + 52, c.getWidth() - 28, 26 });
+                aKnobs[(size_t) i] = knobAt (id + "A", "A", 34, c.getX() - 8, c.getY() + 88, (c.getWidth() + 16) / 2);
+                bKnobs[(size_t) i] = knobAt (id + "B", "B", 34, c.getX() - 8 + (c.getWidth() + 16) / 2, c.getY() + 88, (c.getWidth() + 16) / 2);
+                knobAt (id + "Mix", "Mix", 38, c.getX() - 4, c.getY() + 184, c.getWidth() + 8);
             }
             updateLabels();
-            help = { 0, 482, 1232, 40 };
+            help = { 16, 382 + 66, 500, 70 };
+
+            auto gp = panel ("RHYTHM GATE  \xc2\xb7  CHOPS THE SOUND IN TIME WITH FL STUDIO", 0, slotH + 12, 1232, 530 - slotH - 12);
+            toggle ("gateOn", "GATE", { gp.getX(), gp.getY() + 8, 90, 30 });
+            choice ("gateRate", "STEP", { gp.getX() + 100, gp.getY(), 90, 44 });
+            choice ("gateTarget", "CHOPS", { gp.getX() + 200, gp.getY(), 120, 44 });
+            knobAt ("gateDepth", "Depth", 30, gp.getX() + 330, gp.getY() - 4, 80);
+            knobAt ("gateSmooth", "Smooth", 30, gp.getX() + 420, gp.getY() - 4, 80);
+            gate = std::make_unique<GateEditor> (processor);
+            addAndMakeVisible (*gate);
+            gate->setBounds (gp.getX() + 520, gp.getY(), gp.getWidth() - 520, gp.getHeight());
         }
 
         void updateLabels()
@@ -1292,12 +1390,13 @@ namespace hama
             juce::String sig;
             for (int i = 0; i < fx::numSlots; ++i) sig << plain (processor.apvts, ("fx" + juce::String (i + 1) + "Type").toRawUTF8()) << ",";
             if (sig != lastSig) { lastSig = sig; updateLabels(); }
+            if (gate != nullptr) gate->tick();
         }
 
         void paintExtras (juce::Graphics& g) override
         {
-            text (g, juce::String::fromUTF8 ("Signal flows left to right: SLOT 1 \xe2\x86\x92 SLOT 8. Drag a slot by its title onto another slot to move it. "
-                                             "The three FX knobs on the PLAY page are the Mix of slots 1-3. Delay times follow the FL Studio tempo."), help);
+            text (g, juce::String::fromUTF8 ("Slots run left to right, drag a slot by its title to move it. GATE opens and closes the sound on the steps you light "
+                                             "(click / drag on the grid, STEPS \xe2\x96\xbe for patterns and length). DEPTH = how far it closes, SMOOTH = soft or hard edges."), help);
             for (int i = 0; i < fx::numSlots; ++i)
             {
                 const int t = juce::roundToInt (plain (processor.apvts, ("fx" + juce::String (i + 1) + "Type").toRawUTF8()));
@@ -1306,7 +1405,7 @@ namespace hama
                     g.setFont (LookAndFeel::monoFont (10.5f));
                     g.setColour (th().soft);
                     const float a = plain (processor.apvts, ("fx" + juce::String (i + 1) + "A").toRawUTF8());
-                    g.drawText (fx::delayName (a), i * (cardW + gap), 40 + 100 + 84, cardW, 14, juce::Justification::centred, false);
+                    g.drawText (fx::delayName (a), i * (cardW + gap), 40 + 88 + 76, cardW, 14, juce::Justification::centred, false);
                 }
                 if (i < fx::numSlots - 1)
                 {
@@ -1317,11 +1416,11 @@ namespace hama
             if (dragFrom >= 0 && dragTo >= 0 && dragTo != dragFrom)
             {
                 g.setColour (th().accent);
-                g.drawRoundedRectangle (juce::Rectangle<float> ((float) (dragTo * (cardW + gap)), 0.0f, (float) cardW, 470.0f), 14.0f, 2.0f);
+                g.drawRoundedRectangle (juce::Rectangle<float> ((float) (dragTo * (cardW + gap)), 0.0f, (float) cardW, (float) slotH), 14.0f, 2.0f);
             }
         }
 
-        int slotAt (juce::Point<float> p) const { const int i = (int) (p.x / (cardW + gap)); return p.y < 470 && i >= 0 && i < fx::numSlots ? i : -1; }
+        int slotAt (juce::Point<float> p) const { const int i = (int) (p.x / (cardW + gap)); return p.y < slotH && i >= 0 && i < fx::numSlots ? i : -1; }
 
         void mouseDown (const juce::MouseEvent& e) override { dragFrom = e.position.y < 34 ? slotAt (e.position) : -1; dragTo = -1; }
         void mouseDrag (const juce::MouseEvent& e) override { if (dragFrom >= 0) { dragTo = slotAt (e.position); repaint(); } }
@@ -1359,6 +1458,7 @@ namespace hama
         }
 
     private:
+        std::unique_ptr<GateEditor> gate;
         std::array<Knob*, fx::numSlots> aKnobs {}, bKnobs {};
         juce::Rectangle<int> help;
         juce::String lastSig;

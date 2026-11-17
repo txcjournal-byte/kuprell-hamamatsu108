@@ -8,6 +8,7 @@ namespace hama
     class SettingsView : public juce::Component, private juce::Timer
     {
     public:
+        std::function<void()> onPcKeys;   // the PC keyboard option changed
         explicit SettingsView (Hamamatsu108Processor&);
         ~SettingsView() override;
         void paint (juce::Graphics&) override;

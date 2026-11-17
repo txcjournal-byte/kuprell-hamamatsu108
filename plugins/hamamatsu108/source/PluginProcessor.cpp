@@ -362,6 +362,10 @@ int Hamamatsu108Processor::ccForParam (int paramIndex) const
 
 void Hamamatsu108Processor::timerCallback()
 {
+    if (const int pat = pendingPattern.exchange (-1); pat >= 0)
+        if (auto* q = apvts.getParameter ("strumPattern")) q->setValueNotifyingHost (q->convertTo0to1 ((float) pat));
+    if (const int md = pendingMode.exchange (-1); md >= 0)
+        if (auto* q = apvts.getParameter ("strumMode")) q->setValueNotifyingHost (q->convertTo0to1 ((float) md));
     // MIDI learn: apply controller moves on the message thread
     const auto lo = ccDirtyLo.exchange (0), hi = ccDirtyHi.exchange (0);
     if (lo == 0 && hi == 0) return;
@@ -390,6 +394,8 @@ void Hamamatsu108Processor::saveUserDefaults() const
     xml.setAttribute ("tuning", tuningA4.load());
     xml.setAttribute ("voices", maxVoices.load());
     xml.setAttribute ("mts", mtsEnabled.load());
+    xml.setAttribute ("keyswitches", keyswitches.load());
+    xml.setAttribute ("pcKeys", pcKeys.load());
     settingsFile().getParentDirectory().createDirectory();
     xml.writeTo (settingsFile());
 }
@@ -404,6 +410,8 @@ void Hamamatsu108Processor::loadUserDefaults()
         tuningA4.store ((float) juce::jlimit (400.0, 480.0, xml->getDoubleAttribute ("tuning", 440.0)));
         maxVoices.store (juce::jlimit (8, numVoices, xml->getIntAttribute ("voices", numVoices)));
         mtsEnabled.store (xml->getBoolAttribute ("mts", true));
+        keyswitches.store (xml->getBoolAttribute ("keyswitches", true));
+        pcKeys.store (xml->getBoolAttribute ("pcKeys", false));
     }
 }
 
@@ -513,6 +521,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     layout.add (std::make_unique<AudioParameterInt> (ParameterID { "arpOctaves", 1 }, "Arp Octaves", 1, 4, 2));
     fl ("arpGate", "Arp Gate", 0.05f, 1.0f, 1.0f, pct);
     fl ("arpSwing", "Arp Swing", 0.0f, 1.0f, 0.0f, pct);
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { "gateOn", 1 }, "Gate On", false));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "gateRate", 1 }, "Gate Rate", StringArray { "1/8", "1/16", "1/32", "1/8T", "1/16T" }, 1));
+    fl ("gateDepth", "Gate Depth", 0.0f, 1.0f, 0.85f, pct);
+    fl ("gateSmooth", "Gate Smooth", 1.0f, 60.0f, 6.0f, [] (float v, int) { return String (roundToInt (v)) + " ms"; }, 30.0f);
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "gateTarget", 1 }, "Gate Target", StringArray { "Harp", "Everything" }, 0));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "arpRegen", 1 }, "Arp Regen", arpRegenNames(), 0));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "dual", 1 }, "Dual", false));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "harpVoice2", 1 }, "Dual Voice", harp::voiceNames(), 9));
@@ -547,6 +560,7 @@ void Hamamatsu108Processor::prepareToPlay (double sampleRate, int samplesPerBloc
     numEvents = 0;
     numReleases = 0;
     pitchMul.assign ((size_t) juce::jmax (32, samplesPerBlock), 1.0f);
+    gateBuf.assign ((size_t) juce::jmax (32, samplesPerBlock), 1.0f);
     limLook = juce::jlimit (16, limLookMax, (int) std::round (sampleRate * 0.0015));
     soundboard.prepare (sampleRate); boardModel = -1;
     limDelL.fill (0.0f); limDelR.fill (0.0f); limNeed.fill (1.0f); limPos = 0; limGain = 1.0f;
@@ -615,6 +629,37 @@ int Hamamatsu108Processor::chordFromHeldNotes()
 
 void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePos)
 {
+    // keyswitches below the chord zones (FL names): C0..D#0 = LIVE / ARP / MEMO / OFF, C1..B1 = the LIVE pattern
+    if ((m.isNoteOn() || m.isNoteOff()) && keyswitches.load() && m.getNoteNumber() < 24
+        && (! chordZones.load() || m.getNoteNumber() < rootZoneLow()))
+    {
+        const int n = m.getNoteNumber();
+        if (m.isNoteOn())
+        {
+            if (n >= 12) pendingPattern.store (n - 12);
+            else if (n < 4) pendingMode.store (n);
+        }
+        if (n >= 12 || n < 4) return;
+    }
+    if (m.isPitchWheel())
+    {
+        // pitch wheel strums the strings (like dragging across the plate)
+        const float pos = (float) m.getPitchWheelValue() / 16383.0f;
+        const int n = (int) tones.size();
+        if (n > 0 && bendPos >= 0.0f)
+        {
+            const int a = juce::roundToInt (bendPos * (float) (n - 1)), b = juce::roundToInt (pos * (float) (n - 1));
+            const float vel = juce::jlimit (0.35f, 1.0f, 0.5f + 4.0f * std::abs (pos - bendPos));
+            if (a != b)
+                for (int i = a + (b > a ? 1 : -1);; i += (b > a ? 1 : -1))
+                {
+                    scheduleNote (samplePos, i, vel);
+                    if (i == b) break;
+                }
+        }
+        bendPos = pos;
+        return;
+    }
     if (m.isNoteOn())
     {
         const int n = m.getNoteNumber();
@@ -947,6 +992,24 @@ void Hamamatsu108Processor::capture (double seconds, int note, float velocity, i
     else if (scope.blockSize2 > 0) captureBuffer[(size_t) scope.startIndex2] = cn;
 }
 
+// rhythmic gate patterns (x = open, . = closed), 16 or 32 steps
+const juce::StringArray& Hamamatsu108Processor::gatePresetNames()
+{
+    static const juce::StringArray n { "Pulse 16ths", "Trance", "Offbeat", "Dotted", "Stutter", "Half open", "Syncopated", "Glitch 32", "Swell" };
+    return n;
+}
+
+void Hamamatsu108Processor::gateLoadPreset (int index)
+{
+    static const char* p[] = { "xxxxxxxxxxxxxxxx", "x.xxx.xxx.xxx.xx", "..x...x...x...x.", "x..x..x..x..x.x.", "xxxx.x.xxxxx.x.x",
+                               "xxxxxxxx........", "x..x..x...x..x..", "x.x.xx..x.xxx...x.x.xx.x..x.xxx.", "x.......x.xx.xxx" };
+    const juce::String s (p[juce::jlimit (0, 8, index)]);
+    std::uint32_t mask = 0;
+    for (int i = 0; i < s.length(); ++i) if (s[i] == 'x') mask |= 1u << (unsigned) i;
+    gateMask.store (mask);
+    gateLen.store (s.length());
+}
+
 // ARP step sequencer presets: NOTE / OCT / VELOCITY / RATCHET / CHANCE / TIE for 16 steps
 const juce::StringArray& Hamamatsu108Processor::seqPresetNames()
 {
@@ -1191,7 +1254,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     morphNow = param (apvts, "morph");
     voiceSettings.model = (harp::Model) juce::roundToInt (param (apvts, "harpVoice"));
     voiceSettings.tone = juce::jlimit (0.0f, 1.0f, mp ("harpTone") * model.tone * (1.0f - 0.35f * age));
-    voiceSettings.decay = mp ("harpDecay") * model.decay * (1.0f + 1.2f * dream);
+    voiceSettings.decay = mp ("harpDecay") * model.decay * (1.0f + 1.2f * dream) * (1.0f - 0.85f * modWheel);   // mod wheel = shorter notes
     // long ringing strings pile up under dense strum patterns: trim the harp bus a little for long decays
     const float decayComp = 1.0f / (1.0f + 0.09f * juce::jmax (0.0f, voiceSettings.decay - 2.0f));
     const int range = juce::roundToInt (param (apvts, "harpRange"));
@@ -1586,6 +1649,32 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     auto* right = work.getWritePointer (1);
     std::uint32_t flashes = 0;
 
+    // rhythmic gate: one gain per sample, smoothed so the steps never click
+    const bool gateOn = param (apvts, "gateOn") > 0.5f;
+    const bool gateAll = juce::roundToInt (param (apvts, "gateTarget")) == 1;
+    if ((int) gateBuf.size() < numSamples) gateBuf.resize ((size_t) numSamples, 1.0f);
+    {
+        static const double gq[] = { 0.5, 0.25, 0.125, 1.0 / 3.0, 1.0 / 6.0 };
+        const double stepQ = gq[juce::jlimit (0, 4, juce::roundToInt (param (apvts, "gateRate")))];
+        const int glen = juce::jlimit (1, gateSteps, gateLen.load());
+        const std::uint32_t mask = gateMask.load();
+        const float depth = gateOn ? param (apvts, "gateDepth") : 0.0f;
+        const float coef = 1.0f - std::exp (-1.0f / (0.001f * param (apvts, "gateSmooth") * (float) sr));
+        const double stepsPerSample = bpm / 60.0 / stepQ / sr;
+        const double startStep = hostPlaying ? ppq / stepQ : gateClock;
+        int shown = -1;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const int step = (int) ((juce::int64) std::floor (startStep + i * stepsPerSample) % glen);
+            if (i == 0) shown = step;
+            const float target = (mask >> (unsigned) step) & 1u ? 1.0f : 1.0f - depth;
+            gateGain += (target - gateGain) * coef;
+            gateBuf[(size_t) i] = gateGain;
+        }
+        gateClock = hostPlaying ? 0.0 : gateClock + numSamples * stepsPerSample;
+        gateStepGui.store (gateOn ? shown : -1);
+    }
+
     for (int start = 0; start < numSamples; start += 32)
     {
         const int len = juce::jmin (32, numSamples - start);
@@ -1626,7 +1715,8 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
                 busCut += (cutTarget - busCut) * 0.003f;
                 busVol += (volTarget - busVol) * 0.003f;
                 busPan += (panTarget - busPan) * 0.003f;
-                float x = hl[i] * decayComp, y = hr[i] * decayComp;
+                const float gg = gateOn && ! gateAll ? gateBuf[(size_t) (start + i)] : 1.0f;
+                float x = hl[i] * decayComp * gg, y = hr[i] * decayComp * gg;
                 if (filterOn)
                 {
                     // TPT state-variable low-pass, 120 Hz .. 20 kHz
@@ -1677,6 +1767,8 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     for (auto& v : voices) inUse += v.isActive() ? 1 : 0;
     voicesInUse.store (inUse);
 
+    if (gateOn && gateAll)
+        for (int i = 0; i < numSamples; ++i) { left[i] *= gateBuf[(size_t) i]; right[i] *= gateBuf[(size_t) i]; }
     PROBE (0, left);
     // model character: tone, width, saturation, chorus, bits (Cartridge), hiss only while playing (+ AGE)
     {
@@ -1844,6 +1936,8 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
     state.setProperty ("uiWidth", editorWidth.load(), nullptr);
     state.setProperty ("captureMode", captureMode.load(), nullptr);
     state.setProperty ("captureQuant", captureQuant.load(), nullptr);
+    state.setProperty ("gateMask", (juce::int64) gateMask.load(), nullptr);
+    state.setProperty ("gateLen", gateLen.load(), nullptr);
     {
         juce::StringArray seq;
         seq.add (juce::String (seqLen.load()));
@@ -1886,6 +1980,8 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
             editorWidth.store ((int) state.getProperty ("uiWidth", 0));
             captureMode.store (juce::jlimit (0, 2, (int) state.getProperty ("captureMode", 2)));
             captureQuant.store (juce::jlimit (0, 4, (int) state.getProperty ("captureQuant", 1)));
+            if (state.hasProperty ("gateMask")) gateMask.store ((std::uint32_t) (juce::int64) state.getProperty ("gateMask"));
+            gateLen.store (juce::jlimit (1, gateSteps, (int) state.getProperty ("gateLen", 16)));
             {
                 const auto seq = juce::StringArray::fromTokens (state.getProperty ("arpSteps").toString(), ",", {});
                 if (seq.size() == seqSteps + 1)

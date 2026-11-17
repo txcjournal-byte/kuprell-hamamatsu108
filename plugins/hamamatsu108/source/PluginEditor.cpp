@@ -66,6 +66,7 @@ Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
     browser.onClose = [this] { showPage (Page::play); };
     settings.onClose = browser.onClose;
     settings.onZoom = [this] (double z) { setZoom (z); };
+    settings.onPcKeys = [this] { updateKeyboardFocus(); };
     settings.onFit = [this] { audioProcessor.editorWidth.store (0); setZoom ((double) initialWidth() / baseWidth); };
     settings.currentZoom = [this] { return juce::roundToInt (100.0 * getWidth() / baseWidth); };
     content.addAndMakeVisible (status);
@@ -109,6 +110,8 @@ Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
     noFocus (*this);
 
     userSized = audioProcessor.editorWidth.load() >= juce::roundToInt (baseWidth * 0.6);
+    addMouseListener (this, true);
+    updateKeyboardFocus();
     const int w = initialWidth();
     intendedWidth = w;
     setSize (w, juce::roundToInt (w * (double) baseHeight / (double) baseWidth));
@@ -355,4 +358,44 @@ void Hamamatsu108Editor::timerCallback()
 void Hamamatsu108Editor::say (const juce::String& text)
 {
     status.setText (text, {});
+}
+
+void Hamamatsu108Editor::updateKeyboardFocus()
+{
+    const bool on = audioProcessor.pcKeys.load();
+    setWantsKeyboardFocus (on);
+    if (on && isShowing()) grabKeyboardFocus();
+    say (on ? "PC keyboard plays: Q-row major, A-row minor, Z-row 7th, Shift = stack, number row = strings"
+            : "PC keyboard off: every key goes to FL Studio");
+}
+
+void Hamamatsu108Editor::mouseDown (const juce::MouseEvent& e)
+{
+    if (audioProcessor.pcKeys.load() && dynamic_cast<juce::TextEditor*> (e.eventComponent) == nullptr && ! hasKeyboardFocus (true))
+        grabKeyboardFocus();
+}
+
+bool Hamamatsu108Editor::keyPressed (const juce::KeyPress& key)
+{
+    if (! audioProcessor.pcKeys.load()) return false;
+    const auto c = juce::CharacterFunctions::toLowerCase ((juce::juce_wchar) key.getKeyCode());
+    static const juce::String majorRow ("qwertyuiop[]"), minorRow ("asdfghjkl;'\\"), seventhRow ("zxcvbnm,./"), strings ("`1234567890-=");
+    int root = -1, type = 0;
+    if ((root = majorRow.indexOfChar (c)) >= 0) type = 0;
+    else if ((root = minorRow.indexOfChar (c)) >= 0) type = 1;
+    else if ((root = seventhRow.indexOfChar (c)) >= 0) type = 2;
+    if (root >= 0)
+    {
+        const int chord = chords::index (root, type);
+        if (key.getModifiers().isShiftDown()) audioProcessor.addChord (chord);
+        else audioProcessor.latchChord (chord);
+        say ("Chord " + chords::shortName (chord));
+        return true;
+    }
+    if (const int s = strings.indexOfChar (c); s >= 0)
+    {
+        audioProcessor.pluckString (juce::roundToInt ((float) s * (Hamamatsu108Processor::numStrings - 1) / 12.0f));
+        return true;
+    }
+    return false;   // space, transport and everything else stay with FL Studio
 }

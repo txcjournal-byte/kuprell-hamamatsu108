@@ -22,6 +22,16 @@ public:
     // MIDI zones (fixed for now; editable in Settings later). FL Studio names: C2-B2, C3-G#3, A3 and up.
     // chord zones start at an adjustable octave (Settings); default C1 = MIDI 24 (FL: C2)
     std::atomic<int> zoneOctave { 1 };      // 0..3 -> root zone starts at C0..C3
+    std::atomic<bool> keyswitches { true };   // C0-B0 pick the LIVE pattern, C-1..D#-1 the mode (below the chord zones)
+    std::atomic<bool> pcKeys { false };       // the computer keyboard plays chords / strings while the plugin window has focus
+    std::atomic<int> pendingPattern { -1 }, pendingMode { -1 };   // keyswitch requests (applied on the message thread)
+    //== rhythmic gate (32 steps): chops the harp or everything in time
+    static constexpr int gateSteps = 32;
+    std::atomic<std::uint32_t> gateMask { 0xDDDDDDDDu };
+    std::atomic<int> gateLen { 16 };
+    std::atomic<int> gateStepGui { -1 };
+    static const juce::StringArray& gatePresetNames();
+    void gateLoadPreset (int index);
     std::atomic<bool> chordZones { true };  // off: every key plays the harp
     int rootZoneLow() const  { return 12 * (zoneOctave.load() + 1); }
     int rootZoneHigh() const { return rootZoneLow() + 11; }
@@ -164,6 +174,10 @@ private:
     void patternStep (int offset, juce::int64 k);
     void scheduleNote (int delay, int toneIndex, float velocity);
     void schedulePitch (int delay, int note, float velocity, bool record = false);
+    float bendPos = -1.0f;              // pitch wheel strum: last position on the strings (0..1, -1 = not moved yet)
+    double gateClock = 0.0;              // free-running gate position (host stopped), in steps
+    float gateGain = 1.0f;
+    std::vector<float> gateBuf;
     struct PendingRelease { int delay; int note; };
     std::array<PendingRelease, 64> releases {};
     int numReleases = 0;

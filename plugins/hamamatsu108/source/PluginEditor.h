@@ -34,7 +34,9 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
-    bool keyPressed (const juce::KeyPress&) override { return false; }   // let the host have every key
+    bool keyPressed (const juce::KeyPress&) override;   // PC keyboard plays (Settings: PC KEYBOARD), otherwise the host gets every key
+    void mouseDown (const juce::MouseEvent&) override;   // with PC KEYBOARD on, a click gives the plugin the keyboard
+    void updateKeyboardFocus();
 
 private:
     void timerCallback() override;
