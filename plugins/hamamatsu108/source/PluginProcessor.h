@@ -179,6 +179,9 @@ private:
     void stroke (int offset, char type, float accent);
     void midiNote (int samplePos, int channel, int note, float velocity, bool on);
     void flourish (int samplePos, int key, float velocity, bool up);
+public:
+    int flourishType (int key) const;   // FLOURISH: chord type of a key (by octave)
+private:
     int flourishChord = -1;
     juce::MidiBuffer midiOutBuffer;
     struct PendingOff { int samples; int channel; int note; };

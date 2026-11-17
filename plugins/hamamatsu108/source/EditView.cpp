@@ -724,12 +724,20 @@ namespace hama
                 g.drawText (name, z, juce::Justification::centred, false);
             };
             if (processor.keyswitches.load() && (! processor.chordZones.load() || processor.rootZoneLow() >= 24))
-                zone (12, 23, "PATTERN KEYSWITCHES", juce::Colour (0xffe0b25a));
+                zone (12, 23, "PATTERN KEYS", juce::Colour (0xffe0b25a));
             if (processor.chordZones.load())
             {
                 zone (processor.rootZoneLow(), processor.rootZoneHigh(), "CHORD ROOT", th().accent);
                 zone (processor.typeZoneLow(), processor.typeZoneHigh(), "CHORD TYPE", th().soft);
                 zone (juce::jmin (last, processor.typeZoneHigh() + 1), last, "HARP NOTES (EXACT PITCH)", juce::Colour (0xff9aa0a7));
+            }
+            else if (juce::roundToInt (plain (processor.apvts, "keysPlay")) >= 4)
+            {
+                // FLOURISH: every octave is one chord type
+                static const char* tn[] = { "MAJOR RUN", "MINOR RUN", "7 RUN", "MAJ7 RUN", "M7 RUN", "DIM RUN", "AUG RUN" };
+                const int ksTop = processor.keyswitches.load() ? 24 : first;
+                for (int o = ksTop; o + 11 <= last; o += 12)
+                    zone (o, o + 11, tn[juce::jlimit (0, 6, processor.flourishType (o))], o % 24 == 0 ? th().accent : th().soft);
             }
             else
                 zone (first, last, "EVERY KEY PLAYS THE HARP (CHORD ZONES OFF)", juce::Colour (0xff9aa0a7));

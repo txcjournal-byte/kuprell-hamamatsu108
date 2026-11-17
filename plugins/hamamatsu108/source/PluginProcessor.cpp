@@ -900,11 +900,17 @@ void Hamamatsu108Processor::sweep (int offset, bool down, int first, int count, 
 
 // FLOURISH: the key is the root, its octave the chord type (from the first harp octave up: major, minor, 7, maj7, m7),
 // harder = faster run. The run climbs (or falls) through the chord over the harp RANGE.
+int Hamamatsu108Processor::flourishType (int key) const
+{
+    static const int byOctave[] = { 5, 0, 1, 2, 3, 4, 6 };   // dim, major, minor, 7, maj7, m7, aug
+    const int base = chordZones.load() ? juce::jmax (36, typeZoneHigh() + 1) - 12 : 24;
+    return byOctave[juce::jlimit (0, 6, (key - base) / 12)];
+}
+
 void Hamamatsu108Processor::flourish (int samplePos, int key, float velocity, bool up)
 {
-    const int base = chordZones.load() ? juce::jmax (48, typeZoneHigh() + 1) : 36;
-    static const int typeByOctave[] = { 0, 1, 2, 3, 4 };
-    const int type = typeByOctave[juce::jlimit (0, 4, (key - base) / 12)];
+    // octaves (FL names): C2 dim, C3 major, C4 minor, C5 7, C6 maj7, C7 m7, C8 aug (zones on: the same, above the zones)
+    const int type = flourishType (key);
     const int chord = chords::index (key % 12, type);
     flourishChord = chord;
     const int range = juce::jlimit (1, 4, juce::roundToInt (param (apvts, "harpRange")));
