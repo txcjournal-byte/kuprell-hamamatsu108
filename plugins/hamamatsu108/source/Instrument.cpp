@@ -1630,7 +1630,7 @@ namespace hama
         if (processor.skin.load() != currentSkin) applySkin (processor.skin.load());
         const int chord = processor.activeChord.load();
         pad->update (chord, juce::roundToInt (plain (processor.apvts, "keyRoot")), plain (processor.apvts, "keyMode") > 0.5f);
-        plate->update (processor.stringFlashes.exchange (0), chord);
+        plate->update (processor.stringFlashes.exchange (0), chord >= 0 ? chord : processor.detectedChord.load());   // chord detection: piano roll notes too
         module->update (processor.meterLeft.load(), processor.meterRight.load(), chord);
         capture->update();
         rail->update();

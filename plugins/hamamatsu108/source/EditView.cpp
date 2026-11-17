@@ -398,11 +398,12 @@ namespace hama
             auto a = panel ("ARPEGGIO", 0, 262, 600, 268);
             choice ("arpPattern", "PATTERN", { a.getX(), a.getY(), 150, 44 });
             choice ("arpRegen", "REGEN", { a.getX() + 162, a.getY(), 120, 44 });
-            knobAt ("strumRate", "Rate", 44, a.getX(), a.getY() + 58, 106);
-            knobAt ("arpOctaves", "Octaves", 44, a.getX() + 110, a.getY() + 58, 106);
-            knobAt ("arpGate", "Gate", 44, a.getX() + 220, a.getY() + 58, 106);
-            knobAt ("arpSwing", "Swing", 44, a.getX() + 330, a.getY() + 58, 106);
-            knobAt ("arpChance", "Chance", 44, a.getX() + 440, a.getY() + 58, 106);
+            knobAt ("strumRate", "Rate", 40, a.getX(), a.getY() + 58, 92);
+            knobAt ("arpOctaves", "Octaves", 40, a.getX() + 92, a.getY() + 58, 92);
+            knobAt ("arpGate", "Gate", 40, a.getX() + 184, a.getY() + 58, 92);
+            knobAt ("arpSwing", "Swing", 40, a.getX() + 276, a.getY() + 58, 92);
+            knobAt ("arpVelScale", "Dynamics", 40, a.getX() + 368, a.getY() + 58, 92);
+            knobAt ("arpChance", "Chance", 40, a.getX() + 460, a.getY() + 58, 92);
             helpA = { a.getX(), a.getY() + 160, a.getWidth(), 50 };
 
             pattern = panel ("ARP STEPS  \xc2\xb7  DRAG NOTE / VELOCITY, CLICK THE SMALL ROWS", 612, 262, 620, 268);
@@ -423,7 +424,7 @@ namespace hama
         void paintExtras (juce::Graphics& g) override
         {
             text (g, "PATTERN = how a player strums (Even = plain down/up at RATE). FEEL loosens timing and force, SPEED = how fast a stroke crosses the strings, SWING delays every 2nd 1/16, VARIATION adds ghost strokes, leaves notes out and plays a fill every 4th bar. YOUR KEYS: Notes = exact pitch, Strum = each key press strums the keys you hold, Pattern = the pattern plays them.", helpS);
-            text (g, "ARP plays the chord tones one by one. OCTAVES = how wide it climbs, GATE = note length (100 % lets the strings ring), SWING delays every 2nd step, CHANCE drops notes, REGEN rolls a new variation every 1, 2 or 4 bars. The STEPS row on the right adds accents, ratchets, ties and chance to every pattern; the STEPS pattern also plays its own NOTE / OCT line.", helpA);
+            text (g, "ARP plays the chord tones one by one (As Played = the order of your keys, Chord = the whole chord every step). OCTAVES = how wide it climbs, GATE = note length (100 % lets the strings ring), SWING delays every 2nd step, DYNAMICS = how much the VELOCITY row is followed (0 = all notes equal), CHANCE drops notes, REGEN rolls a new variation every 1, 2 or 4 bars. The STEPS row on the right adds accents, ratchets, ties and chance to every pattern; the STEPS pattern also plays its own NOTE / OCT line.", helpA);
 
             // hand preview: one bar of the pattern (or two beats of the plain clock), low strings at the bottom
             auto r = preview.toFloat().reduced (0.0f, 6.0f);
@@ -486,8 +487,8 @@ namespace hama
             else
             {
             const int rateIdx = juce::roundToInt (plain (processor.apvts, "strumRate"));
-            static const double rq[] = { 2.0, 1.0, 0.5, 1.0 / 3.0, 0.25 };
-            const double stepQ = rq[juce::jlimit (0, 4, rateIdx)];
+            static const double rq[] = { 2.0, 1.0, 0.5, 1.0 / 3.0, 0.25, 1.0 / 6.0, 0.125, 1.0 / 12.0, 2.0 / 3.0 };
+            const double stepQ = rq[juce::jlimit (0, 8, rateIdx)];
             const int strokes = juce::jlimit (1, 16, (int) std::round (2.0 / stepQ));
             const float beatW = r.getWidth() / 2.0f;
             g.setColour (juce::Colours::white.withAlpha (0.06f));

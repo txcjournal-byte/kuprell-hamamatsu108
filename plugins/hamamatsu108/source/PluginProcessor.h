@@ -97,6 +97,7 @@ public:
 
     //== audio -> GUI state
     std::atomic<int> activeChord { -1 };
+    std::atomic<int> detectedChord { -1 };         // chord recognised from the notes played (piano roll / keys)
     std::atomic<bool> modActive { false };         // modulators run only while something sounds
     std::atomic<float> funcPhase { 0.0f };         // Function playhead 0..1
     std::array<std::atomic<float>, 2> lfoPhase {};  // LFO playheads 0..1
@@ -174,6 +175,8 @@ private:
     void patternStep (int offset, juce::int64 k);
     void scheduleNote (int delay, int toneIndex, float velocity);
     void schedulePitch (int delay, int note, float velocity, bool record = false);
+    std::array<int, 32> pressOrder {};   // held notes in the order they were pressed (ARP "As Played")
+    int pressCount = 0;
     float bendPos = -1.0f;              // pitch wheel strum: last position on the strings (0..1, -1 = not moved yet)
     double gateClock = 0.0;              // free-running gate position (host stopped), in steps
     float gateGain = 1.0f;

@@ -11,8 +11,8 @@ namespace
 
     double rateInQuarters (int rateIndex)
     {
-        static const double r[] = { 2.0, 1.0, 0.5, 1.0 / 3.0, 0.25 };
-        return r[juce::jlimit (0, 4, rateIndex)];
+        static const double r[] = { 2.0, 1.0, 0.5, 1.0 / 3.0, 0.25, 1.0 / 6.0, 0.125, 1.0 / 12.0, 2.0 / 3.0 };
+        return r[juce::jlimit (0, 8, rateIndex)];
     }
 }
 
@@ -198,7 +198,7 @@ void Hamamatsu108Processor::updateModulation (int numSamples, bool hostPlaying, 
 
 const juce::StringArray& Hamamatsu108Processor::arpPatternNames()
 {
-    static const juce::StringArray n { "Up", "Down", "Up / Down", "Thumb", "Mirror", "Random", "Converge", "Pinky", "Steps" };
+    static const juce::StringArray n { "Up", "Down", "Up / Down", "Thumb", "Mirror", "Random", "Converge", "Pinky", "Steps", "As Played", "Down / Up", "Chord" };
     return n;
 }
 
@@ -299,7 +299,7 @@ void Hamamatsu108Processor::memRecordChord (int chord)
 
 const juce::StringArray& Hamamatsu108Processor::strumRateNames()
 {
-    static const juce::StringArray n { "1/2", "1/4", "1/8", "1/8T", "1/16" };
+    static const juce::StringArray n { "1/2", "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/32T", "1/4T" };
     return n;
 }
 
@@ -521,8 +521,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     layout.add (std::make_unique<AudioParameterInt> (ParameterID { "arpOctaves", 1 }, "Arp Octaves", 1, 4, 2));
     fl ("arpGate", "Arp Gate", 0.05f, 1.0f, 1.0f, pct);
     fl ("arpSwing", "Arp Swing", 0.0f, 1.0f, 0.0f, pct);
+    fl ("arpVelScale", "Arp Dynamics", 0.0f, 1.0f, 1.0f, pct);
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "gateOn", 1 }, "Gate On", false));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "gateRate", 1 }, "Gate Rate", StringArray { "1/8", "1/16", "1/32", "1/8T", "1/16T" }, 1));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "gateRate", 1 }, "Gate Rate", StringArray { "1/8", "1/16", "1/32", "1/8T", "1/16T", "1/2", "1/4", "1/2T", "1/4T", "1/32T" }, 1));
     fl ("gateDepth", "Gate Depth", 0.0f, 1.0f, 0.85f, pct);
     fl ("gateSmooth", "Gate Smooth", 1.0f, 60.0f, 6.0f, [] (float v, int) { return String (roundToInt (v)) + " ms"; }, 30.0f);
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "gateTarget", 1 }, "Gate Target", StringArray { "Harp", "Everything" }, 0));
@@ -678,7 +679,11 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
         {
             // melodic note: in ARP mode held notes are arpeggiated (piano roll or keyboard),
             // otherwise it plays exactly the written pitch
-            if (! heldMelodic[(size_t) n]) { heldMelodic[(size_t) n] = true; ++heldMelodicCount; }
+            if (! heldMelodic[(size_t) n])
+            {
+                heldMelodic[(size_t) n] = true; ++heldMelodicCount;
+                if (pressCount < (int) pressOrder.size()) pressOrder[(size_t) pressCount++] = n;
+            }
             const int strumModeNow = juce::roundToInt (param (apvts, "strumMode"));
             const int keysPlay = juce::roundToInt (param (apvts, "keysPlay"));
             if (strumModeNow == 0 && keysPlay > 0)
@@ -699,7 +704,12 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
     else if (m.isNoteOff())
     {
         const int n = m.getNoteNumber();
-        if (heldMelodic[(size_t) n]) { heldMelodic[(size_t) n] = false; --heldMelodicCount; }
+        if (heldMelodic[(size_t) n])
+        {
+            heldMelodic[(size_t) n] = false; --heldMelodicCount;
+            for (int i = 0; i < pressCount; ++i)
+                if (pressOrder[(size_t) i] == n) { for (int j = i; j < pressCount - 1; ++j) pressOrder[(size_t) j] = pressOrder[(size_t) j + 1]; --pressCount; break; }
+        }
         if (chordZones.load() && n >= rootZoneLow() && n <= rootZoneHigh())
         {
             const int r = n - rootZoneLow();
@@ -752,6 +762,7 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
         holdChord = -1;
         heldMelodic.fill (false);
         heldMelodicCount = 0;
+        pressCount = 0;
         if (m.isAllSoundOff())
             for (auto& v : voices) v.release();
     }
@@ -1108,6 +1119,23 @@ void Hamamatsu108Processor::scheduleArpStep (int offset)
         case 5: idx = juce::jlimit (0, n - 1, (int) (hash (inCycle + 7919) * n)); break;    // random
         case 6: { const int p = (int) (c % n); idx = (p % 2 == 0) ? p / 2 : n - 1 - p / 2; break; }   // converge (outside in)
         case 7: idx = (c % 2 == 1) ? n - 1 : (int) ((c / 2) % juce::jmax (1, n - 1)); break;       // pinky (top note pedal)
+        case 9:                                                                                     // as played (order of the keys)
+        {
+            if (pressCount > 0 && heldMelodicCount > 0)
+            {
+                std::vector<int> order;
+                for (int o = 0; o < octaves; ++o)
+                    for (int i = 0; i < pressCount; ++i) order.push_back (pressOrder[(size_t) i] + 12 * o);
+                const int note = order[(size_t) (c % (juce::int64) order.size())];
+                auto it = std::find (at.begin(), at.end(), note);
+                if (it == at.end()) { at.push_back (note); idx = (int) at.size() - 1; } else idx = (int) (it - at.begin());
+            }
+            else idx = (int) (c % n);
+            break;
+        }
+        case 10: { const int p = (int) (c % span); idx = p < n ? n - 1 - p : p - (n - 2); break; }   // down / up
+        case 11: idx = -1; break;                                                                   // chord: all tones at once
+        case 8:
         default:                                                                                    // steps
         {
             const int d = seqDeg[(size_t) s].load();
@@ -1123,7 +1151,23 @@ void Hamamatsu108Processor::scheduleArpStep (int offset)
     if (inCycle > 0 && hash (inCycle * 31 + 5) > seqProb[(size_t) s].load()) return;
 
     const bool onBeat = std::fmod ((double) c * stepQ, 1.0) < 1.0e-6;
-    const float vel = juce::jlimit (0.06f, 1.0f, seqVel[(size_t) s].load() * (onBeat ? 1.0f : 0.92f));
+    // DYNAMICS: 0 = every note the same, 100 % = the VELOCITY row as drawn
+    const float dyn = param (apvts, "arpVelScale");
+    const float vel = juce::jlimit (0.06f, 1.0f, (0.78f + dyn * (seqVel[(size_t) s].load() - 0.78f)) * (onBeat ? 1.0f : 0.92f));
+    if (idx < 0)
+    {
+        // CHORD mode: the whole chord on every step (a tiny roll keeps it natural)
+        const double stepSamples0 = stepQ * 60.0 / bpm * sr;
+        const float gate0 = param (apvts, "arpGate");
+        for (int i = 0; i < n; ++i)
+        {
+            const int d = offset + i * (int) (0.003 * sr);
+            schedulePitch (d, juce::jlimit (0, 127, at[(size_t) i]), vel * 0.8f, true);
+            if (gate0 < 0.98f && numReleases < (int) releases.size())
+                releases[(size_t) numReleases++] = { d + juce::jmax (64, (int) (gate0 * stepSamples0)), at[(size_t) i] };
+        }
+        return;
+    }
     const int note = juce::jlimit (0, 127, at[(size_t) idx] + 12 * octShift);
     const int ratchet = juce::jlimit (1, 4, seqRatchet[(size_t) s].load());
     const double stepSamples = stepQ * 60.0 / bpm * sr;
@@ -1544,10 +1588,12 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
     }
     layersFromHost = false;
+    if (heldMelodicCount == 0) detectedChord.store (-1);
     if (chord < 0 && ! previewing && heldMelodicCount > 0)
     {
         chord = chordFromHeldNotes();
         layersFromHost = chord >= 0;
+        detectedChord.store (chord);
     }
     updateChordLayer (chord, transpose);
     {
@@ -1654,8 +1700,8 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     const bool gateAll = juce::roundToInt (param (apvts, "gateTarget")) == 1;
     if ((int) gateBuf.size() < numSamples) gateBuf.resize ((size_t) numSamples, 1.0f);
     {
-        static const double gq[] = { 0.5, 0.25, 0.125, 1.0 / 3.0, 1.0 / 6.0 };
-        const double stepQ = gq[juce::jlimit (0, 4, juce::roundToInt (param (apvts, "gateRate")))];
+        static const double gq[] = { 0.5, 0.25, 0.125, 1.0 / 3.0, 1.0 / 6.0, 2.0, 1.0, 4.0 / 3.0, 2.0 / 3.0, 1.0 / 12.0 };
+        const double stepQ = gq[juce::jlimit (0, 9, juce::roundToInt (param (apvts, "gateRate")))];
         const int glen = juce::jlimit (1, gateSteps, gateLen.load());
         const std::uint32_t mask = gateMask.load();
         const float depth = gateOn ? param (apvts, "gateDepth") : 0.0f;
