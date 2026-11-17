@@ -1373,8 +1373,8 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     const bool holdOn = param (apvts, "hold") > 0.5f;
     if (lastHoldOn && ! holdOn)
     {
-        // HOLD switched off: stop whatever was being held
-        latchedChord = -1;
+        // HOLD switched off: release a chord held by MIDI keys. A chord switched on by mouse / PC keys
+        // stays on (HOLD only decides what MIDI keys do), so ARP / LIVE keep playing.
         if (rootHeldMask == 0) holdChord = -1;
     }
     lastHoldOn = holdOn;
