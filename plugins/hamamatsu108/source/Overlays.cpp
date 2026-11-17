@@ -257,7 +257,7 @@ namespace hama
             { 200, 612, "Sound deck", "Harp, chord layer, bass, vibrato, FX and the AGE / DREAM / WOBBLE macros." },
             { 400, 708, "Chord memory", "8 banks of 16 chords. REC, click chords, then MEMO plays them. DRAG MIDI exports them." },
             { 740, 130, "MIDI capture", "Records what the plugin plays. Drag it into FL Studio to get a MIDI clip." },
-            { 1000, 130, "Model", "Six eras of the instrument: click to switch from Early 81 to Modern Strum." },
+            { 1000, 130, "Sound", "The sound playing now. Click to pick another voice." },
             { 560, 26, "Presets", "144 factory sounds. Click the name for the browser, arrows for next / previous." },
             { 1225, 26, "EDIT", "Deep editing: engine, strum, chords, memory, modulation, FX and character." } };
         int n = 1;

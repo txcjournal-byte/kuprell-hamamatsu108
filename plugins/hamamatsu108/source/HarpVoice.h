@@ -56,6 +56,8 @@ namespace harp
         Model model = Model::chime;
         float tone = 0.6f;     // 0..1 brightness
         float decay = 1.8f;    // seconds
+        float attack = 0.0015f;  // seconds: fade-in of every note (long = soft swell)
+        float sustain = 0.0f;    // 0..1: how much longer the string holds on (up to 6x the decay)
     };
 
     // 2-pole resonator: one mode of a vibrating body
@@ -200,7 +202,7 @@ namespace harp
                 float s = next (pitchMul[n], rng);
                 if (attack < 1.0f) attack = juce::jmin (1.0f, attack + attackInc);
                 env *= envMul;
-                s *= attack * env;
+                s *= attack * env * attackGain;
 
                 if (fadeOutLeft > 0)
                 {
@@ -248,12 +250,14 @@ namespace harp
             const float tone = juce::jlimit (0.0f, 1.0f, a.s.tone);
             const float bright = juce::jlimit (0.0f, 1.0f, tone * (0.55f + 0.45f * vel));
             const float noteScale = juce::jlimit (0.3f, 1.6f, std::pow (2.0f, (60.0f - (float) note) / 30.0f));
-            const float t60 = juce::jmax (0.08f, a.s.decay) * noteScale;
+            // a slow attack keeps the string alive while it swells in (otherwise it would decay before it is heard)
+            const float t60 = (juce::jmax (0.08f, a.s.decay) * noteScale + 3.0f * juce::jmax (0.0f, a.s.attack - 0.01f)) * (1.0f + 5.0f * juce::jlimit (0.0f, 1.0f, a.s.sustain));
 
             panL = std::cos ((a.pan + 1.0f) * juce::MathConstants<float>::pi * 0.25f);
             panR = std::sin ((a.pan + 1.0f) * juce::MathConstants<float>::pi * 0.25f);
             attack = 0.0f;
-            attackInc = 1.0f / (0.0015f * sr);
+            attackInc = 1.0f / (juce::jmax (0.0015f, a.s.attack) * sr);
+            attackGain = 1.0f + 3.0f * juce::jlimit (0.0f, 1.0f, a.s.attack);   // a swelled note is as loud as a plucked one
             env = 1.0f;
             envMul = 1.0f;
             exciteLeft = 0;
@@ -342,7 +346,7 @@ namespace harp
                     break;
 
                 case Model::flute:
-                    attackInc = 1.0f / (0.045f * sr);
+                    attackInc = juce::jmin (attackInc, 1.0f / (0.045f * sr));
                     envMul = std::exp (-6.9078f / (t60 * 2.0f * sr));
                     svf[0].reset();
                     svf[0].set (freq, 6.0f, sr);
@@ -350,7 +354,7 @@ namespace harp
                     break;
 
                 case Model::strings:
-                    attackInc = 1.0f / (0.07f * sr);
+                    attackInc = juce::jmin (attackInc, 1.0f / (0.07f * sr));
                     envMul = std::exp (-6.9078f / (t60 * 2.2f * sr));
                     svf[0].reset(); svf[1].reset();
                     svf[0].set (600.0f + freq * 2.0f + 5000.0f * bright, 0.7f, sr);
@@ -469,7 +473,7 @@ namespace harp
         juce::int64 age = 0;
         Model model = Model::chime;
         float freq = 440.0f, vel = 1.0f, gain = 0.0f, panL = 0.7f, panR = 0.7f, level = 0.0f;
-        float attack = 1.0f, attackInc = 1.0f, env = 1.0f, envMul = 1.0f;
+        float attack = 1.0f, attackInc = 1.0f, attackGain = 1.0f, env = 1.0f, envMul = 1.0f;
         int fadeOut = 1, fadeOutLeft = 0, filterCounter = 0;
         std::array<float, 4> phase {};
 

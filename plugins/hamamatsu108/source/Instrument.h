@@ -42,6 +42,9 @@ namespace hama
     class MemoryRail;
     class GroupSelector;
     class ModelDisplay;
+    class PerformPanel;
+    class DeckSlider;
+    class RearChoice;
 
     class InstrumentView : public juce::Component, private juce::Timer
     {
@@ -70,8 +73,11 @@ namespace hama
         std::unique_ptr<MemoryRail> rail;
         std::unique_ptr<GroupSelector> chordSel, bassSel;
         std::unique_ptr<ModelDisplay> modelDisplay;
+        std::unique_ptr<PerformPanel> perform;
+        std::unique_ptr<RearChoice> patternChoice, keysChoice;
         std::array<kuprell::Knob*, 3> fxKnobs {};
         juce::OwnedArray<kuprell::Knob> deckKnobs;
+        juce::OwnedArray<DeckSlider> deckSliders;
         juce::Array<juce::Rectangle<int>> groupBounds;
         int currentSkin = -1;
 

@@ -44,7 +44,7 @@ void StatusBar::paint (juce::Graphics& g)
     g.setColour (colours::textFaint);
     g.drawText ("Zoom " + juce::String (zoom) + " %", r.removeFromRight (80), juce::Justification::centredRight, false);
     g.drawText ("Voices " + juce::String (voices) + " / " + juce::String (Hamamatsu108Processor::numVoices), r.removeFromRight (110), juce::Justification::centredRight, false);
-    g.drawText (juce::String::fromUTF8 ("Keys (FL): C2\xe2\x80\x93" "B2 root \xc2\xb7 C3\xe2\x80\x93G#3 type \xc2\xb7 rest plays the harp"),
+    g.drawText (juce::String::fromUTF8 ("Keys: one key = a harp run \xc2\xb7 C3 major, C4 minor, C5 7"),
                 r.removeFromRight (340), juce::Justification::centredRight, false);
 }
 

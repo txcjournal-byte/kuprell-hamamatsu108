@@ -89,7 +89,7 @@ namespace hama
         g.setFont (spaced (9.0f, true, 0.28f));
         g.setColour (engrave);
         g.drawText ("TYPE", 40, 34, 200, 24, juce::Justification::centredLeft, false);
-        g.drawText ("MODEL", 40, 388, 200, 24, juce::Justification::centredLeft, false);
+        g.drawText ("CHARACTER", 40, 388, 200, 24, juce::Justification::centredLeft, false);
 
         auto& pm = *processor.presetManager;
         for (int i = 0; i < 9; ++i)
@@ -120,7 +120,7 @@ namespace hama
             if (on) { g.setColour (th().accent.withAlpha (0.16f)); g.fillRoundedRectangle (r, 6.0f); }
             g.setFont (LookAndFeel::uiFont (12.5f, on));
             g.setColour (on ? th().soft : juce::Colour (0xffc9ccd1));
-            g.drawText (i == 0 ? juce::String ("All models") : Hamamatsu108Processor::modelNames()[i - 1], r.reduced (12.0f, 0.0f), juce::Justification::centredLeft, false);
+            g.drawText (i == 0 ? juce::String ("All characters") : Hamamatsu108Processor::modelNames()[i - 1], r.reduced (12.0f, 0.0f), juce::Justification::centredLeft, false);
         }
 
         g.setFont (LookAndFeel::uiFont (12.0f));

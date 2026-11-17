@@ -67,7 +67,7 @@ const juce::StringArray& Hamamatsu108Processor::keysPlayNames()
 
 const juce::StringArray& Hamamatsu108Processor::modelNames()
 {
-    static const juce::StringArray n { "Early 81", "System 84", "Tone Bank 89", "Late 90s", "Cartridge 99", "Modern Strum" };
+    static const juce::StringArray n { "Warm", "Classic", "Bright", "Clean", "Lo-fi", "Hi-fi" };
     return n;
 }
 
@@ -448,6 +448,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "harpVoice", 1 }, "Harp Voice", harp::voiceNames(), 0));
     fl ("harpTone", "Harp Tone", 0.0f, 1.0f, 0.62f, pct);
     fl ("harpDecay", "Harp Decay", 0.15f, 8.0f, 1.8f, [] (float v, int) { return String (v, 2) + " s"; }, 1.5f);
+    fl ("harpAttack", "Harp Attack", 0.0015f, 3.0f, 0.0015f, [] (float v, int) { return v < 0.01f ? String ("pluck") : String (roundToInt (v * 1000.0f)) + " ms"; }, 0.3f);
+    fl ("harpSustain", "Harp Sustain", 0.0f, 1.0f, 0.0f, pct);
+    fl ("harpRelease", "Harp Release", 0.02f, 8.0f, 8.0f, [] (float v, int) { return v > 7.9f ? String ("ring") : String (v, 2) + " s"; }, 0.4f);
     layout.add (std::make_unique<AudioParameterInt> (ParameterID { "harpRange", 1 }, "Harp Range", 1, 4, 3,
                                                      AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int) { return String (v) + " oct"; })));
 
@@ -729,6 +732,15 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
     else if (m.isNoteOff())
     {
         const int n = m.getNoteNumber();
+        if (const float rel = param (apvts, "harpRelease"); rel < 7.9f && numReleases < (int) releases.size())
+        {
+            const int kp = juce::roundToInt (param (apvts, "keysPlay"));
+            // RELEASE: the sound ends when the key goes up (Notes: that note, Flourish: the whole run)
+            if (kp == 0 && ! (chordZones.load() && n <= typeZoneHigh()))
+                releases[(size_t) numReleases++] = { samplePos, n, rel };
+            else if (kp >= 4)
+                releases[(size_t) numReleases++] = { samplePos, -1, rel };
+        }
         if (heldMelodic[(size_t) n])
         {
             heldMelodic[(size_t) n] = false; --heldMelodicCount;
@@ -1388,6 +1400,8 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     voiceSettings.model = (harp::Model) juce::roundToInt (param (apvts, "harpVoice"));
     voiceSettings.tone = juce::jlimit (0.0f, 1.0f, mp ("harpTone") * model.tone * (1.0f - 0.35f * age));
     voiceSettings.decay = mp ("harpDecay") * model.decay * (1.0f + 1.2f * dream) * (1.0f - 0.85f * modWheel);   // mod wheel = shorter notes
+    voiceSettings.attack = param (apvts, "harpAttack");
+    voiceSettings.sustain = param (apvts, "harpSustain");
     // long ringing strings pile up under dense strum patterns: trim the harp bus a little for long decays
     const float decayComp = 1.0f / (1.0f + 0.09f * juce::jmax (0.0f, voiceSettings.decay - 2.0f));
     const int range = juce::roundToInt (param (apvts, "harpRange"));
@@ -1456,6 +1470,24 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             else if (stackParts.size() < 4) stackParts.push_back (add);
         }
         latchedChord = chords::stack (stackParts);
+        // the instrument's button combinations on one root: major + 7 = maj7, minor + 7 = m7,
+        // major + minor = dim, all three = aug
+        if (stackParts.size() >= 2)
+        {
+            const int root = chords::rootOf (stackParts.front());
+            int typesMask = 0;
+            bool sameRoot = true;
+            for (int c : stackParts)
+            {
+                if (chords::isCustom (c) || chords::rootOf (c) != root || chords::typeOf (c) > 2) { sameRoot = false; break; }
+                typesMask |= 1 << chords::typeOf (c);
+            }
+            if (sameRoot)
+            {
+                const int t = typesMask == 0b101 ? 3 : typesMask == 0b110 ? 4 : typesMask == 0b011 ? 5 : typesMask == 0b111 ? 6 : -1;
+                if (t >= 0) latchedChord = chords::index (root, t);
+            }
+        }
     }
     if (latchedChord < 0) stackParts.clear();
     for (size_t i = 0; i < stackGui.size(); ++i) stackGui[i].store (i < stackParts.size() && stackParts.size() > 1 ? stackParts[i] : -1);
@@ -1835,7 +1867,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             if (releases[(size_t) e].delay < start + len)
             {
                 for (auto& v : voices)
-                    if (v.isActive() && v.getNote() == releases[(size_t) e].note) v.release (0.04f);
+                    if (v.isActive() && (releases[(size_t) e].note < 0 || v.getNote() == releases[(size_t) e].note)) v.release (releases[(size_t) e].secs);
                 releases[(size_t) e] = releases[(size_t) --numReleases];
             }
             else ++e;
@@ -2152,7 +2184,7 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
         {
             auto state = juce::ValueTree::fromXml (*xml);
             editorWidth.store ((int) state.getProperty ("uiWidth", 0));
-            captureMode.store (juce::jlimit (0, 2, (int) state.getProperty ("captureMode", 2)));
+            captureMode.store (juce::jlimit (0, 1, (int) state.getProperty ("captureMode", 1)));
             captureQuant.store (juce::jlimit (0, 4, (int) state.getProperty ("captureQuant", 1)));
             if (state.hasProperty ("gateMask")) gateMask.store ((std::uint32_t) (juce::int64) state.getProperty ("gateMask"));
             gateLen.store (juce::jlimit (1, gateSteps, (int) state.getProperty ("gateLen", 16)));

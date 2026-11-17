@@ -105,8 +105,8 @@ namespace hama
             choice ("harpVoice2", "VOICE B", { b.getX() + 130, b.getY(), 200, 44 });
             knobAt ("morph", "MORPH  A / B", 60, b.getX() + 120, b.getY() + 60, 130);
 
-            auto m = panel ("MODEL", 824, 0, 408, 250);
-            modelBox = choice ("model", "MODEL", m.removeFromTop (44).withWidth (220));
+            auto m = panel ("CHARACTER", 824, 0, 408, 250);
+            modelBox = choice ("model", "CHARACTER", m.removeFromTop (44).withWidth (220));
             modelBox->onChange = [this] { repaint(); };
             modelText = { m.getX(), m.getY() + 10, m.getWidth(), 140 };
 
@@ -1557,7 +1557,7 @@ namespace hama
                 knobAt (ids[i], labels[i], 70, m.getX() + i * 300, m.getY() + 4, 110);
                 descs[(size_t) i] = { m.getX() + i * 300 + 118, m.getY() + 14, 160, 120 };
             }
-            models = panel ("MODEL  \xc2\xb7  CLICK TO CHOOSE", 0, 262, 1232, 268);
+            models = panel ("CHARACTER  \xc2\xb7  CLICK TO CHOOSE", 0, 262, 1232, 268);
         }
 
         juce::Rectangle<float> modelCard (int i) const
@@ -1575,7 +1575,7 @@ namespace hama
         void mouseDown (const juce::MouseEvent& e) override
         {
             for (int i = 0; i < 6; ++i)
-                if (modelCard (i).contains (e.position)) { setParam (processor.apvts, "model", (float) i); owner.status ("Model", Hamamatsu108Processor::modelNames()[i]); }
+                if (modelCard (i).contains (e.position)) { setParam (processor.apvts, "model", (float) i); owner.status ("Character", Hamamatsu108Processor::modelNames()[i]); }
         }
 
         void paintExtras (juce::Graphics& g) override
@@ -1632,7 +1632,7 @@ namespace hama
     //==========================================================================
     const juce::StringArray& EditView::tabNames()
     {
-        static const juce::StringArray n { "ENGINE", "STRUM & ARP", "CHORDS", "MEMORY", "MOD", "FX", "CHARACTER" };
+        static const juce::StringArray n { "ENGINE", "STRUM & ARP", "KEYS", "MOD", "FX", "CHARACTER" };
         return n;
     }
 
@@ -1643,7 +1643,6 @@ namespace hama
         pages.add (new EnginePage (p, *this));
         pages.add (new StrumPage (p, *this));
         pages.add (new ChordsPage (p, *this));
-        pages.add (new MemoryPage (p, *this));
         pages.add (new ModPage (p, *this));
         pages.add (new FxPage (p, *this));
         pages.add (new CharacterPage (p, *this));
@@ -1732,7 +1731,7 @@ namespace hama
         auto in = vfd.reduced (14.0f, 0.0f);
         glowText (g, vfdName.toUpperCase(), in, juce::Justification::centredLeft);
         glowText (g, vfdValue, in.withTrimmedRight (200.0f), juce::Justification::centredRight);
-        glowText (g, "MODEL " + Hamamatsu108Processor::modelNames()[juce::roundToInt (plain (processor.apvts, "model"))].toUpperCase(), in, juce::Justification::centredRight, 0.6f);
+        glowText (g, "CHARACTER " + Hamamatsu108Processor::modelNames()[juce::roundToInt (plain (processor.apvts, "model"))].toUpperCase(), in, juce::Justification::centredRight, 0.6f);
 
         // tabs
         for (int i = 0; i < tabNames().size(); ++i)

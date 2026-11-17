@@ -18,10 +18,10 @@ namespace hama
         const std::vector<DeckGroup>& deckGroups()
         {
             static const std::vector<DeckGroup> g {
-                { "HARP",    { { "harpTone", "Tone", 36, nullptr }, { "harpDecay", "Decay", 36, nullptr }, { "harpRange", "Range", 36, nullptr } }, false },
+                { "HARP",    { { "harpTone", "Tone", 36, nullptr }, { "harpRange", "Range", 36, nullptr } }, false },
+                { "ENVELOPE", { { "harpAttack", "A", 0, nullptr }, { "harpDecay", "D", 0, nullptr }, { "harpSustain", "S", 0, nullptr }, { "harpRelease", "R", 0, nullptr } }, false },
                 { "CHORD",   { { "chordLevel", "Level", 36, nullptr }, { "chordFilter", "Filter", 36, nullptr } }, false, 1 },
                 { "BASS",    { { "bassLevel", "Level", 36, nullptr }, { "bassTone", "Tone", 36, nullptr } }, false, 2 },
-                { "VIBRATO", { { "vibRate", "Rate", 36, nullptr }, { "vibDepth", "Depth", 36, nullptr } }, false },
                 { "FX",      { { "fx1Mix", "FX 1", 36, nullptr }, { "fx2Mix", "FX 2", 36, nullptr }, { "fx3Mix", "FX 3", 36, nullptr } }, false },
                 { "MACROS",  { { "macroAge", "AGE", 44, nullptr }, { "macroDream", "DREAM", 44, nullptr }, { "macroWobble", "WOBBLE", 44, nullptr } }, true },
                 { "MASTER",  { { "master", "Volume", 48, nullptr } }, false },
@@ -29,7 +29,7 @@ namespace hama
             return g;
         }
 
-        int knobColumnWidth (int size) { return juce::jmax (size + 14, 48) + 4; }
+        int knobColumnWidth (int size) { return size == 0 ? 30 : juce::jmax (size + 14, 48) + 4; }   // size 0 = vertical slider
 
         juce::Array<juce::Rectangle<int>> deckGroupBounds()
         {
@@ -233,19 +233,10 @@ namespace hama
         void paintRear (juce::Graphics& g)
         {
             using namespace geo;
-            // speaker grille
-            auto grille = juce::Rectangle<float> ((float) innerX, (float) rearY + 3.0f, 210.0f, 52.0f);
+            // no speaker grille (it is a plugin): the logo sits at the left edge
             const auto& sk = skins::get (skin);
-            g.setGradientFill (juce::ColourGradient (sk.grilleA, 0.0f, grille.getY(), sk.grilleB, 0.0f, grille.getBottom(), false));
-            g.fillRoundedRectangle (grille, 12.0f);
-            skins::paintGrille (g, grille, sk);
-            g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.7f), 0.0f, grille.getY(), juce::Colours::transparentBlack, 0.0f, grille.getY() + 10.0f, false));
-            g.fillRoundedRectangle (grille, 12.0f);
-            g.setColour (juce::Colours::white.withAlpha (0.14f));
-            g.drawHorizontalLine ((int) grille.getBottom(), grille.getX() + 12.0f, grille.getRight() - 12.0f);
-
             // logo (approved SVG, drawn as vector, never altered) and engraved model line
-            const float tx = grille.getRight() + 20.0f;
+            const float tx = (float) innerX + 6.0f;
             if (logo != nullptr)
             {
                 const auto lb = logo->getDrawableBounds();
@@ -305,7 +296,7 @@ namespace hama
         {
             using namespace geo;
             const float y = (float) labelY;
-            engravedLabel (g, padArea().toFloat().withY (y).withHeight (12.0f), "CHORD BUTTONS", juce::String::fromUTF8 ("CTRL+CLICK = STACK CHORDS   \xe2\x97\x8f IN KEY"));
+            engravedLabel (g, padArea().toFloat().withY (y).withHeight (12.0f), "CHORD BUTTONS", juce::String::fromUTF8 ("RIGHT-CLICK = MORE CHORDS \xc2\xb7 CTRL+CLICK = COMBINE   \xe2\x97\x8f IN KEY"));
             engravedLabel (g, plateArea().toFloat().withY (y).withHeight (12.0f), "STRUM PLATE");
             engravedLabel (g, moduleArea().toFloat().withY (y).withHeight (12.0f), juce::String::fromUTF8 ("VOICE \xc2\xb7 LIVE STRUM"));
         }
@@ -383,6 +374,7 @@ namespace hama
 
         static constexpr float keyW = 42.0f, keyH = 27.0f, gapX = 4.9f, gapY = 4.0f;
         static constexpr float keysX = 14.0f + 38.0f, keysY = 9.0f + 16.0f + 4.0f;
+        static constexpr int shownTypes = 3;   // major, minor, 7 - the rest by combination or right-click
 
         juce::Rectangle<float> keyBounds (int root, int type) const
         {
@@ -411,11 +403,11 @@ namespace hama
                 g.drawText (chords::rootName (r), keyBounds (r, 0).withY (9.0f).withHeight (16.0f), juce::Justification::centred, false);
 
             g.setFont (spaced (8.5f, true, 0.05f));
-            for (int t = 0; t < chords::numTypes; ++t)
+            for (int t = 0; t < shownTypes; ++t)
                 g.drawText (chords::types()[(size_t) t].rowLabel, juce::Rectangle<float> (12.0f, keyBounds (0, t).getY(), 35.0f, keyH),
                             juce::Justification::centredRight, false);
 
-            for (int t = 0; t < chords::numTypes; ++t)
+            for (int t = 0; t < shownTypes; ++t)
                 for (int r = 0; r < chords::numRoots; ++r)
                     paintKey (g, r, t);
         }
@@ -423,7 +415,13 @@ namespace hama
         void paintKey (juce::Graphics& g, int root, int type)
         {
             const int idx = chords::index (root, type);
-            const bool on = idx == activeChord || idx == pressed || std::find (stack.begin(), stack.end(), idx) != stack.end();
+            bool on = idx == activeChord || idx == pressed || std::find (stack.begin(), stack.end(), idx) != stack.end();
+            if (! on && activeChord >= 0 && ! chords::isCustom (activeChord) && chords::typeOf (activeChord) >= shownTypes && chords::rootOf (activeChord) == root)
+            {
+                // a combination chord lights the buttons it is made of
+                static const int parts[9] = { 0, 0, 0, 0b101, 0b110, 0b011, 0b111, 0b001, 0b001 };
+                on = (parts[chords::typeOf (activeChord)] >> type) & 1;
+            }
             auto b = keyBounds (root, type);
 
             if (! on)
@@ -473,11 +471,24 @@ namespace hama
 
         void mouseDown (const juce::MouseEvent& e) override
         {
-            for (int t = 0; t < chords::numTypes; ++t)
+            for (int t = 0; t < shownTypes; ++t)
                 for (int r = 0; r < chords::numRoots; ++r)
                     if (keyBounds (r, t).contains (e.position))
                     {
                         pressed = chords::index (r, t);
+                        if (e.mods.isPopupMenu())
+                        {
+                            // every chord type of this root
+                            juce::PopupMenu m;
+                            m.addSectionHeader (juce::String (chords::rootName (r)) + " chords (Ctrl+click two buttons: MAJ+7 = maj7, MIN+7 = m7, MAJ+MIN = dim, all three = aug)");
+                            for (int k = 0; k < chords::numTypes; ++k)
+                                m.addItem (1 + chords::index (r, k), chords::shortName (chords::index (r, k)) + "   " + chords::types()[(size_t) k].longName, true, activeChord == chords::index (r, k));
+                            juce::Component::SafePointer<ChordPad> safe (this);
+                            m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (keyBounds (r, t).toNearestInt())),
+                                             [safe] (int res) { if (safe != nullptr && res > 0) safe->processor.latchChord (res - 1); });
+                            pressed = -1;
+                            return;
+                        }
                         if (e.mods.isCtrlDown() || e.mods.isShiftDown() || e.mods.isCommandDown())
                             processor.addChord (pressed);     // stack it on the chord that is on
                         else
@@ -665,7 +676,8 @@ namespace hama
         // button areas (module coordinates)
         juce::Rectangle<float> dualArea() const  { return { 12.0f, 130.0f, 93.0f, 30.0f }; }
         juce::Rectangle<float> holdArea() const  { return { 111.0f, 130.0f, 93.0f, 30.0f }; }
-        juce::Rectangle<float> modeArea (int i) const { return { 12.0f + i * 49.0f, 166.0f, 45.0f, 34.0f }; }
+        juce::Rectangle<float> modeArea (int i) const { return { 12.0f + i * 65.0f, 166.0f, 61.0f, 34.0f }; }
+        static int modeOf (int button) { return button == 2 ? 3 : button; }   // LIVE, ARP, OFF
         juce::Rectangle<float> keyArea() const   { return { 100.0f, 210.0f, 104.0f, 24.0f }; }
         juce::Rectangle<float> trDown() const    { return { 106.0f, 240.0f, 26.0f, 24.0f }; }
         juce::Rectangle<float> trValue() const   { return { 134.0f, 240.0f, 40.0f, 24.0f }; }
@@ -755,8 +767,8 @@ namespace hama
 
             drawHardButton (g, dualArea(), "DUAL", dual, true, false);
             drawHardButton (g, holdArea(), "HOLD", hold, true, false);
-            for (int i = 0; i < 4; ++i)
-                drawHardButton (g, modeArea (i), Hamamatsu108Processor::strumModeNames()[i].toUpperCase(), mode == i, true, true);
+            for (int i = 0; i < 3; ++i)
+                drawHardButton (g, modeArea (i), Hamamatsu108Processor::strumModeNames()[modeOf (i)].toUpperCase(), mode == modeOf (i), true, true);
 
             g.setFont (spaced (9.0f, true, 0.2f));
             g.setColour (juce::Colour (0xff9aa0a7));
@@ -812,12 +824,12 @@ namespace hama
             else if (trUp().contains (p))      setParam (s, "transpose", (float) juce::jmin (12, transpose + 1));
             else if (keyArea().contains (p))   showKeyMenu();
             else
-                for (int i = 0; i < 4; ++i)
-                    if (modeArea (i).contains (p))
+                for (int b = 0; b < 3; ++b)
+                    if (modeArea (b).contains (p))
                     {
+                        const int i = modeOf (b);
                         if (i == mode && i == 0)      showLiveMenu();
                         else if (i == mode && i == 1) showArpMenu();
-                        else if (i == mode && i == 2) showMemoMenu();
                         else
                         {
                             setParam (s, "strumMode", (float) i);
@@ -1005,7 +1017,7 @@ namespace hama
             setMouseCursor (juce::MouseCursor::DraggingHandCursor);
         }
 
-        static juce::Rectangle<int> area() { return { geo::innerX + 500, geo::rearY + 6, 190, 46 }; }
+        static juce::Rectangle<int> area() { return { geo::innerX + 500, geo::rearY + 6, 200, 46 }; }
 
         void update()
         {
@@ -1048,7 +1060,7 @@ namespace hama
             drawLed (g, juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ r.getX() + 14.0f, r.getY() + 14.0f }), live);
             auto text = r.reduced (26.0f, 5.0f).withTrimmedLeft (-2.0f);
             g.setFont (LookAndFeel::monoFont (11.0f));
-            static const char* modeNames[] = { "DETAIL", "CHORDS", "BOTH" };
+            static const char* modeNames[] = { "DETAIL", "SMOOTH", "SMOOTH" };
             auto top = text.removeFromTop (17.0f);
             glowText (g, "MIDI CAPTURE", top, juce::Justification::centredLeft, 0.7f);
             glowText (g, modeNames[juce::jlimit (0, 2, processor.captureMode.load())], top, juce::Justification::centredRight, 0.5f);
@@ -1060,11 +1072,12 @@ namespace hama
                 const double secs = notes.back().seconds - notes.front().seconds;
                 const double bars = secs * processor.hostBpm.load() / 240.0;
                 int ons = 0;
-                for (auto& n : notes) if (n.on) ++ons;
+                for (auto& n : notes) if (n.on && n.layer < 3) ++ons;
                 int blocks = 0;
                 for (auto& n : notes) if (n.on && n.layer == 3) ++blocks;
                 const int mode = processor.captureMode.load();
-                const juce::String what = mode == 1 ? juce::String (blocks) + " chord notes" : juce::String (ons) + " notes";
+                juce::ignoreUnused (blocks, mode);
+                const juce::String what = juce::String (ons) + " notes";
                 glowText (g, juce::String::fromUTF8 ("DRAG \xe2\x87\xa2 ") + what + " " + juce::String (juce::jmax (1, (int) std::ceil (bars))) + " bar",
                           text, juce::Justification::centredLeft);
             }
@@ -1081,27 +1094,19 @@ namespace hama
 
         void showMenu()
         {
-            const int mode = processor.captureMode.load(), q = processor.captureQuant.load();
+            const int mode = processor.captureMode.load();
             juce::PopupMenu m;
             m.addSectionHeader ("Drag the take as...");
-            m.addItem (1, "Chords: long stacked notes (piano roll ready)", true, mode == 1);
-            m.addItem (2, "Detail: every plucked note, as played", true, mode == 0);
-            m.addItem (3, "Both: chords + detail on separate tracks", true, mode == 2);
+            m.addItem (1, "Detail: every plucked note, exactly as played", true, mode == 0);
+            m.addItem (2, "Smooth: the same, without the tiny notes (longer notes, same sound)", true, mode != 0);
             m.addSeparator();
-            juce::PopupMenu grid;
-            static const char* qn[] = { "Off (as played)", "1/16", "1/8", "1/4", "1 bar" };
-            for (int i = 0; i < 5; ++i) grid.addItem (10 + i, qn[i], true, q == i);
-            m.addSubMenu ("Chord grid (snap chord blocks)", grid);
-            m.addSeparator();
-            m.addItem (20, "Clear take", ! notes.empty());
+            m.addItem (20, "Reset (clear the take)", ! notes.empty());
             juce::Component::SafePointer<MidiCapture> safe (this);
             m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int r)
             {
                 if (safe == nullptr || r <= 0) return;
-                if (r == 1) safe->processor.captureMode.store (1);
-                if (r == 2) safe->processor.captureMode.store (0);
-                if (r == 3) safe->processor.captureMode.store (2);
-                if (r >= 10 && r < 15) safe->processor.captureQuant.store (r - 10);
+                if (r == 1) safe->processor.captureMode.store (0);
+                if (r == 2) safe->processor.captureMode.store (1);
                 if (r == 20) safe->notes.clear();
                 safe->repaint();
             });
@@ -1132,52 +1137,63 @@ namespace hama
             const double grid = gridQ[juce::jlimit (0, 4, processor.captureQuant.load())] * ppq;
             auto snap = [grid] (double t) { return grid > 0.0 ? std::round (t / grid) * grid : t; };
 
-            // tracks: chord blocks / harp detail / chord layer / bass (FL Studio puts each on its own channel)
-            juce::Array<int> layers;
-            if (mode != 0) layers.add (3);
-            if (mode != 1) layers.add (0);
-            layers.add (1);
-            layers.add (2);
-
+            // tracks: harp / chord layer / bass (FL Studio puts each on its own channel)
+            const bool smooth = mode != 0;
             juce::MidiFile mf;
             mf.setTicksPerQuarterNote (ppq);
             const double endTicks = toTicks (notes.back().seconds) + ppq;
-            bool first = true;
-            for (int layer : layers)
+            juce::ignoreUnused (snap);
+            for (int layer = 0; layer < 3; ++layer)
             {
                 juce::MidiMessageSequence seq;
-                if (first) seq.addEvent (juce::MidiMessage::tempoMetaEvent (juce::roundToInt (60000000.0 / bpm)), 0.0);
-                static const char* trackNames[] = { "Hamamatsu harp (detail)", "Hamamatsu chord layer", "Hamamatsu bass", "Hamamatsu chords" };
+                if (layer == 0) seq.addEvent (juce::MidiMessage::tempoMetaEvent (juce::roundToInt (60000000.0 / bpm)), 0.0);
+                static const char* trackNames[] = { "Hamamatsu harp", "Hamamatsu chord layer", "Hamamatsu bass" };
                 seq.addEvent (juce::MidiMessage::textMetaEvent (3, trackNames[layer]), 0.0);
-                const int channel = layer == 3 ? 1 : (mode == 0 ? 1 + layer : 2 + layer);
                 int count = 0;
                 for (size_t i = 0; i < notes.size(); ++i)
                 {
                     const auto& n = notes[i];
                     if (n.layer != layer || ! n.on) continue;
                     double on = toTicks (n.seconds);
-                    double off = layer == 0 ? on + ppq / 2.0 : endTicks;
+                    float vel = n.velocity;
+                    double nextSame = -1.0;
                     for (size_t j = i + 1; j < notes.size(); ++j)
-                        if (notes[j].layer == layer && notes[j].note == n.note)
-                        {
-                            const double t = toTicks (notes[j].seconds) - 1.0;
-                            if (layer == 0) { if (notes[j].on) off = juce::jmin (off, t); }
-                            else { off = t; }
-                            break;
-                        }
-                    if (layer == 3)
+                        if (notes[j].layer == layer && notes[j].note == n.note && (layer != 0 || notes[j].on)) { nextSame = toTicks (notes[j].seconds); break; }
+                    if (layer == 0 && smooth)
                     {
-                        on = snap (on);
-                        off = juce::jmax (on + (grid > 0.0 ? grid : ppq / 4.0), snap (off + 1.0) - 1.0);
+                        // SMOOTH: a string plucked again within a 1/32 merges with the next pluck (no tiny notes);
+                        // every note lasts until the same string sounds again (at least a 1/16, at most 2 beats)
+                        bool merged = false;
+                        for (size_t j = i + 1; j < notes.size(); ++j)
+                            if (notes[j].layer == 0 && notes[j].on && notes[j].note == n.note)
+                            {
+                                if (toTicks (notes[j].seconds) - on < ppq / 8.0) merged = true;
+                                break;
+                            }
+                        if (merged) continue;
+                        // pick up the loudest velocity of the plucks merged into this one (looking back)
+                        for (size_t j = i; j-- > 0;)
+                            if (notes[j].layer == 0 && notes[j].on && notes[j].note == n.note)
+                            {
+                                if (on - toTicks (notes[j].seconds) < ppq / 8.0) vel = juce::jmax (vel, notes[j].velocity);
+                                break;
+                            }
                     }
-                    const auto vel = (juce::uint8) juce::jlimit (1, 127, juce::roundToInt (n.velocity * 127.0f));
-                    seq.addEvent (juce::MidiMessage::noteOn (channel, n.note, vel), on);
-                    seq.addEvent (juce::MidiMessage::noteOff (channel, n.note), juce::jmax (on + 1.0, off));
+                    double off;
+                    if (layer == 0)
+                    {
+                        if (smooth) off = juce::jlimit (on + ppq / 4.0, on + 2.0 * ppq, nextSame > 0.0 ? nextSame - 1.0 : on + 2.0 * ppq);
+                        else off = nextSame > 0.0 ? juce::jmin (on + ppq / 2.0, nextSame - 1.0) : on + ppq / 2.0;
+                    }
+                    else off = nextSame > 0.0 ? nextSame - 1.0 : endTicks;
+                    const auto v = (juce::uint8) juce::jlimit (1, 127, juce::roundToInt (vel * 127.0f));
+                    seq.addEvent (juce::MidiMessage::noteOn (1 + layer, n.note, v), on);
+                    seq.addEvent (juce::MidiMessage::noteOff (1 + layer, n.note), juce::jmax (on + 1.0, off));
                     ++count;
                 }
                 seq.updateMatchedPairs();
                 seq.sort();
-                if (count > 0 || first) { mf.addTrack (seq); first = false; }
+                if (count > 0 || layer == 0) mf.addTrack (seq);
             }
 
             auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Kuprell Hamamatsu 108");
@@ -1476,7 +1492,7 @@ namespace hama
     public:
         explicit ModelDisplay (Hamamatsu108Processor& p) : processor (p)
         {
-            setTooltip ("Model: six eras of the instrument, from the dark early 81 to the hi-fi Modern Strum. Click to choose.");
+            setTooltip ("Character: six sound characters, from Warm to Hi-fi. Click to choose.");
             setMouseCursor (juce::MouseCursor::PointingHandCursor);
         }
         static juce::Rectangle<int> area() { return { geo::innerX + geo::innerW - 230, geo::rearY + 6, 230, 46 }; }
@@ -1491,7 +1507,7 @@ namespace hama
         {
             auto r = getLocalBounds().toFloat().reduced (14.0f, 0.0f);
             g.setFont (LookAndFeel::monoFont (11.0f));
-            glowText (g, "MODEL", r, juce::Justification::centredLeft, 0.7f);
+            glowText (g, "CHARACTER", r, juce::Justification::centredLeft, 0.7f);
             g.setFont (LookAndFeel::monoFont (17.0f));
             glowText (g, Hamamatsu108Processor::modelNames()[juce::jmax (0, model)].toUpperCase(), r, juce::Justification::centredRight);
         }
@@ -1499,8 +1515,8 @@ namespace hama
         void mouseDown (const juce::MouseEvent&) override
         {
             juce::PopupMenu m;
-            m.addSectionHeader ("Model");
-            static const char* desc[] = { "dark, warm, a little noisy", "the classic chime", "brighter, wider", "clean and smooth", "lo-fi cartridge grit", "hi-fi and wide" };
+            m.addSectionHeader ("Character");
+            static const char* desc[] = { "dark, warm, a little noisy", "the classic chime", "brighter, wider", "clean and smooth", "lo-fi grit", "hi-fi and wide" };
             for (int i = 0; i < 6; ++i)
                 m.addItem (1 + i, Hamamatsu108Processor::modelNames()[i] + juce::String::fromUTF8 ("  \xc2\xb7  ") + desc[i], true, i == model);
             juce::Component::SafePointer<ModelDisplay> safe (this);
@@ -1516,6 +1532,289 @@ namespace hama
     };
 
     //==========================================================================
+    // Vertical slider for the deck (ADSR)
+    class DeckSlider : public juce::Component, public juce::SettableTooltipClient
+    {
+    public:
+        DeckSlider (juce::AudioProcessorValueTreeState& s, const juce::String& paramID, const juce::String& labelText)
+            : param (s.getParameter (paramID)), label (labelText)
+        {
+            attachment = std::make_unique<juce::ParameterAttachment> (*param, [this] (float) { repaint(); });
+            attachment->sendInitialUpdate();
+            setTooltip (param->getName (64));
+            setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
+        }
+        std::function<void (const juce::String&, const juce::String&)> onInteract;
+
+        juce::Rectangle<float> track() const { return getLocalBounds().toFloat().withTrimmedTop (4.0f).withTrimmedBottom (26.0f).withSizeKeepingCentre (6.0f, (float) getHeight() - 30.0f); }
+
+        void paint (juce::Graphics& g) override
+        {
+            auto t = track();
+            const float v = param->getValue();
+            g.setColour (juce::Colours::black.withAlpha (0.35f));
+            g.fillRoundedRectangle (t, 3.0f);
+            g.setColour (th().deep);
+            g.fillRoundedRectangle (t.withTop (t.getBottom() - t.getHeight() * v), 3.0f);
+            auto cap = juce::Rectangle<float> (20.0f, 9.0f).withCentre ({ t.getCentreX(), t.getBottom() - t.getHeight() * v });
+            g.setColour (juce::Colours::black.withAlpha (0.4f));
+            g.fillRoundedRectangle (cap.translated (0.0f, 1.5f), 2.5f);
+            g.setGradientFill (juce::ColourGradient (juce::Colour (0xfff2f4f6), 0.0f, cap.getY(), juce::Colour (0xff9aa1a9), 0.0f, cap.getBottom(), false));
+            g.fillRoundedRectangle (cap, 2.5f);
+            g.setColour (th().deep);
+            g.fillRect (cap.withSizeKeepingCentre (14.0f, 1.5f));
+            g.setColour (juce::Colour (0xff22262b));
+            g.setFont (LookAndFeel::uiFont (10.0f, true));
+            g.drawText (label, getLocalBounds().removeFromBottom (24).removeFromTop (12), juce::Justification::centred, false);
+            g.setColour (juce::Colour (0xff4a5058));
+            g.setFont (LookAndFeel::monoFont (8.5f));
+            g.drawText (param->getCurrentValueAsText(), getLocalBounds().removeFromBottom (12).expanded (8, 0), juce::Justification::centred, false);
+        }
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            if (e.mods.isPopupMenu() || e.getNumberOfClicks() > 1) { attachment->setValueAsCompleteGesture (param->convertFrom0to1 (param->getDefaultValue())); return; }
+            attachment->beginGesture();
+            startValue = param->getValue();
+        }
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            const float sens = e.mods.isShiftDown() || e.mods.isCtrlDown() ? 0.25f : 1.0f;
+            const float nv = juce::jlimit (0.0f, 1.0f, startValue - sens * (float) e.getDistanceFromDragStartY() / track().getHeight());
+            attachment->setValueAsPartOfGesture (param->convertFrom0to1 (nv));
+            if (onInteract) onInteract (param->getName (32), param->getCurrentValueAsText());
+        }
+        void mouseUp (const juce::MouseEvent&) override { attachment->endGesture(); }
+    private:
+        juce::RangedAudioParameter* param;
+        juce::String label;
+        std::unique_ptr<juce::ParameterAttachment> attachment;
+        float startValue = 0.0f;
+    };
+
+    //==========================================================================
+    // Display with a menu on the rear of the instrument (PATTERN, YOUR KEYS)
+    class RearChoice : public juce::Component, public juce::SettableTooltipClient
+    {
+    public:
+        RearChoice (Hamamatsu108Processor& p, const char* paramID, const char* labelText, const char* tip) : processor (p), id (paramID), label (labelText)
+        {
+            setTooltip (tip);
+            setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        }
+        void update()
+        {
+            const int v = juce::roundToInt (plain (processor.apvts, id.toRawUTF8()));
+            if (v != value) { value = v; repaint(); }
+        }
+        void paint (juce::Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat().reduced (1.0f);
+            g.setColour (juce::Colours::white.withAlpha (0.12f));
+            g.fillRoundedRectangle (r.expanded (1.0f), 10.0f);
+            drawDisplay (g, r, 9.0f);
+            if (hover) { g.setColour (th().accent.withAlpha (0.6f)); g.drawRoundedRectangle (r, 9.0f, 1.5f); }
+            auto t = r.reduced (12.0f, 5.0f);
+            g.setFont (LookAndFeel::monoFont (11.0f));
+            glowText (g, label, t.removeFromTop (17.0f), juce::Justification::centredLeft, 0.7f);
+            glowText (g, juce::String::fromUTF8 ("\xe2\x96\xbe"), r.reduced (12.0f, 5.0f).removeFromTop (17.0f), juce::Justification::centredRight, 0.5f);
+            g.setFont (LookAndFeel::monoFont (14.0f));
+            auto* prm = processor.apvts.getParameter (id);
+            glowText (g, prm != nullptr ? prm->getCurrentValueAsText().toUpperCase() : juce::String(), t, juce::Justification::centredLeft);
+        }
+        void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
+        void mouseExit (const juce::MouseEvent&) override  { hover = false; repaint(); }
+        void mouseDown (const juce::MouseEvent&) override
+        {
+            auto* prm = dynamic_cast<juce::AudioParameterChoice*> (processor.apvts.getParameter (id));
+            if (prm == nullptr) return;
+            juce::PopupMenu m;
+            m.addSectionHeader (getTooltip());
+            for (int i = 0; i < prm->choices.size(); ++i) m.addItem (1 + i, prm->choices[i], true, i == value);
+            juce::Component::SafePointer<RearChoice> safe (this);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int r)
+            {
+                if (safe != nullptr && r > 0) { setParam (safe->processor.apvts, safe->id.toRawUTF8(), (float) (r - 1)); safe->update(); }
+            });
+        }
+    private:
+        Hamamatsu108Processor& processor;
+        juce::String id, label;
+        int value = -1;
+        bool hover = false;
+    };
+
+    //==========================================================================
+    // Under the chord buttons: the hand (swing, variation) and ARP / GATE with 16 steps, like a small sequencer
+    class PerformPanel : public juce::Component
+    {
+    public:
+        explicit PerformPanel (Hamamatsu108Processor& p) : processor (p)
+        {
+            Knob::Style st;
+            st.labelHeight = 8.0f;
+            auto add = [&] (const char* pid, const char* lab) { auto* k = knobs.add (new Knob (processor.apvts, pid, lab, 26, st)); addAndMakeVisible (k); return k; };
+            add ("strumSwing", "SWING"); add ("strumVary", "VARIATION"); add ("strumSpeed", "STROKE");
+            arpKnobs = { add ("strumRate", "RATE"), add ("arpOctaves", "OCTAVES"), add ("arpGate", "LENGTH"), add ("arpSwing", "SWING") };
+            gateKnobs = { add ("gateRate", "RATE"), add ("gateDepth", "DEPTH"), add ("gateSmooth", "SMOOTH"), add ("arpPattern", "ARP MODE") };
+            gateKnobs[3]->setVisible (false);
+            showView (0);
+        }
+
+        std::function<void (const juce::String&, const juce::String&)> onStatus;
+
+        juce::Rectangle<float> arpButton() const  { return { 14.0f, 74.0f, 64.0f, 26.0f }; }
+        juce::Rectangle<float> gateButton() const { return { 84.0f, 74.0f, 64.0f, 26.0f }; }
+        juce::Rectangle<float> tab (int i) const  { return { 300.0f + i * 86.0f, 2.0f, 82.0f, 18.0f }; }
+        juce::Rectangle<float> bars() const       { return { 300.0f, 26.0f, (float) getWidth() - 314.0f, (float) getHeight() - 34.0f }; }
+        juce::Rectangle<float> bar (int i) const  { auto b = bars(); const float w = b.getWidth() / 16.0f; return { b.getX() + i * w + 1.5f, b.getY(), w - 3.0f, b.getHeight() }; }
+
+        void resized() override
+        {
+            for (int i = 0; i < 3; ++i) knobs[i]->setBounds (156 + i * 46, 0, 46, 66);
+            for (int i = 0; i < 4; ++i)
+            {
+                arpKnobs[(size_t) i]->setBounds (10 + i * 70, 108, 70, 66);
+                gateKnobs[(size_t) i]->setBounds (10 + i * 70, 108, 70, 66);
+            }
+        }
+
+        void showView (int v)
+        {
+            view = v;
+            for (auto* k : arpKnobs) k->setVisible (v == 0);
+            for (int i = 0; i < 3; ++i) gateKnobs[(size_t) i]->setVisible (v == 1);
+            repaint();
+        }
+
+        void update()
+        {
+            juce::String sig;
+            sig << plain (processor.apvts, "strumMode") << plain (processor.apvts, "gateOn") << "|" << processor.arpStepGui.load() << "|" << processor.gateStepGui.load() << "|"
+                << (juce::int64) processor.gateMask.load() << "|" << processor.seqLen.load();
+            for (auto& v : processor.seqVel) sig << juce::roundToInt (v.load() * 40) << ",";
+            if (sig != last) { last = sig; repaint(); }
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.07f));
+            g.drawHorizontalLine (0, 10.0f, (float) getWidth() - 10.0f);
+            g.setFont (spaced (8.5f, true, 0.2f));
+            g.setColour (juce::Colour (0xff9aa0a7));
+            g.drawText ("THE HAND", juce::Rectangle<float> (14.0f, 8.0f, 130.0f, 14.0f), juce::Justification::centredLeft, false);
+            g.setFont (LookAndFeel::uiFont (10.5f));
+            g.setColour (juce::Colour (0xff6e737a));
+            g.drawFittedText ("pattern and keys:\nabove, on the panel", juce::Rectangle<int> (14, 24, 140, 30), juce::Justification::topLeft, 2);
+
+            const bool arpOn = juce::roundToInt (plain (processor.apvts, "strumMode")) == 1;
+            const bool gateOn = plain (processor.apvts, "gateOn") > 0.5f;
+            drawHardButton (g, arpButton(), "ARP", arpOn, true, true);
+            drawHardButton (g, gateButton(), "GATE", gateOn, true, true);
+
+            // tabs: which steps are shown
+            for (int i = 0; i < 2; ++i)
+            {
+                const bool on = i == view;
+                g.setColour (on ? th().accent.withAlpha (0.2f) : juce::Colour (0xff1b1e22));
+                g.fillRoundedRectangle (tab (i), 4.0f);
+                g.setColour (on ? th().accent : juce::Colour (0xff9aa0a7));
+                g.setFont (spaced (8.5f, true, 0.15f));
+                g.drawText (i == 0 ? juce::String::fromUTF8 ("ARP STEPS") : juce::String::fromUTF8 ("GATE STEPS"), tab (i), juce::Justification::centred, false);
+            }
+            g.setFont (LookAndFeel::uiFont (10.0f));
+            g.setColour (juce::Colour (0xff6e737a));
+            g.drawText (view == 0 ? "drag = step strength" : "click = sound on / off", juce::Rectangle<float> (480.0f, 2.0f, (float) getWidth() - 492.0f, 18.0f), juce::Justification::centredRight, false);
+
+            auto b = bars();
+            g.setColour (juce::Colour (0xff0c0e10));
+            g.fillRoundedRectangle (b.expanded (4.0f), 6.0f);
+            const int playing = view == 0 ? (arpOn ? processor.arpStepGui.load() : -1) : processor.gateStepGui.load();
+            const auto mask = processor.gateMask.load();
+            const int len = view == 0 ? processor.seqLen.load() : processor.gateLen.load();
+            for (int i = 0; i < 16; ++i)
+            {
+                auto c = bar (i);
+                const bool in = i < len;
+                g.setColour (juce::Colour (0xff1b1e22));
+                g.fillRoundedRectangle (c, 3.0f);
+                const bool active = view == 0 ? arpOn : gateOn;
+                const auto col = th().accent.withAlpha ((in ? 0.9f : 0.25f) * (active ? 1.0f : 0.45f));
+                if (view == 0)
+                {
+                    const float v = processor.seqVel[(size_t) i].load();
+                    g.setColour (col);
+                    g.fillRoundedRectangle (c.withTop (c.getBottom() - c.getHeight() * v), 3.0f);
+                }
+                else if ((mask >> (unsigned) i) & 1u)
+                {
+                    g.setColour (col);
+                    g.fillRoundedRectangle (c, 3.0f);
+                }
+                if (i % 4 == 0) { g.setColour (juce::Colours::white.withAlpha (0.25f)); g.fillRect (c.withHeight (2.0f)); }
+                if (i == playing) { g.setColour (juce::Colours::white.withAlpha (0.85f)); g.drawRoundedRectangle (c.expanded (1.0f), 3.0f, 1.5f); }
+            }
+        }
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            const auto p = e.position;
+            if (arpButton().contains (p))
+            {
+                const bool on = juce::roundToInt (plain (processor.apvts, "strumMode")) == 1;
+                setParam (processor.apvts, "strumMode", on ? 0.0f : 1.0f);
+                showView (0);
+                if (onStatus) onStatus ("ARP", on ? "off (LIVE strum)" : "on: the chord is played note by note");
+                return;
+            }
+            if (gateButton().contains (p))
+            {
+                const bool on = plain (processor.apvts, "gateOn") > 0.5f;
+                setParam (processor.apvts, "gateOn", on ? 0.0f : 1.0f);
+                showView (1);
+                if (onStatus) onStatus ("GATE", on ? "off" : "on: the sound is chopped in time");
+                return;
+            }
+            for (int i = 0; i < 2; ++i) if (tab (i).contains (p)) { showView (i); return; }
+            if (bars().expanded (2.0f).contains (p))
+            {
+                const int i = stepAt (p);
+                if (view == 1) paintOn = ! ((processor.gateMask.load() >> (unsigned) i) & 1u);
+                edit (i, p.y);
+            }
+        }
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            if (! bars().expanded (2.0f).contains (e.mouseDownPosition)) return;
+            edit (stepAt (e.position), e.position.y);
+        }
+
+    private:
+        int stepAt (juce::Point<float> p) const { auto b = bars(); return juce::jlimit (0, 15, (int) ((p.x - b.getX()) / (b.getWidth() / 16.0f))); }
+        void edit (int i, float y)
+        {
+            if (view == 0)
+            {
+                auto b = bars();
+                processor.seqVel[(size_t) i].store (juce::jlimit (0.05f, 1.0f, (b.getBottom() - y) / b.getHeight()));
+            }
+            else
+            {
+                auto m = processor.gateMask.load();
+                processor.gateMask.store (paintOn ? (m | (1u << (unsigned) i)) : (m & ~(1u << (unsigned) i)));
+                if (processor.gateLen.load() > 16) processor.gateLen.store (16);
+            }
+            update();
+        }
+
+        Hamamatsu108Processor& processor;
+        juce::OwnedArray<Knob> knobs;
+        std::array<Knob*, 4> arpKnobs {}, gateKnobs {};
+        juce::String last;
+        int view = 0;
+        bool paintOn = true;
+    };
+
+    //==========================================================================
     InstrumentView::InstrumentView (Hamamatsu108Processor& p) : processor (p)
     {
         backdrop = std::make_unique<Backdrop>();
@@ -1524,6 +1823,9 @@ namespace hama
         module = std::make_unique<VoiceModule> (p);
         capture = std::make_unique<MidiCapture> (p);
         rail = std::make_unique<MemoryRail> (p);
+        perform = std::make_unique<PerformPanel> (p);
+        patternChoice = std::make_unique<RearChoice> (p, "strumPattern", "PATTERN", "How the hand strums (LIVE)");
+        keysChoice = std::make_unique<RearChoice> (p, "keysPlay", "YOUR KEYS", "What your keyboard / piano-roll notes do");
         modelDisplay = std::make_unique<ModelDisplay> (p);
         chordSel = std::make_unique<GroupSelector> (p, 1);
         bassSel = std::make_unique<GroupSelector> (p, 2);
@@ -1533,7 +1835,11 @@ namespace hama
         addAndMakeVisible (*plate);
         addAndMakeVisible (*module);
         addAndMakeVisible (*capture);
-        addAndMakeVisible (*rail);
+        addChildComponent (*rail);   // chord memory is not on the PLAY page any more
+        addAndMakeVisible (*perform);
+        addAndMakeVisible (*patternChoice);
+        addAndMakeVisible (*keysChoice);
+        perform->onStatus = [this] (const juce::String& a, const juce::String& b) { if (onStatus) onStatus (a, b); };
         addAndMakeVisible (*modelDisplay);
         addAndMakeVisible (*chordSel);
         addAndMakeVisible (*bassSel);
@@ -1556,7 +1862,13 @@ namespace hama
             {
                 auto st = deck;
                 if (std::string (gr.name) == "MASTER") { st.ring = juce::Colour (0xff22262b); st.pointer = juce::Colour (0xff22262b); st.themed = 0; }
-                if (k.param != nullptr)
+                if (k.param != nullptr && k.size == 0)
+                {
+                    auto* sl = deckSliders.add (new DeckSlider (p.apvts, k.param, k.label));
+                    sl->onInteract = [this] (const juce::String& a, const juce::String& b) { if (onStatus) onStatus (a, b); };
+                    addAndMakeVisible (sl);
+                }
+                else if (k.param != nullptr)
                 {
                     addKnob (std::make_unique<Knob> (p.apvts, k.param, k.label, k.size, st));
                     const juce::String pid (k.param);
@@ -1585,7 +1897,10 @@ namespace hama
     void InstrumentView::resized()
     {
         backdrop->setBounds (getLocalBounds());
-        pad->setBounds (geo::padArea());
+        pad->setBounds (geo::padArea().withHeight (126));
+        perform->setBounds (geo::padArea().withTrimmedTop (128).reduced (4, 4));
+        patternChoice->setBounds (geo::innerX + 170, geo::rearY + 6, 150, 46);
+        keysChoice->setBounds (geo::innerX + 330, geo::rearY + 6, 160, 46);
         plate->setBounds (geo::plateArea());
         module->setBounds (geo::moduleArea());
         capture->setBounds (MidiCapture::area());
@@ -1593,7 +1908,7 @@ namespace hama
         modelDisplay->setBounds (ModelDisplay::area());
 
         const auto groups = deckGroupBounds();
-        int k = 0;
+        int k = 0, sl = 0;
         for (int gi = 0; gi < groups.size(); ++gi)
         {
             const auto& gr = deckGroups()[(size_t) gi];
@@ -1605,6 +1920,12 @@ namespace hama
             for (auto& kn : gr.knobs)
             {
                 const int w = knobColumnWidth (kn.size);
+                if (kn.size == 0)
+                {
+                    deckSliders[sl++]->setBounds (x, groups[gi].getY() + 14, w, groups[gi].getHeight() - 16);
+                    x += w;
+                    continue;
+                }
                 const int box = kn.size + 14;
                 const int y = groups[gi].getY() + 16 + (62 - box) / 2;
                 deckKnobs[k++]->setBounds (x, y, w, box + 26);
@@ -1650,6 +1971,9 @@ namespace hama
         module->update (processor.meterLeft.load(), processor.meterRight.load(), chord);
         capture->update();
         rail->update();
+        perform->update();
+        patternChoice->update();
+        keysChoice->update();
         modelDisplay->update();
         // FX knobs on the deck are named after the effect in slots 1-3
         for (int i = 0; i < 3; ++i)

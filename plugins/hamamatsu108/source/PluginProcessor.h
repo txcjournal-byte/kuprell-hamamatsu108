@@ -115,7 +115,7 @@ public:
     // notes the plugin creates itself (Live Strum, strum plate), for "drag MIDI to the DAW".
     // Notes coming in from the host are not captured: the DAW already has them.
     struct CapturedNote { double seconds; int note; float velocity; int layer = 0; bool on = true; };   // layer: 0 harp, 1 chord layer, 2 bass, 3 chord blocks
-    std::atomic<int> captureMode { 2 };    // what a dragged take contains: 0 detail (every plucked note), 1 chords (long notes stacked), 2 both
+    std::atomic<int> captureMode { 1 };    // what a dragged take contains: 0 detail (every plucked note), 1 smooth (no tiny notes)
     std::atomic<int> captureQuant { 1 };   // chord blocks snap to: 0 off, 1 1/16, 2 1/8, 3 1/4, 4 bar
     juce::AbstractFifo captureFifo { 2048 };
     std::array<CapturedNote, 2048> captureBuffer {};
@@ -199,7 +199,7 @@ private:
     double gateClock = 0.0;              // free-running gate position (host stopped), in steps
     float gateGain = 1.0f;
     std::vector<float> gateBuf;
-    struct PendingRelease { int delay; int note; };
+    struct PendingRelease { int delay; int note; float secs = 0.04f; };
     std::array<PendingRelease, 64> releases {};
     int numReleases = 0;
     void startVoice (int note, float velocity);
