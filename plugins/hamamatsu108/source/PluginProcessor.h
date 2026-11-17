@@ -214,7 +214,7 @@ private:
     hama::FdnReverb dreamReverb;
     std::vector<float> dreamL, dreamR;
     juce::SmoothedValue<float> masterGain;
-    float mlp1L = 0, mlp2L = 0, mlp1R = 0, mlp2R = 0, heldL = 0, heldR = 0, hissEnv = 0, limGain = 1.0f, chorusPhase = 0;
+    float mlp1L = 0, mlp2L = 0, mlp1R = 0, mlp2R = 0, heldL = 0, heldR = 0, crushEnv = 0, hissEnv = 0, limGain = 1.0f, chorusPhase = 0;
     fx::DelayLine modelChorusL, modelChorusR;
     float dcInL = 0, dcOutL = 0, dcInR = 0, dcOutR = 0;
     // look-ahead limiter: the gain is lowered smoothly before a peak arrives (no crackle)

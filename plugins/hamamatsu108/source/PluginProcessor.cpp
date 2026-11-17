@@ -36,7 +36,7 @@ const Hamamatsu108Processor::ModelSpec& Hamamatsu108Processor::modelSpec (int m)
                                        { 6500.0f,  0.45f, 0.0003f, 16.0f, 1, 4.0f, 0.25f, 0.80f, 1.00f, 0.25f, 0.80f, 0.32f, 0.55f, 0.15f },   // System 84: the classic, light chorus
                                        { 13000.0f, 0.85f, 0.0001f, 16.0f, 1, 2.0f, 0.15f, 1.00f, 1.10f, 0.50f, 0.95f, 0.42f, 0.40f, 0.13f },   // Tone Bank 89: bright and lush
                                        { 17000.0f, 1.00f, 0.0f,    16.0f, 1, 0.0f, 0.08f, 1.05f, 1.15f, 0.15f, 1.00f, 0.30f, 0.35f, 0.09f },   // Late 90s: clean
-                                       { 6000.0f,  0.60f, 0.0004f,  8.0f, 3, 1.0f, 0.35f, 0.90f, 0.85f, 0.00f, 0.50f, 0.18f, 0.60f, 0.10f },   // Cartridge 99: 8-bit, 16 kHz grit
+                                       { 6000.0f,  0.60f, 0.0001f, 10.0f, 2, 1.0f, 0.35f, 0.90f, 0.85f, 0.00f, 0.50f, 0.18f, 0.60f, 0.10f },   // Cartridge 99: 8-bit, 16 kHz grit
                                        { 20000.0f, 1.30f, 0.0f,    16.0f, 1, 0.0f, 0.03f, 1.15f, 1.30f, 0.30f, 1.25f, 0.60f, 0.25f, 0.13f } }; // Modern Strum: hi-fi, extra wide
     return specs[juce::jlimit (0, 5, m)];
 }
@@ -1283,12 +1283,15 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             }
             if (crush)
             {
-                // 8-bit converter with a little dither and sample-and-hold
+                // lo-fi converter: sample-and-hold + coarse steps, no dither (dither = constant hiss).
+                // The step size follows the signal level, so the grit stays on the notes and the
+                // decaying tail fades out cleanly instead of turning into noise.
                 if (--holdCount <= 0)
                 {
-                    const float d = (rng.nextFloat() - rng.nextFloat()) * 0.5f / steps;
-                    heldL = std::round ((l + d) * steps) / steps;
-                    heldR = std::round ((r + d) * steps) / steps;
+                    crushEnv = juce::jmax (std::abs (l) + std::abs (r), crushEnv * 0.995f);
+                    const float st = steps / juce::jlimit (0.05f, 1.0f, crushEnv * 1.5f);
+                    heldL = std::round (l * st) / st;
+                    heldR = std::round (r * st) / st;
                     holdCount = model.hold;
                 }
                 l = heldL; r = heldR;
