@@ -194,6 +194,188 @@ namespace hama
     };
 
     //==========================================================================
+    //==========================================================================
+    // ARP step editor: NOTE / VELOCITY / OCT / RATCHET / CHANCE / TIE for 16 steps
+    class SeqEditor : public juce::Component
+    {
+    public:
+        explicit SeqEditor (Hamamatsu108Processor& p) : processor (p) {}
+
+        void tick()
+        {
+            juce::String sig;
+            sig << processor.seqLen.load() << "|" << processor.arpStepGui.load() << "|" << plain (processor.apvts, "arpPattern") << "|";
+            for (int i = 0; i < Hamamatsu108Processor::seqSteps; ++i)
+                sig << processor.seqDeg[(size_t) i].load() << processor.seqOct[(size_t) i].load() << processor.seqRatchet[(size_t) i].load()
+                    << processor.seqTie[(size_t) i].load() << juce::roundToInt (processor.seqVel[(size_t) i].load() * 50) << juce::roundToInt (processor.seqProb[(size_t) i].load() * 4) << ",";
+            if (sig != last) { last = sig; repaint(); }
+        }
+
+        enum Lane { note, vel, oct, rat, prob, tie, numLanes };
+        juce::Rectangle<float> lane (int l) const
+        {
+            static const float hs[] = { 66.0f, 46.0f, 17.0f, 17.0f, 17.0f, 15.0f };
+            float y = 22.0f;
+            for (int i = 0; i < l; ++i) y += hs[i] + 4.0f;
+            return { 56.0f, y, (float) getWidth() - 56.0f, hs[l] };
+        }
+        juce::Rectangle<float> cell (int l, int i) const
+        {
+            auto r = lane (l);
+            const float w = r.getWidth() / 16.0f;
+            return { r.getX() + i * w + 1.5f, r.getY(), w - 3.0f, r.getHeight() };
+        }
+        juce::Rectangle<float> menuButton() const { return { (float) getWidth() - 110.0f, 0.0f, 110.0f, 18.0f }; }
+
+        void paint (juce::Graphics& g) override
+        {
+            const int len = processor.seqLen.load();
+            const int playing = processor.arpStepGui.load();
+            const bool stepsMode = juce::roundToInt (plain (processor.apvts, "arpPattern")) == 8;
+            static const char* names[] = { "NOTE", "VELOCITY", "OCT", "RATCHET", "CHANCE", "TIE" };
+            g.setFont (spaced (8.0f, true, 0.12f));
+            for (int l = 0; l < numLanes; ++l)
+            {
+                g.setColour (juce::Colour (0xff9aa0a7).withAlpha ((l == note || l == oct) && ! stepsMode ? 0.35f : 0.9f));
+                g.drawText (names[l], lane (l).withX (0.0f).withWidth (54.0f), juce::Justification::centredLeft, false);
+            }
+            g.setColour (juce::Colour (0xff9aa0a7));
+            g.drawText (stepsMode ? juce::String ("STEPS PATTERN: NOTE + OCT PLAY") : juce::String ("NOTE / OCT: PICK THE STEPS PATTERN"),
+                        juce::Rectangle<float> (0.0f, 0.0f, 300.0f, 18.0f), juce::Justification::centredLeft, false);
+            drawDisplay (g, menuButton(), 5.0f);
+            g.setFont (LookAndFeel::monoFont (11.0f));
+            glowText (g, juce::String::fromUTF8 ("STEPS \xe2\x96\xbe  ") + juce::String (len), menuButton(), juce::Justification::centred);
+
+            for (int i = 0; i < 16; ++i)
+            {
+                const bool inLen = i < len;
+                const float a = inLen ? 1.0f : 0.25f;
+                const auto acc = th().accent;
+                // note
+                {
+                    auto c = cell (note, i);
+                    g.setColour (juce::Colour (0xff15171a)); g.fillRoundedRectangle (c, 3.0f);
+                    const int d = processor.seqDeg[(size_t) i].load();
+                    if (d >= 0)
+                    {
+                        const float h = c.getHeight() * (0.18f + 0.82f * (float) d / 7.0f);
+                        g.setColour (acc.withAlpha ((stepsMode ? 0.85f : 0.3f) * a));
+                        g.fillRoundedRectangle (c.withTop (c.getBottom() - h), 3.0f);
+                        g.setColour (juce::Colours::black.withAlpha (0.7f));
+                        g.setFont (LookAndFeel::monoFont (9.0f));
+                        g.drawText (juce::String (d + 1), c.withTop (c.getBottom() - 13.0f), juce::Justification::centred, false);
+                    }
+                    else
+                    {
+                        g.setColour (juce::Colours::white.withAlpha (0.25f * a));
+                        g.drawText (juce::String::fromUTF8 ("\xe2\x80\x93"), c, juce::Justification::centred, false);
+                    }
+                    if (i == playing && inLen) { g.setColour (juce::Colours::white.withAlpha (0.6f)); g.drawRoundedRectangle (c.expanded (1.0f), 3.0f, 1.5f); }
+                }
+                // velocity
+                {
+                    auto c = cell (vel, i);
+                    g.setColour (juce::Colour (0xff15171a)); g.fillRoundedRectangle (c, 3.0f);
+                    const float v = processor.seqVel[(size_t) i].load();
+                    g.setColour (th().soft.withAlpha (0.85f * a));
+                    g.fillRoundedRectangle (c.withTop (c.getBottom() - c.getHeight() * v), 3.0f);
+                }
+                auto small = [&] (int l, const juce::String& t, bool lit)
+                {
+                    auto c = cell (l, i);
+                    g.setColour (lit ? acc.withAlpha (0.35f * a) : juce::Colour (0xff15171a));
+                    g.fillRoundedRectangle (c, 3.0f);
+                    g.setColour (juce::Colours::white.withAlpha ((lit ? 0.95f : 0.4f) * a));
+                    g.setFont (LookAndFeel::monoFont (9.5f));
+                    g.drawText (t, c, juce::Justification::centred, false);
+                };
+                const int o = processor.seqOct[(size_t) i].load();
+                small (oct, o == 0 ? juce::String ("0") : (o > 0 ? "+" + juce::String (o) : juce::String (o)), o != 0);
+                const int r = processor.seqRatchet[(size_t) i].load();
+                small (rat, r == 1 ? juce::String ("1") : "x" + juce::String (r), r > 1);
+                const float pr = processor.seqProb[(size_t) i].load();
+                small (prob, juce::String (juce::roundToInt (pr * 100)), pr < 0.99f);
+                const bool t = processor.seqTie[(size_t) i].load() != 0;
+                small (tie, t ? juce::String::fromUTF8 ("\xe2\x80\x94") : juce::String(), t);
+            }
+        }
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            const auto p = e.position;
+            if (menuButton().contains (p)) { showMenu(); return; }
+            for (int l = 0; l < numLanes; ++l)
+                for (int i = 0; i < 16; ++i)
+                    if (cell (l, i).contains (p))
+                    {
+                        dragLane = l;
+                        if (l == note && e.mods.isPopupMenu())
+                        {
+                            auto& d = processor.seqDeg[(size_t) i];
+                            d.store (d.load() < 0 ? 0 : -1);
+                            dragLane = -1;
+                        }
+                        else if (l == oct)  { auto& v = processor.seqOct[(size_t) i]; v.store (v.load() >= 2 ? -1 : v.load() + 1); }
+                        else if (l == rat)  { auto& v = processor.seqRatchet[(size_t) i]; v.store (v.load() >= 4 ? 1 : v.load() + 1); }
+                        else if (l == prob) { auto& v = processor.seqProb[(size_t) i]; const float x = v.load(); v.store (x > 0.9f ? 0.75f : x > 0.6f ? 0.5f : x > 0.4f ? 0.25f : 1.0f); }
+                        else if (l == tie)  { auto& v = processor.seqTie[(size_t) i]; v.store (v.load() ? 0 : 1); }
+                        else setFromY (l, i, p.y);
+                        tick();
+                        return;
+                    }
+        }
+
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            if (dragLane != note && dragLane != vel) return;
+            auto r = lane (dragLane);
+            const int i = juce::jlimit (0, 15, (int) ((e.position.x - r.getX()) / (r.getWidth() / 16.0f)));
+            setFromY (dragLane, i, e.position.y);
+            tick();
+        }
+        void mouseUp (const juce::MouseEvent&) override { dragLane = -1; }
+
+    private:
+        void setFromY (int l, int i, float y)
+        {
+            auto c = cell (l, i);
+            const float f = juce::jlimit (0.0f, 1.0f, (c.getBottom() - y) / c.getHeight());
+            if (l == note) processor.seqDeg[(size_t) i].store (juce::jlimit (0, 7, juce::roundToInt (f * 7.0f)));
+            if (l == vel)  processor.seqVel[(size_t) i].store (juce::jmax (0.05f, f));
+        }
+
+        void showMenu()
+        {
+            juce::PopupMenu m;
+            juce::PopupMenu pre;
+            for (int i = 0; i < Hamamatsu108Processor::seqPresetNames().size(); ++i) pre.addItem (100 + i, Hamamatsu108Processor::seqPresetNames()[i]);
+            m.addSubMenu ("Load steps", pre);
+            juce::PopupMenu lenM;
+            for (int l = 1; l <= 16; ++l) lenM.addItem (200 + l, juce::String (l) + " steps", true, processor.seqLen.load() == l);
+            m.addSubMenu ("Length", lenM);
+            m.addItem (1, "Randomise (new idea)");
+            m.addItem (2, "Reset");
+            m.addSeparator();
+            m.addItem (3, "Use the STEPS pattern (NOTE + OCT play)", true, juce::roundToInt (plain (processor.apvts, "arpPattern")) == 8);
+            juce::Component::SafePointer<SeqEditor> safe (this);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int r)
+            {
+                if (safe == nullptr || r <= 0) return;
+                auto& pr = safe->processor;
+                if (r >= 200) pr.seqLen.store (r - 200);
+                else if (r >= 100) { pr.seqLoadPreset (r - 100); setParam (pr.apvts, "arpPattern", 8.0f); }
+                else if (r == 1) { pr.seqRandomise(); setParam (pr.apvts, "arpPattern", 8.0f); }
+                else if (r == 2) pr.seqLoadPreset (0);
+                else if (r == 3) setParam (pr.apvts, "arpPattern", 8.0f);
+                safe->tick();
+            });
+        }
+
+        Hamamatsu108Processor& processor;
+        juce::String last;
+        int dragLane = -1;
+    };
+
     class StrumPage : public EditPage
     {
     public:
@@ -214,13 +396,19 @@ namespace hama
             preview = panel ("ONE BAR OF THE HAND  \xc2\xb7  LOW STRINGS AT THE BOTTOM", 612, 0, 620, 250);
 
             auto a = panel ("ARPEGGIO", 0, 262, 600, 268);
-            choice ("arpPattern", "PATTERN", { a.getX(), a.getY(), 160, 44 });
-            choice ("arpRegen", "REGEN", { a.getX() + 176, a.getY(), 130, 44 });
-            knobAt ("strumRate", "Rate", 48, a.getX(), a.getY() + 64, 120);
-            knobAt ("arpChance", "Chance", 48, a.getX() + 140, a.getY() + 64, 120);
-            helpA = { a.getX() + 290, a.getY() + 66, 270, 140 };
+            choice ("arpPattern", "PATTERN", { a.getX(), a.getY(), 150, 44 });
+            choice ("arpRegen", "REGEN", { a.getX() + 162, a.getY(), 120, 44 });
+            knobAt ("strumRate", "Rate", 44, a.getX(), a.getY() + 58, 106);
+            knobAt ("arpOctaves", "Octaves", 44, a.getX() + 110, a.getY() + 58, 106);
+            knobAt ("arpGate", "Gate", 44, a.getX() + 220, a.getY() + 58, 106);
+            knobAt ("arpSwing", "Swing", 44, a.getX() + 330, a.getY() + 58, 106);
+            knobAt ("arpChance", "Chance", 44, a.getX() + 440, a.getY() + 58, 106);
+            helpA = { a.getX(), a.getY() + 160, a.getWidth(), 50 };
 
-            pattern = panel ("PATTERN", 612, 262, 620, 268);
+            pattern = panel ("ARP STEPS  \xc2\xb7  DRAG NOTE / VELOCITY, CLICK THE SMALL ROWS", 612, 262, 620, 268);
+            seq = std::make_unique<SeqEditor> (processor);
+            addAndMakeVisible (*seq);
+            seq->setBounds (pattern);
         }
 
         void tick() override
@@ -228,13 +416,14 @@ namespace hama
             juce::String sig;
             for (auto* id : { "strumFeel", "strumSpeed", "strumRate", "arpPattern", "arpChance", "arpRegen", "harpRange", "strumPattern", "strumSwing", "strumVary", "keysPlay" })
                 sig << processor.apvts.getRawParameterValue (id)->load() << ",";
+            if (seq != nullptr) seq->tick();
             if (sig != lastSig) { lastSig = sig; repaint(); }
         }
 
         void paintExtras (juce::Graphics& g) override
         {
             text (g, "PATTERN = how a player strums (Even = plain down/up at RATE). FEEL loosens timing and force, SPEED = how fast a stroke crosses the strings, SWING delays every 2nd 1/16, VARIATION adds ghost strokes, leaves notes out and plays a fill every 4th bar. YOUR KEYS: Notes = exact pitch, Strum = each key press strums the keys you hold, Pattern = the pattern plays them.", helpS);
-            text (g, "ARP plays the chord tones one by one in the PATTERN. CHANCE drops random notes; REGEN rolls a new variation every 1, 2 or 4 bars (Off keeps one variation).", helpA);
+            text (g, "ARP plays the chord tones one by one. OCTAVES = how wide it climbs, GATE = note length (100 % lets the strings ring), SWING delays every 2nd step, CHANCE drops notes, REGEN rolls a new variation every 1, 2 or 4 bars. The STEPS row on the right adds accents, ratchets, ties and chance to every pattern; the STEPS pattern also plays its own NOTE / OCT line.", helpA);
 
             // hand preview: one bar of the pattern (or two beats of the plain clock), low strings at the bottom
             auto r = preview.toFloat().reduced (0.0f, 6.0f);
@@ -324,35 +513,13 @@ namespace hama
             }
             }
 
-            // arp pattern: 16 steps over 4 chord tones x range
-            auto pr = pattern.toFloat();
-            const int pat = juce::roundToInt (plain (processor.apvts, "arpPattern"));
-            const float chance = plain (processor.apvts, "arpChance");
-            const int toneCount = 3 * juce::roundToInt (plain (processor.apvts, "harpRange")) + 1;
-            const float colW = pr.getWidth() / 16.0f;
-            for (int c = 0; c < 16; ++c)
-            {
-                int idx = 0;
-                const int nT = toneCount, span = juce::jmax (1, 2 * nT - 2);
-                switch (pat)
-                {
-                    case 0: idx = c % nT; break;
-                    case 1: idx = nT - 1 - c % nT; break;
-                    case 2: { const int p2 = c % span; idx = p2 < nT ? p2 : span - p2; break; }
-                    case 3: idx = c % 2 == 0 ? 0 : 1 + (c / 2) % juce::jmax (1, nT - 1); break;
-                    case 4: { const int p2 = c % (2 * nT); idx = p2 < nT ? p2 : 2 * nT - 1 - p2; break; }
-                    default: idx = rnd.nextInt (nT); break;
-                }
-                const bool plays = c == 0 || rnd.nextFloat() <= chance;
-                const float h = (pr.getHeight() - 20.0f) * (0.15f + 0.85f * (float) idx / (float) juce::jmax (1, nT - 1));
-                auto bar = juce::Rectangle<float> (pr.getX() + c * colW + 3.0f, pr.getBottom() - 10.0f - h, colW - 6.0f, h);
-                g.setColour (plays ? th().accent.withAlpha (0.85f) : juce::Colour (0xff2a2d32));
-                g.fillRoundedRectangle (bar, 3.0f);
-            }
         }
+
+        void resized() override {}
 
     private:
         juce::Rectangle<int> preview, pattern, helpS, helpA;
+        std::unique_ptr<SeqEditor> seq;
         juce::String lastSig;
     };
 
@@ -573,7 +740,7 @@ namespace hama
 
         void paintExtras (juce::Graphics& g) override
         {
-            text (g, "Choose a bank, press REC and click chords: they fill the steps. Switch the strum mode to MEMO and the sequence plays in time with FL Studio. Drag DRAG onto the FL piano roll or playlist to get the chords as MIDI.", help);
+            text (g, "Right-click a step: set it to a chord of the key, or load a ready-made progression. Or press REC and click chord buttons. MEMO mode plays the bank with the LIVE strum pattern, in time with FL Studio. DRAG = the chords as MIDI (long stacked notes).", help);
             const int cur = processor.memBank.load();
             const int playing = processor.memPlayStep.load();
             for (int b = 0; b < Hamamatsu108Processor::memBanks; ++b)
@@ -622,17 +789,41 @@ namespace hama
                     {
                         processor.memBank.store (b);
                         const int ch = processor.memChord (b, s);
-                        if (e.mods.isPopupMenu())
+                        if (e.mods.isPopupMenu() || ch < 0)
                         {
                             juce::PopupMenu m;
+                            const int keyR = juce::roundToInt (plain (processor.apvts, "keyRoot"));
+                            const bool minorK = plain (processor.apvts, "keyMode") > 0.5f;
+                            juce::PopupMenu setIt;
+                            static const int majS[] = { 0, 2, 4, 5, 7, 9, 11 }, minS[] = { 0, 2, 3, 5, 7, 8, 10 };
+                            static const int majT[] = { 0, 1, 1, 0, 0, 1, 5 }, minT[] = { 1, 5, 0, 1, 1, 0, 0 };
+                            static const int majT7[] = { 3, 4, 4, 3, 2, 4, 4 }, minT7[] = { 4, 4, 3, 4, 4, 3, 2 };
+                            for (int d = 0; d < 7; ++d)
+                            {
+                                const int root = (keyR + (minorK ? minS[d] : majS[d])) % 12;
+                                setIt.addItem (1000 + chords::index (root, minorK ? minT[d] : majT[d]), chords::shortName (chords::index (root, minorK ? minT[d] : majT[d])));
+                            }
+                            setIt.addSeparator();
+                            for (int d = 0; d < 7; ++d)
+                            {
+                                const int root = (keyR + (minorK ? minS[d] : majS[d])) % 12;
+                                setIt.addItem (1000 + chords::index (root, minorK ? minT7[d] : majT7[d]), chords::shortName (chords::index (root, minorK ? minT7[d] : majT7[d])));
+                            }
+                            m.addSubMenu ("Set step " + juce::String (s + 1) + " to (chords of the key)", setIt);
                             m.addItem (1, "Delete step " + juce::String (s + 1), ch >= 0);
+                            juce::PopupMenu prog;
+                            const auto& all = Hamamatsu108Processor::progressions();
+                            for (int i = 0; i < (int) all.size(); ++i) prog.addItem (200 + i, all[(size_t) i].name);
+                            m.addSubMenu ("Load a progression into bank " + juce::String::charToString ((juce::juce_wchar) ('A' + b)), prog);
                             m.addItem (2, "Clear bank " + juce::String::charToString ((juce::juce_wchar) ('A' + b)));
                             juce::Component::SafePointer<MemoryPage> safe (this);
-                            m.showMenuAsync (juce::PopupMenu::Options(), [safe, b, s] (int r)
+                            m.showMenuAsync (juce::PopupMenu::Options(), [safe, b, s, keyR] (int r)
                             {
                                 if (safe == nullptr) return;
                                 if (r == 1) safe->processor.memDelete (b, s);
                                 if (r == 2) safe->processor.memClear (b);
+                                if (r >= 200 && r < 1000) safe->processor.memLoad (b, r - 200, keyR);
+                                if (r >= 1000) safe->processor.memSet (b, s, r - 1000);
                             });
                         }
                         else if (ch >= 0) { processor.clickChord (ch); audition = ch; }

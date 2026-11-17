@@ -184,7 +184,7 @@ void Hamamatsu108Processor::updateModulation (int numSamples, bool hostPlaying, 
 
 const juce::StringArray& Hamamatsu108Processor::arpPatternNames()
 {
-    static const juce::StringArray n { "Up", "Down", "Up / Down", "Thumb", "Mirror", "Random" };
+    static const juce::StringArray n { "Up", "Down", "Up / Down", "Thumb", "Mirror", "Random", "Converge", "Pinky", "Steps" };
     return n;
 }
 
@@ -196,14 +196,14 @@ const juce::StringArray& Hamamatsu108Processor::arpRegenNames()
 
 const juce::StringArray& Hamamatsu108Processor::memStepNames()
 {
-    static const juce::StringArray n { "1/2 bar", "1 bar", "2 bars" };
+    static const juce::StringArray n { "1/2 bar", "1 bar", "2 bars", "1 beat", "4 bars" };
     return n;
 }
 
 double Hamamatsu108Processor::memStepQuarters (int index)
 {
-    static const double q[] = { 2.0, 4.0, 8.0 };
-    return q[juce::jlimit (0, 2, index)];
+    static const double q[] = { 2.0, 4.0, 8.0, 1.0, 16.0 };
+    return q[juce::jlimit (0, 4, index)];
 }
 
 void Hamamatsu108Processor::memClear (int bank)
@@ -220,6 +220,56 @@ void Hamamatsu108Processor::memDelete (int bank, int step)
         memory[(size_t) (bank * memSteps + i)].store (memory[(size_t) (bank * memSteps + i + 1)].load());
     memory[(size_t) (bank * memSteps + len - 1)].store (-1);
     memLength[(size_t) bank].store (len - 1);
+}
+
+// ready-made progressions, written as (semitones above the key, chord type)
+const std::vector<Hamamatsu108Processor::Progression>& Hamamatsu108Processor::progressions()
+{
+    static const std::vector<Progression> p {
+        { "Pop  I - V - vi - IV",            { { 0, 0 }, { 7, 0 }, { 9, 1 }, { 5, 0 } } },
+        { "Ballad  vi - IV - I - V",         { { 9, 1 }, { 5, 0 }, { 0, 0 }, { 7, 0 } } },
+        { "Fifties  I - vi - IV - V",        { { 0, 0 }, { 9, 1 }, { 5, 0 }, { 7, 0 } } },
+        { "Canon  I - V - vi - iii - IV - I - IV - V", { { 0, 0 }, { 7, 0 }, { 9, 1 }, { 4, 1 }, { 5, 0 }, { 0, 0 }, { 5, 0 }, { 7, 0 } } },
+        { "Jazz  ii7 - V7 - Imaj7",          { { 2, 4 }, { 7, 2 }, { 0, 3 }, { 0, 3 } } },
+        { "Lo-fi  ii7 - V7 - iii7 - vi7",    { { 2, 4 }, { 7, 2 }, { 4, 4 }, { 9, 4 } } },
+        { "City pop  IVmaj7 - V7 - iii7 - vi", { { 5, 3 }, { 7, 2 }, { 4, 4 }, { 9, 1 } } },
+        { "Dreamy  Imaj7 - IVmaj7",          { { 0, 3 }, { 5, 3 } } },
+        { "Soul  I - iii - IV - iv",         { { 0, 0 }, { 4, 1 }, { 5, 0 }, { 5, 1 } } },
+        { "Gospel  I - I7 - IV - iv",        { { 0, 0 }, { 0, 2 }, { 5, 0 }, { 5, 1 } } },
+        { "Folk  I - IV - I - V",            { { 0, 0 }, { 5, 0 }, { 0, 0 }, { 7, 0 } } },
+        { "Sus  Isus4 - I - IVadd9 - V",     { { 0, 7 }, { 0, 0 }, { 5, 8 }, { 7, 0 } } },
+        { "Blues  12 bar",                   { { 0, 2 }, { 0, 2 }, { 0, 2 }, { 0, 2 }, { 5, 2 }, { 5, 2 }, { 0, 2 }, { 0, 2 }, { 7, 2 }, { 5, 2 }, { 0, 2 }, { 7, 2 } } },
+        { "Minor  i - VI - III - VII",       { { 0, 1 }, { 8, 0 }, { 3, 0 }, { 10, 0 } } },
+        { "Minor  i - iv - VI - V",          { { 0, 1 }, { 5, 1 }, { 8, 0 }, { 7, 0 } } },
+        { "Flamenco  i - VII - VI - V",      { { 0, 1 }, { 10, 0 }, { 8, 0 }, { 7, 0 } } },
+        { "Dark  i - VI - iv - V7",          { { 0, 1 }, { 8, 0 }, { 5, 1 }, { 7, 2 } } },
+        { "Minor jazz  iim7b5 - V7 - i",     { { 2, 5 }, { 7, 2 }, { 0, 4 }, { 0, 4 } } },
+    };
+    return p;
+}
+
+void Hamamatsu108Processor::memLoad (int bank, int progressionIndex, int keyRoot)
+{
+    const auto& all = progressions();
+    if (progressionIndex < 0 || progressionIndex >= (int) all.size()) return;
+    memClear (bank);
+    const auto& steps = all[(size_t) progressionIndex].steps;
+    int n = 0;
+    for (auto [semi, type] : steps)
+        if (n < memSteps) memory[(size_t) (bank * memSteps + n++)].store (chords::index ((keyRoot + semi) % 12, type));
+    memLength[(size_t) bank].store (n);
+}
+
+void Hamamatsu108Processor::memSet (int bank, int step, int chord)
+{
+    const int len = memLength[(size_t) bank].load();
+    if (step < 0 || step >= memSteps) return;
+    if (step >= len)
+    {
+        for (int i = len; i < step; ++i) memory[(size_t) (bank * memSteps + i)].store (chord);
+        memLength[(size_t) bank].store (step + 1);
+    }
+    memory[(size_t) (bank * memSteps + step)].store (chord);
 }
 
 void Hamamatsu108Processor::memRecordChord (int chord)
@@ -257,6 +307,9 @@ Hamamatsu108Processor::Hamamatsu108Processor()
     tones.reserve (64);
     for (auto& m : memory) m.store (-1);
     for (auto& l : memLength) l.store (0);
+    seqLoadPreset (0);
+    stackParts.reserve (8);
+    blockNotes.reserve (16); prevBlock.reserve (16);
 }
 
 Hamamatsu108Processor::~Hamamatsu108Processor()
@@ -431,6 +484,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     // step 3: arpeggio, dual, chord layer, bass, memory
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "arpPattern", 1 }, "Arp Pattern", arpPatternNames(), 0));
     fl ("arpChance", "Arp Chance", 0.0f, 1.0f, 1.0f, pct);
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { "arpOctaves", 1 }, "Arp Octaves", 1, 4, 2));
+    fl ("arpGate", "Arp Gate", 0.05f, 1.0f, 1.0f, pct);
+    fl ("arpSwing", "Arp Swing", 0.0f, 1.0f, 0.0f, pct);
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "arpRegen", 1 }, "Arp Regen", arpRegenNames(), 0));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "dual", 1 }, "Dual", false));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "harpVoice2", 1 }, "Dual Voice", harp::voiceNames(), 9));
@@ -463,6 +519,7 @@ void Hamamatsu108Processor::prepareToPlay (double sampleRate, int samplesPerBloc
     for (auto& v : bassVoices) { v.prepare (sampleRate); v.kill(); }
     layerChord = bassChord = -2;
     numEvents = 0;
+    numReleases = 0;
     pitchMul.assign ((size_t) juce::jmax (32, samplesPerBlock), 1.0f);
     limLook = juce::jlimit (16, limLookMax, (int) std::round (sampleRate * 0.0015));
     soundboard.prepare (sampleRate); boardModel = -1;
@@ -492,7 +549,11 @@ int Hamamatsu108Processor::resolveChord() const
     if (rootHeldMask != 0 && lastRoot >= 0)
     {
         const int type = numTypesHeld > 0 ? typeHeldStack[numTypesHeld - 1] : 0;
-        return chords::index (lastRoot, type);
+        // several root keys held = a stacked chord (C + E keys = C and E chords together)
+        std::vector<int> parts { chords::index (lastRoot, type) };
+        for (int r = 0; r < 12; ++r)
+            if (r != lastRoot && (rootHeldMask & (1 << r))) parts.push_back (chords::index (r, type));
+        return chords::stack (parts);
     }
     if (holdChord >= 0) return holdChord;
     return latchedChord;
@@ -655,7 +716,7 @@ void Hamamatsu108Processor::scheduleNote (int delay, int toneIndex, float veloci
     events[(size_t) numEvents++] = { juce::jmax (0, delay), tones[(size_t) toneIndex], juce::jlimit (0.05f, 1.0f, velocity), visual, ! eventsFromHost };
 }
 
-void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity)
+void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity, bool record)
 {
     if (numEvents >= (int) events.size()) return;
     int visual = numStrings / 2;
@@ -668,7 +729,7 @@ void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity)
     }
     else
         visual = juce::jlimit (0, numStrings - 1, (note - 48) * (numStrings - 1) / 48);
-    events[(size_t) numEvents++] = { juce::jmax (0, delay), juce::jlimit (0, 127, note), juce::jlimit (0.05f, 1.0f, velocity), visual, false };
+    events[(size_t) numEvents++] = { juce::jmax (0, delay), juce::jlimit (0, 127, note), juce::jlimit (0.05f, 1.0f, velocity), visual, record && ! eventsFromHost };
 }
 
 // one hand gesture across the strings, with human variation driven by Feel
@@ -860,10 +921,69 @@ void Hamamatsu108Processor::capture (double seconds, int note, float velocity, i
     else if (scope.blockSize2 > 0) captureBuffer[(size_t) scope.startIndex2] = cn;
 }
 
-// one arpeggio step: pattern over the chord tones, Chance thins notes out, Regen re-rolls the variation
+// ARP step sequencer presets: NOTE / OCT / VELOCITY / RATCHET / CHANCE / TIE for 16 steps
+const juce::StringArray& Hamamatsu108Processor::seqPresetNames()
+{
+    static const juce::StringArray n { "Basic", "Accent groove", "Harp ripple", "Octave bounce", "Broken chord", "Ratchet roll",
+                                       "Sparse dream", "Gallop", "Pluck 3+3+2", "Music box" };
+    return n;
+}
+
+void Hamamatsu108Processor::seqLoadPreset (int index)
+{
+    struct P { int len; const char* deg; const char* oct; const char* vel; const char* rat; const char* prob; const char* tie; };
+    // deg: 1-8 = chord tone, . = rest ; oct: - 0 + 2 ; vel: 1-9 ; rat: 1-4 ; prob: 1-9 (x10 %), 0 = always ; tie: t
+    static const P presets[] = {
+        { 16, "1234123412341234", "0000000000000000", "9575957595759575", "1111111111111111", "0000000000000000", "................" },
+        { 16, "1324132413241324", "0000000000000000", "9363936393639363", "1111111111111111", "0000000600000006", "................" },
+        { 16, "1234567887654321", "0000000000000000", "8566677888776655", "1111111111111111", "0000000000000000", "................" },
+        { 16, "1111222233334444", "0+0+0+0+0+0+0+0+", "9696969696969696", "1111111111111111", "0000000000000000", "................" },
+        { 16, "1325132513251325", "000+000+000+000+", "9566956695669566", "1111111111111111", "0000000000000000", "................" },
+        { 16, "1.3.2.4.1.3.5555", "000000000000++++", "9.7.8.7.9.7.6789", "1111111111112234", "0000000000000000", "................" },
+        { 16, "1...3...5...4...", "0000000+0000000+", "8...6...7...5...", "1111111111111111", "0007000600070005", ".t.t.t.t.t.t.t.t" },
+        { 16, "1.121.121.121.12", "0000000000000000", "9.659.659.659.65", "1111111111111111", "0000000000000000", "................" },
+        { 16, "1..3..5.1..3..5.", "000000+000000+0+", "9..7..8.9..7..8.", "1111111111111111", "0000000000000000", "................" },
+        { 16, "5354535453546545", "++++++++++++++++", "7565756575657565", "1111111111111111", "0000000000000000", "................" },
+    };
+    const auto& p = presets[juce::jlimit (0, (int) (sizeof (presets) / sizeof (presets[0])) - 1, index)];
+    seqLen.store (p.len);
+    for (int i = 0; i < seqSteps; ++i)
+    {
+        const char d = p.deg[i], o = p.oct[i], v = p.vel[i], r = p.rat[i], c = p.prob[i];
+        seqDeg[(size_t) i].store (d == '.' ? -1 : d - '1');
+        seqOct[(size_t) i].store (o == '-' ? -1 : o == '+' ? 1 : o == '2' ? 2 : 0);
+        seqVel[(size_t) i].store (v == '.' ? 0.6f : (float) (v - '0') / 9.0f);
+        seqRatchet[(size_t) i].store (juce::jlimit (1, 4, r - '0'));
+        seqProb[(size_t) i].store (c == '0' ? 1.0f : (float) (c - '0') / 10.0f);
+        seqTie[(size_t) i].store (p.tie[i] == 't' ? 1 : 0);
+    }
+}
+
+void Hamamatsu108Processor::seqRandomise()
+{
+    juce::Random r;
+    for (int i = 0; i < seqSteps; ++i)
+    {
+        seqDeg[(size_t) i].store (r.nextFloat() < 0.12f ? -1 : r.nextInt (6));
+        seqOct[(size_t) i].store (r.nextFloat() < 0.2f ? 1 : 0);
+        seqVel[(size_t) i].store (i % 4 == 0 ? 0.95f : 0.45f + 0.4f * r.nextFloat());
+        seqRatchet[(size_t) i].store (r.nextFloat() < 0.1f ? 2 : 1);
+        seqProb[(size_t) i].store (i % 4 == 0 ? 1.0f : (r.nextFloat() < 0.25f ? 0.6f : 1.0f));
+        seqTie[(size_t) i].store (0);
+    }
+}
+
+// one arpeggio step: the pattern picks the chord tone, the step row adds velocity, chance, ratchets and ties;
+// OCTAVES limits the span, GATE shortens the notes, Regen re-rolls the variation
 void Hamamatsu108Processor::scheduleArpStep (int offset)
 {
-    const int n = (int) tones.size();
+    if (tones.empty()) return;
+
+    // the arp plays the chord tones from the bottom of the harp over OCTAVES (not the whole harp)
+    const int octaves = juce::roundToInt (param (apvts, "arpOctaves"));
+    std::vector<int> at;
+    for (int t : tones) if (t < tones.front() + 12 * octaves) at.push_back (t);
+    const int n = (int) at.size();
     if (n == 0) return;
 
     const int pattern = juce::roundToInt (param (apvts, "arpPattern"));
@@ -876,6 +996,9 @@ void Hamamatsu108Processor::scheduleArpStep (int offset)
     const juce::int64 c = arpCounter++;
     if (regen > 0 && c > 0 && c % cycle == 0) ++arpSeed;   // new variation every N bars
     const int inCycle = (int) (c % cycle);
+    const int len = juce::jlimit (1, seqSteps, seqLen.load());
+    const int s = (int) (c % len);
+    arpStepGui.store (s);
 
     auto hash = [this] (int i)
     {
@@ -884,7 +1007,7 @@ void Hamamatsu108Processor::scheduleArpStep (int offset)
         return (float) (h & 0xffff) / 65535.0f;
     };
 
-    int idx = 0;
+    int idx = 0, octShift = 0;
     const int span = juce::jmax (1, 2 * n - 2);
     switch (pattern)
     {
@@ -893,12 +1016,36 @@ void Hamamatsu108Processor::scheduleArpStep (int offset)
         case 2: { const int p = (int) (c % span); idx = p < n ? p : span - p; break; }       // up / down
         case 3: idx = (c % 2 == 0) ? 0 : 1 + (int) ((c / 2) % juce::jmax (1, n - 1)); break; // thumb
         case 4: { const int p = (int) (c % (2 * n)); idx = p < n ? p : 2 * n - 1 - p; break; } // mirror (ends repeat)
-        default: idx = juce::jlimit (0, n - 1, (int) (hash (inCycle + 7919) * n)); break;    // random
+        case 5: idx = juce::jlimit (0, n - 1, (int) (hash (inCycle + 7919) * n)); break;    // random
+        case 6: { const int p = (int) (c % n); idx = (p % 2 == 0) ? p / 2 : n - 1 - p / 2; break; }   // converge (outside in)
+        case 7: idx = (c % 2 == 1) ? n - 1 : (int) ((c / 2) % juce::jmax (1, n - 1)); break;       // pinky (top note pedal)
+        default:                                                                                    // steps
+        {
+            const int d = seqDeg[(size_t) s].load();
+            if (d < 0) return;
+            idx = d % n;
+            octShift = seqOct[(size_t) s].load() + d / n;
+            break;
+        }
     }
 
-    if (inCycle > 0 && hash (inCycle) > chance) return;   // the first step of a cycle always plays
+    if (seqTie[(size_t) s].load() != 0 && c > 0) return;   // tie: the previous note keeps ringing
+    if (inCycle > 0 && hash (inCycle) > chance) return;     // the first step of a cycle always plays
+    if (inCycle > 0 && hash (inCycle * 31 + 5) > seqProb[(size_t) s].load()) return;
+
     const bool onBeat = std::fmod ((double) c * stepQ, 1.0) < 1.0e-6;
-    scheduleNote (offset, idx, onBeat ? 0.82f : 0.66f);
+    const float vel = juce::jlimit (0.06f, 1.0f, seqVel[(size_t) s].load() * (onBeat ? 1.0f : 0.92f));
+    const int note = juce::jlimit (0, 127, at[(size_t) idx] + 12 * octShift);
+    const int ratchet = juce::jlimit (1, 4, seqRatchet[(size_t) s].load());
+    const double stepSamples = stepQ * 60.0 / bpm * sr;
+    const float gate = param (apvts, "arpGate");
+    for (int r = 0; r < ratchet; ++r)
+    {
+        const int d = offset + (int) (r * stepSamples / ratchet);
+        schedulePitch (d, note, vel * std::pow (0.85f, (float) r), true);
+        if (gate < 0.98f && numReleases < (int) releases.size())
+            releases[(size_t) numReleases++] = { d + juce::jmax (64, (int) (gate * stepSamples / ratchet)), note };
+    }
 }
 
 void Hamamatsu108Processor::updateChordLayer (int chord, int transpose)
@@ -950,11 +1097,13 @@ void Hamamatsu108Processor::bassBeat (int offset, int beatIndex)
     const int c = chord >= 0 ? chord : resolveChord();
     if (c < 0) return;
 
-    const auto& t = chords::types()[(size_t) chords::typeOf (c)];
+    const auto iv = chords::intervalsOf (c);
+    int fifth = iv[(size_t) juce::jmin (2, (int) iv.size() - 1)];
+    for (int x : iv) if (x == 7) fifth = 7;
     const int mode = juce::roundToInt (param (apvts, "bassMode"));
     int interval = 0;
-    if (mode == 1)      interval = (beatIndex % 2 == 0) ? 0 : t.intervals[2];                   // root + 5th
-    else if (mode == 2) { static const int step[] = { 0, 1, 2, 1 }; interval = t.intervals[(size_t) step[beatIndex % 4]] % 12; }  // walking
+    if (mode == 1)      interval = (beatIndex % 2 == 0) ? 0 : fifth;                   // root + 5th
+    else if (mode == 2) { static const int step[] = { 0, 1, 2, 1 }; interval = iv[(size_t) juce::jmin ((int) iv.size() - 1, step[beatIndex % 4])] % 12; }  // walking
 
     int note = 36 + ((chords::rootOf (c) + juce::roundToInt (param (apvts, "transpose")) + interval) % 12 + 12) % 12;
     if (note < 36) note += 12;
@@ -1058,6 +1207,8 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     {
         holdChord = -1;
         latchedChord = (holdOn && click == latchedChord && rootHeldMask == 0) ? -1 : click;
+        stackParts.clear();
+        if (latchedChord >= 0 && ! chords::isCustom (latchedChord)) stackParts.push_back (latchedChord);
     }
     deferredRelease = pendingChordRelease.exchange (-1);
     // a mouse click on a chord button always latches (a mouse cannot hold a chord and strum at once);
@@ -1066,7 +1217,24 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     {
         holdChord = -1;
         latchedChord = (latch == latchedChord && rootHeldMask == 0) ? -1 : latch;
+        stackParts.clear();
+        if (latchedChord >= 0 && ! chords::isCustom (latchedChord)) stackParts.push_back (latchedChord);
     }
+    // Ctrl / Shift + click: stack another chord on top of the one that is on (or take it away again)
+    if (const int add = pendingChordAdd.exchange (-1); add >= 0)
+    {
+        holdChord = -1;
+        if (latchedChord < 0 || stackParts.empty()) stackParts = { add };
+        else
+        {
+            auto it = std::find (stackParts.begin(), stackParts.end(), add);
+            if (it != stackParts.end()) stackParts.erase (it);
+            else if (stackParts.size() < 4) stackParts.push_back (add);
+        }
+        latchedChord = chords::stack (stackParts);
+    }
+    if (latchedChord < 0) stackParts.clear();
+    for (size_t i = 0; i < stackGui.size(); ++i) stackGui[i].store (i < stackParts.size() && stackParts.size() > 1 ? stackParts[i] : -1);
 
     for (const auto meta : midi)
         handleMidi (meta.getMessage(), meta.samplePosition);
@@ -1194,10 +1362,10 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     const bool usePattern = ! arp && pattern > 0;
     const double stepQuarters = usePattern ? 0.25 : rateInQuarters (rateIndex);
     const double samplesPerStep = stepQuarters * 60.0 / bpm * sr;
-    const float swing = usePattern ? mp ("strumSwing") : 0.0f;
+    const float swing = usePattern ? mp ("strumSwing") : (arp ? param (apvts, "arpSwing") : 0.0f);
     auto hit = [&] (int offset, juce::int64 k)
     {
-        if (arp) scheduleArpStep (offset);
+        if (arp) scheduleArpStep (offset + ((k % 2 == 1) ? (int) (swing * 0.33 * samplesPerStep) : 0));
         else if (usePattern)
         {
             // swing: every second 1/16 comes late (up to a triplet feel)
@@ -1394,6 +1562,18 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     {
         const int len = juce::jmin (32, numSamples - start);
 
+        // ARP gate: shorten notes (release the voices playing that pitch)
+        for (int e = 0; e < numReleases;)
+        {
+            if (releases[(size_t) e].delay < start + len)
+            {
+                for (auto& v : voices)
+                    if (v.isActive() && v.getNote() == releases[(size_t) e].note) v.release (0.04f);
+                releases[(size_t) e] = releases[(size_t) --numReleases];
+            }
+            else ++e;
+        }
+
         for (int e = 0; e < numEvents;)
         {
             if (events[(size_t) e].delay < start + len)
@@ -1460,6 +1640,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     if (bassPendingOffset >= 0) bassPendingOffset -= numSamples;
 
     for (int e = 0; e < numEvents; ++e) events[(size_t) e].delay -= numSamples;
+    for (int e = 0; e < numReleases; ++e) releases[(size_t) e].delay -= numSamples;
     sampleClock += numSamples;
     hostBpm.store (bpm);
     if (flashes != 0) stringFlashes.fetch_or (flashes);
@@ -1635,6 +1816,14 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
     state.setProperty ("uiWidth", editorWidth.load(), nullptr);
     state.setProperty ("captureMode", captureMode.load(), nullptr);
     state.setProperty ("captureQuant", captureQuant.load(), nullptr);
+    {
+        juce::StringArray seq;
+        seq.add (juce::String (seqLen.load()));
+        for (int i = 0; i < seqSteps; ++i)
+            seq.add (juce::String (seqDeg[(size_t) i].load()) + ":" + juce::String (seqOct[(size_t) i].load()) + ":" + juce::String (seqVel[(size_t) i].load(), 3) + ":"
+                     + juce::String (seqRatchet[(size_t) i].load()) + ":" + juce::String (seqProb[(size_t) i].load(), 3) + ":" + juce::String (seqTie[(size_t) i].load()));
+        state.setProperty ("arpSteps", seq.joinIntoString (","), nullptr);
+    }
     juce::StringArray mem;
     for (auto& m : memory) mem.add (juce::String (m.load()));
     juce::StringArray lens;
@@ -1669,10 +1858,28 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
             editorWidth.store ((int) state.getProperty ("uiWidth", 0));
             captureMode.store (juce::jlimit (0, 2, (int) state.getProperty ("captureMode", 2)));
             captureQuant.store (juce::jlimit (0, 4, (int) state.getProperty ("captureQuant", 1)));
+            {
+                const auto seq = juce::StringArray::fromTokens (state.getProperty ("arpSteps").toString(), ",", {});
+                if (seq.size() == seqSteps + 1)
+                {
+                    seqLen.store (juce::jlimit (1, seqSteps, seq[0].getIntValue()));
+                    for (int i = 0; i < seqSteps; ++i)
+                    {
+                        const auto f = juce::StringArray::fromTokens (seq[i + 1], ":", {});
+                        if (f.size() < 6) continue;
+                        seqDeg[(size_t) i].store (juce::jlimit (-1, 7, f[0].getIntValue()));
+                        seqOct[(size_t) i].store (juce::jlimit (-1, 2, f[1].getIntValue()));
+                        seqVel[(size_t) i].store (juce::jlimit (0.0f, 1.0f, f[2].getFloatValue()));
+                        seqRatchet[(size_t) i].store (juce::jlimit (1, 4, f[3].getIntValue()));
+                        seqProb[(size_t) i].store (juce::jlimit (0.0f, 1.0f, f[4].getFloatValue()));
+                        seqTie[(size_t) i].store (f[5].getIntValue() != 0 ? 1 : 0);
+                    }
+                }
+            }
             const auto mem = juce::StringArray::fromTokens (state.getProperty ("memory").toString(), ",", {});
             const auto lens = juce::StringArray::fromTokens (state.getProperty ("memLength").toString(), ",", {});
             for (size_t i = 0; i < memory.size(); ++i)
-                memory[i].store (i < (size_t) mem.size() ? juce::jlimit (-1, chords::numChords - 1, mem[(int) i].getIntValue()) : -1);
+                memory[i].store (i < (size_t) mem.size() && chords::isValid (mem[(int) i].getIntValue()) ? mem[(int) i].getIntValue() : -1);
             for (size_t i = 0; i < memLength.size(); ++i)
                 memLength[i].store (i < (size_t) lens.size() ? juce::jlimit (0, memSteps, lens[(int) i].getIntValue()) : 0);
             memBank.store (juce::jlimit (0, memBanks - 1, (int) state.getProperty ("memBank", 0)));

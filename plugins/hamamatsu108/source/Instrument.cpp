@@ -305,7 +305,7 @@ namespace hama
         {
             using namespace geo;
             const float y = (float) labelY;
-            engravedLabel (g, padArea().toFloat().withY (y).withHeight (12.0f), "CHORD BUTTONS", juce::String::fromUTF8 ("\xe2\x97\x8f IN KEY"));
+            engravedLabel (g, padArea().toFloat().withY (y).withHeight (12.0f), "CHORD BUTTONS", juce::String::fromUTF8 ("CTRL+CLICK = STACK CHORDS   \xe2\x97\x8f IN KEY"));
             engravedLabel (g, plateArea().toFloat().withY (y).withHeight (12.0f), "STRUM PLATE");
             engravedLabel (g, moduleArea().toFloat().withY (y).withHeight (12.0f), juce::String::fromUTF8 ("VOICE \xc2\xb7 LIVE STRUM"));
         }
@@ -391,8 +391,11 @@ namespace hama
 
         void update (int active, int keyRoot, bool minor)
         {
-            if (active != activeChord || keyRoot != key || minor != keyMinor)
+            std::array<int, 4> st;
+            for (size_t i = 0; i < 4; ++i) st[i] = processor.stackGui[i].load();
+            if (active != activeChord || keyRoot != key || minor != keyMinor || st != stack)
             {
+                stack = st;
                 activeChord = active;
                 key = keyRoot;
                 keyMinor = minor;
@@ -420,7 +423,7 @@ namespace hama
         void paintKey (juce::Graphics& g, int root, int type)
         {
             const int idx = chords::index (root, type);
-            const bool on = idx == activeChord || idx == pressed;
+            const bool on = idx == activeChord || idx == pressed || std::find (stack.begin(), stack.end(), idx) != stack.end();
             auto b = keyBounds (root, type);
 
             if (! on)
@@ -475,7 +478,10 @@ namespace hama
                     if (keyBounds (r, t).contains (e.position))
                     {
                         pressed = chords::index (r, t);
-                        processor.latchChord (pressed);   // stays on until clicked again or another chord is chosen
+                        if (e.mods.isCtrlDown() || e.mods.isShiftDown() || e.mods.isCommandDown())
+                            processor.addChord (pressed);     // stack it on the chord that is on
+                        else
+                            processor.latchChord (pressed);   // stays on until clicked again or another chord is chosen
                         repaint();
                         return;
                     }
@@ -490,6 +496,7 @@ namespace hama
     private:
         Hamamatsu108Processor& processor;
         int activeChord = -1, pressed = -1, key = 0;
+        std::array<int, 4> stack { -1, -1, -1, -1 };
         bool keyMinor = false;
     };
 
@@ -816,7 +823,7 @@ namespace hama
                             setParam (s, "strumMode", (float) i);
                             if (i == 0) message ("LIVE: the hand plays the chord like a person. Click LIVE again to pick the strum pattern and how your keys play.");
                             if (i == 1) message ("ARP: arpeggio over the chord. PATTERN and CHANCE knobs, click ARP again for Regen.");
-                            if (i == 2) message ("MEMO: plays the chord sequence on the front rail. Press REC there and click chords to record.");
+                            if (i == 2) message ("MEMO: plays the chord sequence with the LIVE pattern. Click MEMO again to load a ready-made progression, or press REC and click chords.");
                         }
                     }
         }
@@ -901,10 +908,30 @@ namespace hama
         {
             juce::PopupMenu m;
             const int len = juce::roundToInt (plain (processor.apvts, "memStep"));
+            m.addSectionHeader ("MEMO plays the chord sequence with the LIVE pattern");
+            juce::PopupMenu prog;
+            const auto& all = Hamamatsu108Processor::progressions();
+            for (int i = 0; i < (int) all.size(); ++i) prog.addItem (200 + i, all[(size_t) i].name);
+            m.addSubMenu ("Load a progression (in the key) into bank " + juce::String::charToString ((juce::juce_wchar) ('A' + bank)), prog);
+            juce::PopupMenu pat;
+            for (int i = 0; i < Hamamatsu108Processor::strumPatternNames().size(); ++i)
+                pat.addItem (300 + i, Hamamatsu108Processor::strumPatternNames()[i], true, strumPat == i);
+            m.addSubMenu ("Strum pattern", pat);
+            m.addSeparator();
             m.addSectionHeader ("Each memory chord lasts...");
-            for (int i = 0; i < Hamamatsu108Processor::memStepNames().size(); ++i)
-                m.addItem (1 + i, Hamamatsu108Processor::memStepNames()[i], true, len == i);
-            popup (m, modeArea (2), [this] (int r) { setParam (processor.apvts, "memStep", (float) (r - 1)); });
+            static const int order[] = { 3, 0, 1, 2, 4 };
+            for (int o : order)
+                m.addItem (1 + o, Hamamatsu108Processor::memStepNames()[o], true, len == o);
+            popup (m, modeArea (2), [this] (int r)
+            {
+                if (r >= 300) setParam (processor.apvts, "strumPattern", (float) (r - 300));
+                else if (r >= 200)
+                {
+                    processor.memLoad (processor.memBank.load(), r - 200, juce::roundToInt (plain (processor.apvts, "keyRoot")));
+                    message ("Loaded: " + juce::String (Hamamatsu108Processor::progressions()[(size_t) (r - 200)].name) + ". MEMO plays it in time.");
+                }
+                else setParam (processor.apvts, "memStep", (float) (r - 1));
+            });
         }
 
         void showKeyMenu()

@@ -79,7 +79,9 @@ public:
     //== GUI -> audio requests (lock free)
     void clickChord (int chordIndex)   { pendingChordClick.store (chordIndex); }
     void latchChord (int chordIndex)   { pendingChordLatch.store (chordIndex); }   // chord buttons by mouse: click on, click again off
-    void releaseChord (int chordIndex) { pendingChordRelease.store (chordIndex); }   // mouse up (matters when HOLD is off)
+    void releaseChord (int chordIndex) { pendingChordRelease.store (chordIndex); }
+    void addChord (int chordIndex)     { pendingChordAdd.store (chordIndex); }       // Ctrl / Shift + click: stack chords
+    std::array<std::atomic<int>, 4> stackGui { -1, -1, -1, -1 };                         // chords of the stack (GUI highlight)   // mouse up (matters when HOLD is off)
     void previewPreset() { previewRequest.store (true); }                            // short demo strum after a preset click
     void pluckString (int visualIndex) { pendingPlucks.fetch_or (1u << (unsigned) visualIndex); }
 
@@ -111,6 +113,10 @@ public:
     int memChord (int bank, int step) const { return memory[(size_t) (bank * memSteps + step)].load(); }
     void memClear (int bank);
     void memDelete (int bank, int step);
+    struct Progression { const char* name; std::vector<std::pair<int, int>> steps; };
+    static const std::vector<Progression>& progressions();
+    void memLoad (int bank, int progressionIndex, int keyRoot);   // fill a bank with a ready-made progression in the key
+    void memSet (int bank, int step, int chord);
     static double memStepQuarters (int index);
 
     // last editor width in pixels (0 = not set yet), saved with the project
@@ -132,6 +138,17 @@ public:
     // current value of each modulation source (for the EDIT page displays)
     std::array<std::atomic<float>, mod::numSources> modSources {};
     static const juce::StringArray& arpRegenNames();
+
+    //== ARP step sequencer (16 steps, saved with the project). Velocity, chance, ratchet and tie shape every
+    // arp pattern; NOTE and OCT are used by the "Steps" pattern (note = chord tone 1..8, -1 = rest).
+    static constexpr int seqSteps = 16;
+    std::atomic<int> seqLen { 16 };
+    std::array<std::atomic<int>, seqSteps> seqDeg, seqOct, seqRatchet, seqTie;
+    std::array<std::atomic<float>, seqSteps> seqVel, seqProb;
+    std::atomic<int> arpStepGui { -1 };   // step playing now (GUI)
+    static const juce::StringArray& seqPresetNames();
+    void seqLoadPreset (int index);
+    void seqRandomise();
     static const juce::StringArray& memStepNames();
 
 private:
@@ -146,7 +163,10 @@ private:
     void stroke (int offset, char type, float accent);
     void patternStep (int offset, juce::int64 k);
     void scheduleNote (int delay, int toneIndex, float velocity);
-    void schedulePitch (int delay, int note, float velocity);
+    void schedulePitch (int delay, int note, float velocity, bool record = false);
+    struct PendingRelease { int delay; int note; };
+    std::array<PendingRelease, 64> releases {};
+    int numReleases = 0;
     void startVoice (int note, float velocity);
     void startHarp (const harp::Settings&, int note, float velocity);
     void scheduleArpStep (int offset);
@@ -167,7 +187,8 @@ private:
     double sr = 44100.0;
 
     // chord state (audio thread)
-    std::atomic<int> pendingChordClick { -1 }, pendingChordRelease { -1 }, pendingChordLatch { -1 };
+    std::atomic<int> pendingChordClick { -1 }, pendingChordRelease { -1 }, pendingChordLatch { -1 }, pendingChordAdd { -1 };
+    std::vector<int> stackParts;
     std::atomic<bool> previewRequest { false };
     int previewSamplesLeft = 0;
     bool previewStroke = false, previewMute = false;   // preview = one stroke, never recorded
