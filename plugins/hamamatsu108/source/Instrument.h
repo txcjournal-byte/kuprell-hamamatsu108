@@ -29,7 +29,7 @@ namespace hama
     // geometry of the instrument in stage coordinates (stage = 1280 x 740 at 100 %)
     namespace geo
     {
-        constexpr int bodyX = 80, bodyY = 16, bodyW = 1120, panelH = 588, frontH = 40, cheekW = 42;
+        constexpr int bodyX = 18, bodyY = 14, bodyW = 1120, panelH = 588, frontH = 18, cheekW = 42;
         constexpr int innerX = bodyX + cheekW + 20, innerW = bodyW - 2 * cheekW - 40;
         constexpr int rearY = bodyY + 16, rearH = 58;
         constexpr int labelY = rearY + rearH + 14;

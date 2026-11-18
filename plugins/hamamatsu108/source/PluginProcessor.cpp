@@ -447,6 +447,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
                                                            AudioParameterFloatAttributes().withStringFromValueFunction (std::move (text))));
     };
 
+    fl ("filterCutoff", "Filter Cutoff", 60.0f, 20000.0f, 20000.0f, [] (float v, int) { return v >= 1000.0f ? String (v / 1000.0f, 1) + " kHz" : String (juce::roundToInt (v)) + " Hz"; }, 1200.0f);
+    fl ("filterReso", "Filter Resonance", 0.0f, 1.0f, 0.1f, pct);
+    fl ("drive", "Saturation", 0.0f, 1.0f, 0.0f, pct);
     fl ("master", "Master Volume", -60.0f, 6.0f, 0.0f, [] (float v, int) { return String (v, 1) + " dB"; });
 
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "harpVoice", 1 }, "Harp Voice", harp::voiceNames(), 0));
@@ -525,7 +528,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
         fl (("morph" + n + "Amt").toRawUTF8(), ("Morph " + n + " Amount").toRawUTF8(), -1.0f, 1.0f, defAmt, [] (float v, int) { return (v > 0 ? "+" : "") + String (roundToInt (v * 100.0f)) + " %"; });
     }
 
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumMode", 1 }, "Strum Mode", strumModeNames(), 0));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumMode", 1 }, "Strum Mode", strumModeNames(), 3));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumRate", 1 }, "Strum Rate", strumRateNames(), 2));
     fl ("strumFeel", "Strum Feel", 0.0f, 1.0f, 0.62f, pct);
     fl ("strumSpeed", "Strum Speed", 4.0f, 80.0f, 22.0f, [] (float v, int) { return String (roundToInt (v)) + " ms"; }, 20.0f);
@@ -1302,6 +1305,7 @@ void Hamamatsu108Processor::scheduleArpStep (int offset)
     }
 
     if (seqTie[(size_t) s].load() != 0 && c > 0) return;   // tie: the previous note keeps ringing
+    if (seqVel[(size_t) s].load() <= 0.06f) return;          // a step drawn down to nothing is a rest
     if (inCycle > 0 && hash (inCycle) > chance) return;     // the first step of a cycle always plays
     if (inCycle > 0 && hash (inCycle * 31 + 5) > seqProb[(size_t) s].load()) return;
 
@@ -1461,7 +1465,8 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     const float decayComp = 1.0f / (1.0f + 0.09f * juce::jmax (0.0f, voiceSettings.decay - 2.0f));
     const int range = juce::roundToInt (param (apvts, "harpRange"));
     const int transpose = juce::roundToInt (param (apvts, "transpose"));
-    const int mode = juce::roundToInt (param (apvts, "strumMode"));
+    // LIVE (the auto hand) and MEMO are retired: the plugin plays what you play, ARP is the only automatic mode
+    const int mode = juce::roundToInt (param (apvts, "strumMode")) == 1 ? 1 : 3;
     const int rateIndex = juce::roundToInt (param (apvts, "strumRate"));
 
     // host tempo / position
@@ -1887,9 +1892,9 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     }
 
     const float chordTone = mp ("chordFilter") * (1.0f - 0.4f * age);
-    const float chordGain = juce::Decibels::decibelsToGain (mp ("chordLevel"), -47.9f) * 0.9f;
+    const float chordGain = 0.0f;   // chord layer retired
     const float bassTone = mp ("bassTone");
-    const float bassGain = juce::Decibels::decibelsToGain (mp ("bassLevel"), -47.9f) * 0.9f;
+    const float bassGain = 0.0f;    // bass layer retired
 
     // harp bus modulation: Harp Filter (Harp Tone also sweeps it, so it is heard on ringing notes), Volume, Pan
     const bool filterOn = modRouted[mod::tFilter] || modRouted[(size_t) targetIndex ("harpTone")];
@@ -2115,6 +2120,41 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
     }
 
+    // FILTER (low-pass with resonance) and SATURATION on the whole instrument, before the FX chain
+    {
+        const float cut = mp ("filterCutoff"), reso = mp ("filterReso"), drv = mp ("drive");
+        const bool filt = cut < 19500.0f;
+        if (filt || drv > 0.001f)
+        {
+            const float fsr = (float) getSampleRate();
+            const float q = 0.6f + reso * reso * 9.0f;
+            const float dGain = 1.0f + drv * drv * 14.0f, makeup = 1.0f / (0.6f + 0.4f * std::sqrt (dGain));
+            float* L = buffer.getWritePointer (0);
+            float* R = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr;
+            for (int i = 0; i < numSamples; ++i)
+            {
+                if ((i & 15) == 0)
+                {
+                    cutSmooth += (cut - cutSmooth) * 0.25f;
+                    masterFiltL.set (juce::jmin (cutSmooth, fsr * 0.45f), q, fsr);
+                    masterFiltR.set (juce::jmin (cutSmooth, fsr * 0.45f), q, fsr);
+                }
+                float bp;
+                float l = L[i], r = R != nullptr ? R[i] : l;
+                if (filt || cutSmooth < 19500.0f) { l = masterFiltL.process (l, bp); r = masterFiltR.process (r, bp); }
+                if (drv > 0.001f)
+                {
+                    // warm tape-like saturation: soft, slightly asymmetric
+                    l = std::tanh (l * dGain + 0.08f * drv) - std::tanh (0.08f * drv);
+                    r = std::tanh (r * dGain + 0.08f * drv) - std::tanh (0.08f * drv);
+                    l *= makeup; r *= makeup;
+                }
+                L[i] = l; if (R != nullptr) R[i] = r;
+            }
+        }
+        else cutSmooth = 20000.0f;
+    }
+
     // PRISM peaks: the pitch classes on the strings (the playing chord), spread from C3 to B6; no chord = the key's tonic
     {
         int mask = 0;
@@ -2238,7 +2278,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
 void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
-    state.setProperty ("uiWidth", editorWidth.load(), nullptr);
+    state.setProperty ("uiWidth2", editorWidth.load(), nullptr);   // 2 = the compact window (1156 wide at 100 %)
     state.setProperty ("captureMode", captureMode.load(), nullptr);
     state.setProperty ("captureQuant", captureQuant.load(), nullptr);
     state.setProperty ("gateMask", (juce::int64) gateMask.load(), nullptr);
@@ -2284,7 +2324,7 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
         if (xml->hasTagName (apvts.state.getType()))
         {
             auto state = juce::ValueTree::fromXml (*xml);
-            editorWidth.store ((int) state.getProperty ("uiWidth", 0));
+            editorWidth.store ((int) state.getProperty ("uiWidth2", 0));
             captureMode.store (juce::jlimit (0, 1, (int) state.getProperty ("captureMode", 1)));
             captureQuant.store (juce::jlimit (0, 4, (int) state.getProperty ("captureQuant", 1)));
             if (state.hasProperty ("gateMask")) gateMask.store ((std::uint32_t) (juce::int64) state.getProperty ("gateMask"));

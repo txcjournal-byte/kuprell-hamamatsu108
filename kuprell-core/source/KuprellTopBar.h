@@ -32,6 +32,8 @@ namespace kuprell
 
         void setPreset (const juce::String& category, const juce::String& name, bool modified);
         void setEditActive (bool shouldBeActive);
+        // embedded: the bar sits inside the plugin's own panel (no background, no logo; the panel shows the logo once)
+        void setEmbedded (bool e) { embedded = e; resized(); repaint(); }
 
         void paint (juce::Graphics&) override;
         void resized() override;
@@ -46,6 +48,7 @@ namespace kuprell
         juce::String pluginName;
         juce::String presetCategory { "INIT" }, presetName { "Init" };
         bool presetModified = false;
+        bool embedded = false;
 
         std::unique_ptr<juce::Drawable> logo;
         juce::Rectangle<int> logoArea, nameArea, presetArea;

@@ -87,17 +87,20 @@ namespace hama
         ToggleKey (juce::AudioProcessorValueTreeState& s, const juce::String& paramID, const juce::String& text)
             : param (s.getParameter (paramID)), label (text)
         {
-            attachment = std::make_unique<juce::ParameterAttachment> (*param, [this] (float v) { on = v > 0.5f; repaint(); });
+            attachment = std::make_unique<juce::ParameterAttachment> (*param, [this] (float v) { on = std::abs (v - onValue) < 0.5f; repaint(); });
             attachment->sendInitialUpdate();
             setTooltip (param->getName (64));
         }
         void paint (juce::Graphics& g) override { look::drawHardButton (g, getLocalBounds().toFloat(), label, on, true, false); }
-        void mouseDown (const juce::MouseEvent&) override { attachment->setValueAsCompleteGesture (on ? 0.0f : 1.0f); }
+        void mouseDown (const juce::MouseEvent&) override { attachment->setValueAsCompleteGesture (on ? offValue : onValue); }
+        // for a choice parameter: which values mean on / off (ARP: strum mode 1 = on, 3 = off)
+        void setValues (float onV, float offV) { onValue = onV; offValue = offV; attachment->sendInitialUpdate(); }
 
     private:
         juce::RangedAudioParameter* param;
         juce::String label;
         std::unique_ptr<juce::ParameterAttachment> attachment;
         bool on = false;
+        float onValue = 1.0f, offValue = 0.0f;
     };
 }

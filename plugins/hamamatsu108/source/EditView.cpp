@@ -97,34 +97,23 @@ namespace hama
             auto a = panel ("LAYER A  \xc2\xb7  HARP", 0, 0, 400, 250);
             choice ("harpVoice", "VOICE", a.removeFromTop (44).withWidth (200));
             knobAt ("harpTone", "Tone", 44, a.getX(), a.getY() + 20, 100);
-            knobAt ("harpDecay", "Decay", 44, a.getX() + 120, a.getY() + 20, 100);
             knobAt ("harpRange", "Range", 44, a.getX() + 240, a.getY() + 20, 100);
+            choice ("keysPlay", "YOUR KEYS / PIANO ROLL", { a.getX(), a.getY() + 130, 240, 44 });
 
             auto b = panel (juce::String::fromUTF8 ("LAYER B  \xc2\xb7  DUAL"), 412, 0, 400, 250);
             toggle ("dual", "DUAL", { b.getX(), b.getY() + 14, 110, 30 });
             choice ("harpVoice2", "VOICE B", { b.getX() + 130, b.getY(), 200, 44 });
             knobAt ("morph", "MORPH  A / B", 60, b.getX() + 120, b.getY() + 60, 130);
 
-            auto m = panel ("CHARACTER", 824, 0, 408, 250);
-            modelBox = choice ("model", "CHARACTER", m.removeFromTop (44).withWidth (220));
-            modelBox->onChange = [this] { repaint(); };
-            modelText = { m.getX(), m.getY() + 10, m.getWidth(), 140 };
+            auto v = panel ("VIBRATO", 824, 0, 408, 250);
+            knobAt ("vibRate", "Rate", 44, v.getX() + 40, v.getY() + 20, 140);
+            knobAt ("vibDepth", "Depth", 44, v.getX() + 200, v.getY() + 20, 140);
 
-            auto c = panel ("CHORD LAYER", 0, 262, 300, 268);
-            choice ("chordType", "SOUND", { c.getX(), c.getY(), 124, 44 });
-            choice ("voicing", "VOICING", { c.getX() + 136, c.getY(), 132, 44 });
-            knobAt ("chordLevel", "Level", 44, c.getX() + 10, c.getY() + 64, 110);
-            knobAt ("chordFilter", "Filter", 44, c.getX() + 140, c.getY() + 64, 110);
-
-            auto bs = panel ("BASS", 312, 262, 300, 268);
-            choice ("bassType", "SOUND", { bs.getX(), bs.getY(), 124, 44 });
-            choice ("bassMode", "PATTERN", { bs.getX() + 136, bs.getY(), 132, 44 });
-            knobAt ("bassLevel", "Level", 44, bs.getX() + 10, bs.getY() + 64, 110);
-            knobAt ("bassTone", "Tone", 44, bs.getX() + 140, bs.getY() + 64, 110);
-
-            auto v = panel ("VIBRATO", 624, 262, 180, 268);
-            knobAt ("vibRate", "Rate", 40, v.getX() + 30, v.getY(), 90);
-            knobAt ("vibDepth", "Depth", 40, v.getX() + 30, v.getY() + 100, 90);
+            auto env = panel ("ENVELOPE  \xc2\xb7  HOW EVERY STRING STARTS AND ENDS", 0, 262, 804, 268);
+            knobAt ("harpAttack", "Attack", 48, env.getX(), env.getY() + 20, 190);
+            knobAt ("harpDecay", "Decay", 48, env.getX() + 196, env.getY() + 20, 190);
+            knobAt ("harpSustain", "Sustain", 48, env.getX() + 392, env.getY() + 20, 190);
+            knobAt ("harpRelease", "Release", 48, env.getX() + 588, env.getY() + 20, 190);
 
             auto mt = panel ("MORPH TARGETS", 816, 262, 416, 268);
             for (int i = 0; i < mod::morphSlots; ++i)
@@ -146,32 +135,6 @@ namespace hama
 
         void paintExtras (juce::Graphics& g) override
         {
-            // model description and character bars
-            const int m = juce::jmax (0, modelBox->getIndex());
-            static const char* desc[] = {
-                "The first generation: dark and warm, a narrow image, a little hiss and drift. Like the early 80s original.",
-                "The classic chime everybody knows. Balanced, slightly lo-fi, a gentle stereo spread.",
-                "Late 80s sound bank: brighter top end, wider stereo, cleaner converters.",
-                "The clean 90s reissue: smooth, full range, almost no noise.",
-                "Cartridge era grit: 8-bit converters, crunchy and charming.",
-                "Today's take: hi-fi, extra wide, long and shiny decay." };
-            text (g, desc[m], modelText.withHeight (48));
-            const auto& sp = Hamamatsu108Processor::modelSpec (m);
-            const float vals[] = { sp.cutoff / 20000.0f, juce::jmin (1.0f, sp.width / 1.2f), juce::jmin (1.0f, sp.hiss / 0.0009f), (16.0f - sp.bits) / 8.0f };
-            const char* names[] = { "BRIGHTNESS", "WIDTH", "NOISE", "GRIT" };
-            for (int i = 0; i < 4; ++i)
-            {
-                auto row = juce::Rectangle<int> (modelText.getX(), modelText.getY() + 60 + i * 20, modelText.getWidth(), 14);
-                g.setFont (spaced (8.5f, true, 0.15f));
-                g.setColour (juce::Colour (0xff9aa0a7));
-                g.drawText (names[i], row.removeFromLeft (90), juce::Justification::centredLeft, false);
-                auto bar = row.toFloat().withSizeKeepingCentre ((float) row.getWidth(), 5.0f);
-                g.setColour (juce::Colour (0xff22252a));
-                g.fillRoundedRectangle (bar, 2.5f);
-                g.setColour (th().accent);
-                g.fillRoundedRectangle (bar.withWidth (juce::jmax (3.0f, bar.getWidth() * vals[i])), 2.5f);
-            }
-
             // morph amounts as text
             g.setFont (LookAndFeel::monoFont (11.0f));
             for (auto& r : amountRows)
@@ -200,6 +163,7 @@ namespace hama
     {
     public:
         explicit SeqEditor (Hamamatsu108Processor& p) : processor (p) {}
+        bool simple = true;   // only the strength bars (like a step sequencer); the detailed lanes are gone from the GUI
 
         void tick()
         {
@@ -214,6 +178,7 @@ namespace hama
         enum Lane { note, vel, oct, rat, prob, tie, numLanes };
         juce::Rectangle<float> lane (int l) const
         {
+            if (simple) return l == vel ? juce::Rectangle<float> (0.0f, 24.0f, (float) getWidth(), (float) getHeight() - 26.0f) : juce::Rectangle<float> (0.0f, -1000.0f, 0.0f, 0.0f);
             static const float hs[] = { 66.0f, 46.0f, 17.0f, 17.0f, 17.0f, 15.0f };
             float y = 22.0f;
             for (int i = 0; i < l; ++i) y += hs[i] + 4.0f;
@@ -232,6 +197,33 @@ namespace hama
             const int len = processor.seqLen.load();
             const int playing = processor.arpStepGui.load();
             const bool stepsMode = juce::roundToInt (plain (processor.apvts, "arpPattern")) == 8;
+            if (simple)
+            {
+                g.setFont (spaced (8.0f, true, 0.12f));
+                g.setColour (juce::Colour (0xff9aa0a7));
+                g.drawText ("DRAG = STEP STRENGTH  /  RIGHT-CLICK = REST", juce::Rectangle<float> (0.0f, 0.0f, 360.0f, 18.0f), juce::Justification::centredLeft, false);
+                drawDisplay (g, menuButton(), 5.0f);
+                g.setFont (LookAndFeel::monoFont (11.0f));
+                glowText (g, juce::String::fromUTF8 ("STEPS \xe2\x96\xbe  ") + juce::String (len), menuButton(), juce::Justification::centred);
+                for (int i = 0; i < 16; ++i)
+                {
+                    auto c = cell (vel, i);
+                    const bool inLen = i < len;
+                    g.setColour (juce::Colour (0xff15171a)); g.fillRoundedRectangle (c, 3.0f);
+                    const float v = processor.seqVel[(size_t) i].load();
+                    const bool rest = v <= 0.06f;
+                    if (! rest)
+                    {
+                        auto bar = c.withTop (c.getBottom() - c.getHeight() * v);
+                        g.setGradientFill (juce::ColourGradient (th().deep.withAlpha (inLen ? 0.9f : 0.25f), 0.0f, bar.getY(), th().deep.withAlpha (inLen ? 0.35f : 0.1f), 0.0f, bar.getBottom(), false));   // same as the steps on the main page
+                        g.fillRoundedRectangle (bar, 3.0f);
+                        g.setColour (th().soft.withAlpha (inLen ? 0.9f : 0.2f));
+                        g.fillRoundedRectangle (bar.withHeight (3.0f), 1.5f);
+                    }
+                    if (i == playing && inLen) { g.setColour (juce::Colours::white.withAlpha (0.6f)); g.drawRoundedRectangle (c.expanded (1.0f), 3.0f, 1.5f); }
+                }
+                return;
+            }
             static const char* names[] = { "NOTE", "VELOCITY", "OCT", "RATCHET", "CHANCE", "TIE" };
             g.setFont (spaced (8.0f, true, 0.12f));
             for (int l = 0; l < numLanes; ++l)
@@ -309,7 +301,13 @@ namespace hama
                     if (cell (l, i).contains (p))
                     {
                         dragLane = l;
-                        if (l == note && e.mods.isPopupMenu())
+                        if (simple && l == vel && e.mods.isPopupMenu())
+                        {
+                            auto& v = processor.seqVel[(size_t) i];
+                            v.store (v.load() <= 0.06f ? 0.8f : 0.0f);
+                            dragLane = -1;
+                        }
+                        else if (l == note && e.mods.isPopupMenu())
                         {
                             auto& d = processor.seqDeg[(size_t) i];
                             d.store (d.load() < 0 ? 0 : -1);
@@ -1423,10 +1421,63 @@ namespace hama
         bool paintOn = true;
     };
 
+
+    //==========================================================================
+    // ARP & GATE: two simple step rows, like a classic step sequencer
+    class ArpGatePage : public EditPage
+    {
+    public:
+        ArpGatePage (Hamamatsu108Processor& p, EditView& o) : EditPage (p, o)
+        {
+            auto a = panel ("ARPEGGIO  \xc2\xb7  PLAYS THE CHORD TONES ONE BY ONE", 0, 0, 600, 250);
+            toggle ("strumMode", "ARP", { a.getX(), a.getY() + 14, 90, 30 })->setValues (1.0f, 3.0f);
+            choice ("arpPattern", "PATTERN", { a.getX() + 104, a.getY(), 150, 44 });
+            choice ("arpRegen", "NEW IDEA EVERY", { a.getX() + 266, a.getY(), 150, 44 });
+            knobAt ("strumRate", "Rate", 40, a.getX(), a.getY() + 62, 98);
+            knobAt ("arpOctaves", "Octaves", 40, a.getX() + 98, a.getY() + 62, 98);
+            knobAt ("arpGate", "Length", 40, a.getX() + 196, a.getY() + 62, 98);
+            knobAt ("arpSwing", "Swing", 40, a.getX() + 294, a.getY() + 62, 98);
+            knobAt ("arpVelScale", "Dynamics", 40, a.getX() + 392, a.getY() + 62, 98);
+            knobAt ("arpChance", "Chance", 40, a.getX() + 490, a.getY() + 62, 98);
+            helpA = { a.getX(), a.getY() + 164, a.getWidth(), 30 };
+
+            auto st = panel ("ARP STEPS", 612, 0, 620, 250);
+            seq = std::make_unique<SeqEditor> (processor);
+            addAndMakeVisible (*seq);
+            seq->setBounds (st);
+
+            auto gp = panel ("GATE  \xc2\xb7  CHOPS THE SOUND IN TIME WITH THE SONG", 0, 262, 600, 268);
+            toggle ("gateOn", "GATE", { gp.getX(), gp.getY() + 14, 90, 30 });
+            choice ("gateRate", "STEP", { gp.getX() + 104, gp.getY(), 110, 44 });
+            choice ("gateTarget", "CHOPS", { gp.getX() + 226, gp.getY(), 140, 44 });
+            knobAt ("gateDepth", "Depth", 40, gp.getX(), gp.getY() + 62, 110);
+            knobAt ("gateSmooth", "Smooth", 40, gp.getX() + 110, gp.getY() + 62, 110);
+            helpG = { gp.getX(), gp.getY() + 168, gp.getWidth(), 40 };
+
+            auto gs = panel ("GATE STEPS", 612, 262, 620, 268);
+            gate = std::make_unique<GateEditor> (processor);
+            addAndMakeVisible (*gate);
+            gate->setBounds (gs);
+        }
+
+        void tick() override { if (seq != nullptr) seq->tick(); if (gate != nullptr) gate->tick(); }
+
+        void paintExtras (juce::Graphics& g) override
+        {
+            text (g, "Drag the bars for the strength of each step, right-click = rest. CHANCE leaves notes out, NEW IDEA rolls a variation.", helpA);
+            text (g, "Click / drag the steps: lit = sound, dark = silence. DEPTH = how far it closes, SMOOTH = soft or hard edges.", helpG);
+        }
+
+    private:
+        juce::Rectangle<int> helpA, helpG;
+        std::unique_ptr<SeqEditor> seq;
+        std::unique_ptr<GateEditor> gate;
+    };
+
     class FxPage : public EditPage
     {
     public:
-        static constexpr int cardW = 146, gap = 8, slotH = 330;
+        static constexpr int cardW = 146, gap = 8, slotH = 400;
 
         FxPage (Hamamatsu108Processor& p, EditView& o) : EditPage (p, o)
         {
@@ -1442,17 +1493,8 @@ namespace hama
                 knobAt (id + "Mix", "Mix", 38, c.getX() - 4, c.getY() + 184, c.getWidth() + 8);
             }
             updateLabels();
-            help = { 16, 382 + 66, 500, 70 };
+            help = { 16, slotH + 24, 1200, 40 };
 
-            auto gp = panel ("RHYTHM GATE  \xc2\xb7  CHOPS THE SOUND IN TIME WITH FL STUDIO", 0, slotH + 12, 1232, 530 - slotH - 12);
-            toggle ("gateOn", "GATE", { gp.getX(), gp.getY() + 8, 90, 30 });
-            choice ("gateRate", "STEP", { gp.getX() + 100, gp.getY(), 90, 44 });
-            choice ("gateTarget", "CHOPS", { gp.getX() + 200, gp.getY(), 120, 44 });
-            knobAt ("gateDepth", "Depth", 30, gp.getX() + 330, gp.getY() - 4, 80);
-            knobAt ("gateSmooth", "Smooth", 30, gp.getX() + 420, gp.getY() - 4, 80);
-            gate = std::make_unique<GateEditor> (processor);
-            addAndMakeVisible (*gate);
-            gate->setBounds (gp.getX() + 520, gp.getY(), gp.getWidth() - 520, gp.getHeight());
         }
 
         void updateLabels()
@@ -1474,13 +1516,12 @@ namespace hama
             juce::String sig;
             for (int i = 0; i < fx::numSlots; ++i) sig << plain (processor.apvts, ("fx" + juce::String (i + 1) + "Type").toRawUTF8()) << ",";
             if (sig != lastSig) { lastSig = sig; updateLabels(); }
-            if (gate != nullptr) gate->tick();
         }
 
         void paintExtras (juce::Graphics& g) override
         {
-            text (g, juce::String::fromUTF8 ("Slots run left to right, drag a slot by its title to move it. GATE opens and closes the sound on the steps you light "
-                                             "(click / drag on the grid, STEPS \xe2\x96\xbe for patterns and length). DEPTH = how far it closes, SMOOTH = soft or hard edges."), help);
+            text (g, juce::String::fromUTF8 ("Slots run left to right, drag a slot by its title to move it. New: PRISM glows on the chord, DISPERSE adds a laser attack, "
+                                             "SHAPE morphs from warm to broken, WIDE opens the stereo. Right-click any knob to modulate it."), help);
             for (int i = 0; i < fx::numSlots; ++i)
             {
                 const int t = juce::roundToInt (plain (processor.apvts, ("fx" + juce::String (i + 1) + "Type").toRawUTF8()));
@@ -1542,7 +1583,6 @@ namespace hama
         }
 
     private:
-        std::unique_ptr<GateEditor> gate;
         std::array<Knob*, fx::numSlots> aKnobs {}, bKnobs {};
         juce::Rectangle<int> help;
         juce::String lastSig;
@@ -1555,21 +1595,27 @@ namespace hama
     public:
         CharacterPage (Hamamatsu108Processor& p, EditView& o) : EditPage (p, o)
         {
-            auto m = panel ("MACROS", 0, 0, 1232, 250);
+            auto f = panel ("FILTER & SATURATION  \xc2\xb7  ON THE WHOLE INSTRUMENT", 0, 0, 520, 250);
+            knobAt ("filterCutoff", "Cutoff", 60, f.getX(), f.getY() + 4, 160);
+            knobAt ("filterReso", "Resonance", 60, f.getX() + 170, f.getY() + 4, 160);
+            knobAt ("drive", "Saturation", 60, f.getX() + 340, f.getY() + 4, 160);
+            filterHelp = { f.getX(), f.getY() + 140, f.getWidth(), 40 };
+
+            auto m = panel ("MACROS", 532, 0, 700, 250);
             const char* ids[] = { "morph", "macroAge", "macroDream", "macroWobble" };
             const char* labels[] = { "MORPH", "AGE", "DREAM", "WOBBLE" };
             for (int i = 0; i < 4; ++i)
             {
-                knobAt (ids[i], labels[i], 70, m.getX() + i * 300, m.getY() + 4, 110);
-                descs[(size_t) i] = { m.getX() + i * 300 + 118, m.getY() + 14, 160, 120 };
+                knobAt (ids[i], labels[i], 52, m.getX() + i * 175, m.getY() + 4, 150);
+                descs[(size_t) i] = { m.getX() + i * 175, m.getY() + 120, 158, 70 };
             }
-            models = panel ("CHARACTER  \xc2\xb7  CLICK TO CHOOSE", 0, 262, 1232, 268);
+            models = panel ("CHARACTER  \xc2\xb7  THE COLOUR OF THE SOUND, CLICK TO CHOOSE", 0, 262, 1232, 268);
         }
 
         juce::Rectangle<float> modelCard (int i) const
         {
             const float w = (models.getWidth() - 32 - 5 * 12.0f) / 6.0f;
-            return { models.getX() + 16.0f + i * (w + 12.0f), models.getY() + 44.0f, w, 196.0f };
+            return { models.getX() + 16.0f + i * (w + 12.0f), models.getY() + 36.0f, w, 176.0f };
         }
 
         void tick() override
@@ -1587,11 +1633,12 @@ namespace hama
         void paintExtras (juce::Graphics& g) override
         {
             static const char* d[] = {
-                "Blends the two harp layers (turn DUAL on) and drives the 8 Morph targets on the Engine page.",
-                "Time and wear: tape wow, hiss, a darker top, fewer bits. From fresh to well loved.",
-                "Space: a huge soft reverb on top and a longer harp decay.",
-                "Motion: slow pitch drift and wobble, like a warm old tape." };
-            for (int i = 0; i < 4; ++i) text (g, d[i], descs[(size_t) i], 12.0f);
+                "Blends layer A and B (DUAL) and the morph targets.",
+                "Time and wear: tape wow, hiss, darker, fewer bits.",
+                "Space: a huge soft reverb and longer strings.",
+                "Motion: slow pitch drift, like a warm old tape." };
+            for (int i = 0; i < 4; ++i) text (g, d[i], descs[(size_t) i], 11.0f);
+            text (g, "CUTOFF closes the top like a classic low-pass, RESONANCE adds a peak at the cutoff, SATURATION warms and thickens (tape-like). All three can be modulated: right-click a knob.", filterHelp);
 
             static const char* era[] = { "1981", "1984", "1989", "1996", "1999", "today" };
             for (int i = 0; i < 6; ++i)
@@ -1631,14 +1678,14 @@ namespace hama
 
     private:
         std::array<juce::Rectangle<int>, 4> descs;
-        juce::Rectangle<int> models;
+        juce::Rectangle<int> models, filterHelp;
         int shownModel = -1;
     };
 
     //==========================================================================
     const juce::StringArray& EditView::tabNames()
     {
-        static const juce::StringArray n { "ENGINE", "STRUM & ARP", "KEYS", "MOD", "FX", "CHARACTER" };
+        static const juce::StringArray n { "SOUND", "ARP & GATE", "FILTER", "MOD", "FX" };
         return n;
     }
 
@@ -1647,24 +1694,12 @@ namespace hama
         logo = juce::Drawable::createFromImageData (KuprellBrand::kuprelllogocream_svg, KuprellBrand::kuprelllogocream_svgSize);
 
         pages.add (new EnginePage (p, *this));
-        pages.add (new StrumPage (p, *this));
-        pages.add (new ChordsPage (p, *this));
+        pages.add (new ArpGatePage (p, *this));
+        pages.add (new CharacterPage (p, *this));   // FILTER: character, filter, saturation, macros
         pages.add (new ModPage (p, *this));
         pages.add (new FxPage (p, *this));
-        pages.add (new CharacterPage (p, *this));
         for (auto* pg : pages) addChildComponent (pg);
 
-        Knob::Style st;
-        st.labelHeight = 8.5f;
-        st.showValue = false;
-        const char* ids[] = { "morph", "macroAge", "macroDream", "macroWobble" };
-        const char* labels[] = { "MORPH", "AGE", "DREAM", "WOBBLE" };
-        for (int i = 0; i < 4; ++i)
-        {
-            auto* k = macroKnobs.add (new Knob (p.apvts, ids[i], labels[i], 28, st));
-            k->onInteract = [this] (const Knob& kn) { status (kn.getDisplayName(), kn.getValueText()); };
-            addAndMakeVisible (k);
-        }
         showTab (0);
         startTimerHz (20);
     }
@@ -1695,7 +1730,6 @@ namespace hama
     void EditView::resized()
     {
         for (auto* pg : pages) pg->setBounds (24, 142, 1232, 530);
-        for (int i = 0; i < macroKnobs.size(); ++i) macroKnobs[i]->setBounds (840 + i * 96, 12, 90, 68);
     }
 
     void EditView::mouseDown (const juce::MouseEvent& e)
@@ -1730,14 +1764,6 @@ namespace hama
         g.setFont (spaced (10.0f, true, 0.4f));
         g.setColour (engrave);
         g.drawText ("HAMAMATSU 144", juce::Rectangle<float> (52.0f, 46.0f, 160.0f, 14.0f), juce::Justification::centredLeft, false);
-
-        auto vfd = juce::Rectangle<float> (220.0f, 21.0f, 600.0f, 44.0f);
-        drawDisplay (g, vfd, 8.0f);
-        g.setFont (LookAndFeel::monoFont (15.0f));
-        auto in = vfd.reduced (14.0f, 0.0f);
-        glowText (g, vfdName.toUpperCase(), in, juce::Justification::centredLeft);
-        glowText (g, vfdValue, in.withTrimmedRight (200.0f), juce::Justification::centredRight);
-        glowText (g, "CHARACTER " + Hamamatsu108Processor::modelNames()[juce::roundToInt (plain (processor.apvts, "model"))].toUpperCase(), in, juce::Justification::centredRight, 0.6f);
 
         // tabs
         for (int i = 0; i < tabNames().size(); ++i)

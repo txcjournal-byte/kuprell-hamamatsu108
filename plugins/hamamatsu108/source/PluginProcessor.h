@@ -197,7 +197,9 @@ private:
     std::array<int, 32> pressOrder {};   // held notes in the order they were pressed (ARP "As Played")
     int pressCount = 0;
     float bendPos = -1.0f;              // pitch wheel strum: last position on the strings (0..1, -1 = not moved yet)
-    float wheelPos = -1.0f;             // mod wheel strum: the same for CC 1
+    float wheelPos = -1.0f;
+    layers::Svf masterFiltL, masterFiltR;   // FILTER on the whole instrument
+    float cutSmooth = 20000.0f;             // mod wheel strum: the same for CC 1
     void wheelStrum (int samplePos, float pos, float& last);
     // SPLIT keys: below C4 the left hand picks the chord, from C4 up the white keys are the strings
     static constexpr int splitPoint = 60;

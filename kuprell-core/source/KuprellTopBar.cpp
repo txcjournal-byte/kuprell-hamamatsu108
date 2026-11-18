@@ -145,12 +145,13 @@ namespace kuprell
 
     void TopBar::resized()
     {
-        constexpr int button = 32, gap = 6, margin = 16;
-        const int y = (height - button) / 2;
+        constexpr int button = 32, gap = 6;
+        const int margin = embedded ? 0 : 16;
+        const int y = (getHeight() - button) / 2;
 
         // left: logo 12 px high (about 52 px wide at 100 %), then divider and plugin name
-        logoArea = { margin, (height - 12) / 2, 52, 12 };
-        nameArea = { logoArea.getRight() + 24, 0, 160, height };
+        logoArea = embedded ? juce::Rectangle<int>() : juce::Rectangle<int> { margin, (height - 12) / 2, 52, 12 };
+        nameArea = embedded ? juce::Rectangle<int>() : juce::Rectangle<int> { logoArea.getRight() + 24, 0, 160, height };
 
         // right: undo, redo, help, settings, EDIT
         int x = getWidth() - margin;
@@ -162,9 +163,9 @@ namespace kuprell
         placeRight (undoButton, button);
 
         // centre: < preset > Save A|B dice
-        const int presetWidth = 340;
+        const int presetWidth = embedded ? 300 : 340;
         const int groupWidth = button + gap + presetWidth + gap + button + gap + 56 + gap + 60 + gap + button;
-        int cx = (getWidth() - groupWidth) / 2;
+        int cx = embedded ? 0 : (getWidth() - groupWidth) / 2;
         auto placeLeft = [&] (juce::Component& c, int w) { c.setBounds (cx, y, w, button); cx += w + gap; };
         placeLeft (prevButton, button);
         presetArea = { cx, y, presetWidth, button };
@@ -179,6 +180,7 @@ namespace kuprell
     {
         using namespace colours;
         auto r = getLocalBounds().toFloat();
+        if (embedded) { paintPresetDisplay (g); return; }
 
         g.setGradientFill (juce::ColourGradient (barTop, 0.0f, 0.0f, barBottom, 0.0f, r.getBottom(), false));
         g.fillRect (r);

@@ -20,8 +20,7 @@ namespace hama
             static const std::vector<DeckGroup> g {
                 { "HARP",    { { "harpTone", "Tone", 36, nullptr }, { "harpRange", "Range", 36, nullptr } }, false },
                 { "ENVELOPE", { { "harpAttack", "A", 0, nullptr }, { "harpDecay", "D", 0, nullptr }, { "harpSustain", "S", 0, nullptr }, { "harpRelease", "R", 0, nullptr } }, false },
-                { "CHORD",   { { "chordLevel", "Level", 36, nullptr }, { "chordFilter", "Filter", 36, nullptr } }, false, 1 },
-                { "BASS",    { { "bassLevel", "Level", 36, nullptr }, { "bassTone", "Tone", 36, nullptr } }, false, 2 },
+                { "FILTER",  { { "filterCutoff", "Cutoff", 36, nullptr }, { "filterReso", "Reso", 36, nullptr }, { "drive", "Saturation", 36, nullptr } }, false },
                 { "FX",      { { "fx1Mix", "FX 1", 36, nullptr }, { "fx2Mix", "FX 2", 36, nullptr }, { "fx3Mix", "FX 3", 36, nullptr } }, false },
                 { "MACROS",  { { "macroAge", "AGE", 44, nullptr }, { "macroDream", "DREAM", 44, nullptr }, { "macroWobble", "WOBBLE", 44, nullptr } }, true },
                 { "MASTER",  { { "master", "Volume", 48, nullptr } }, false },
@@ -262,13 +261,6 @@ namespace hama
             else
             g.drawText ("HAMAMATSU 144", juce::Rectangle<float> (tx, (float) rearY + 36.0f, 240.0f, 14.0f), juce::Justification::centredLeft, false);
 
-            // model display (models arrive in step 4)
-            auto disp = juce::Rectangle<float> ((float) (innerX + innerW - 230), (float) rearY + 6.0f, 230.0f, 46.0f);
-            g.setColour (juce::Colours::white.withAlpha (0.12f));
-            g.fillRoundedRectangle (disp.expanded (3.0f), 11.0f);
-            g.setColour (juce::Colour (0xff1a1c1f));
-            g.fillRoundedRectangle (disp.expanded (2.0f), 10.0f);
-            drawDisplay (g, disp, 9.0f);
 
 
         }
@@ -298,7 +290,7 @@ namespace hama
             const float y = (float) labelY;
             engravedLabel (g, padArea().toFloat().withY (y).withHeight (12.0f), "CHORD BUTTONS", juce::String::fromUTF8 ("RIGHT-CLICK = MORE CHORDS \xc2\xb7 CTRL+CLICK = COMBINE   \xe2\x97\x8f IN KEY"));
             engravedLabel (g, plateArea().toFloat().withY (y).withHeight (12.0f), "STRUM PLATE");
-            engravedLabel (g, moduleArea().toFloat().withY (y).withHeight (12.0f), juce::String::fromUTF8 ("VOICE \xc2\xb7 LIVE STRUM"));
+            engravedLabel (g, moduleArea().toFloat().withY (y).withHeight (12.0f), juce::String::fromUTF8 ("VOICE \xc2\xb7 PLAY"));
         }
 
         void paintDeck (juce::Graphics& g)
@@ -720,11 +712,11 @@ namespace hama
         juce::Rectangle<float> holdArea() const  { return { 111.0f, 130.0f, 93.0f, 30.0f }; }
         juce::Rectangle<float> modeArea (int i) const { return { 12.0f + i * 65.0f, 166.0f, 61.0f, 34.0f }; }
         static int modeOf (int button) { return button == 2 ? 3 : button; }   // LIVE, ARP, OFF
-        juce::Rectangle<float> keyArea() const   { return { 100.0f, 210.0f, 104.0f, 24.0f }; }
-        juce::Rectangle<float> trDown() const    { return { 106.0f, 240.0f, 26.0f, 24.0f }; }
-        juce::Rectangle<float> trValue() const   { return { 134.0f, 240.0f, 40.0f, 24.0f }; }
-        juce::Rectangle<float> trUp() const      { return { 176.0f, 240.0f, 26.0f, 24.0f }; }
-        juce::Rectangle<float> meterArea() const { return { 40.0f, 276.0f, 164.0f, 13.0f }; }
+        juce::Rectangle<float> keyArea() const   { return { 100.0f, 222.0f, 104.0f, 24.0f }; }
+        juce::Rectangle<float> trDown() const    { return { 106.0f, 252.0f, 26.0f, 24.0f }; }
+        juce::Rectangle<float> trValue() const   { return { 134.0f, 252.0f, 40.0f, 24.0f }; }
+        juce::Rectangle<float> trUp() const      { return { 176.0f, 252.0f, 26.0f, 24.0f }; }
+        juce::Rectangle<float> meterArea() const { return { 40.0f, 288.0f, 164.0f, 13.0f }; }
 
         void resized() override
         {
@@ -795,24 +787,14 @@ namespace hama
             glowText (g, dual ? shortVoice (voice) + "+" + shortVoice (voice2) : harp::voiceNames()[voice].toUpperCase(), l1, juce::Justification::centredRight);
             auto l2 = lines.removeFromTop (16.0f);
             const auto rateText = Hamamatsu108Processor::strumRateNames()[rate];
-            juce::String left = "STRUM", right;
-            switch (mode)
-            {
-                case 0: right = (keysPlay > 0 ? juce::String ("KEYS ") : juce::String ("LIVE "))
-                              + (strumPat == 0 ? rateText : Hamamatsu108Processor::strumPatternNames()[strumPat].toUpperCase().removeCharacters (" ")); break;
-                case 1: left = "ARP"; right = Hamamatsu108Processor::arpPatternNames()[pattern].toUpperCase().removeCharacters (" ") + " " + rateText; break;
-                case 2: left = "MEMO " + juce::String::charToString ((juce::juce_wchar) ('A' + bank));
-                        right = step >= 0 ? "STEP " + juce::String (step + 1) : juce::String ("EMPTY"); break;
-                default: right = "OFF"; break;
-            }
+            juce::String left = "PLAY", right = "KEYS + PLATE";
+            if (mode == 1) { left = "ARP"; right = Hamamatsu108Processor::arpPatternNames()[pattern].toUpperCase().removeCharacters (" ") + " " + rateText; }
             glowText (g, left, l2, juce::Justification::centredLeft, 0.75f);
             glowText (g, right, l2, juce::Justification::centredRight, 0.75f);
             lit.reset();
 
             drawHardButton (g, dualArea(), "DUAL", dual, true, false);
             drawHardButton (g, holdArea(), "HOLD", hold, true, false);
-            for (int i = 0; i < 3; ++i)
-                drawHardButton (g, modeArea (i), Hamamatsu108Processor::strumModeNames()[modeOf (i)].toUpperCase(), mode == modeOf (i), true, true);
 
             g.setFont (spaced (9.0f, true, 0.2f));
             g.setColour (juce::Colour (0xff9aa0a7));
@@ -867,21 +849,6 @@ namespace hama
             else if (trDown().contains (p))    setParam (s, "transpose", (float) juce::jmax (-12, transpose - 1));
             else if (trUp().contains (p))      setParam (s, "transpose", (float) juce::jmin (12, transpose + 1));
             else if (keyArea().contains (p))   showKeyMenu();
-            else
-                for (int b = 0; b < 3; ++b)
-                    if (modeArea (b).contains (p))
-                    {
-                        const int i = modeOf (b);
-                        if (i == mode && i == 0)      showLiveMenu();
-                        else if (i == mode && i == 1) showArpMenu();
-                        else
-                        {
-                            setParam (s, "strumMode", (float) i);
-                            if (i == 0) message ("LIVE: the hand plays the chord like a person. Click LIVE again to pick the strum pattern and how your keys play.");
-                            if (i == 1) message ("ARP: arpeggio over the chord. PATTERN and CHANCE knobs, click ARP again for Regen.");
-                            if (i == 2) message ("MEMO: plays the chord sequence with the LIVE pattern. Click MEMO again to load a ready-made progression, or press REC and click chords.");
-                        }
-                    }
         }
 
         std::function<void (const juce::String&)> onMessage;
@@ -1062,7 +1029,7 @@ namespace hama
             setMouseCursor (juce::MouseCursor::DraggingHandCursor);
         }
 
-        static juce::Rectangle<int> area() { return { geo::innerX + 500, geo::rearY + 6, 200, 46 }; }
+        static juce::Rectangle<int> area() { return { geo::moduleArea().getX() + 12, geo::midY + 166, 192, 46 }; }   // in the voice module, under DUAL / HOLD
 
         void update()
         {
@@ -1698,7 +1665,6 @@ namespace hama
             Knob::Style st;
             st.labelHeight = 8.0f;
             auto add = [&] (const char* pid, const char* lab) { auto* k = knobs.add (new Knob (processor.apvts, pid, lab, 26, st)); addAndMakeVisible (k); return k; };
-            add ("strumSwing", "SWING"); add ("strumVary", "VARIATION"); add ("strumSpeed", "STROKE");
             arpKnobs = { add ("strumRate", "RATE"), add ("arpOctaves", "OCTAVES"), add ("arpGate", "LENGTH"), add ("arpSwing", "SWING") };
             gateKnobs = { add ("gateRate", "RATE"), add ("gateDepth", "DEPTH"), add ("gateSmooth", "SMOOTH"), add ("arpPattern", "ARP MODE") };
             gateKnobs[3]->setVisible (false);
@@ -1716,19 +1682,18 @@ namespace hama
             for (auto* k : knobs) k->setStyle (st);
         }
 
-        juce::Rectangle<float> arpButton() const  { return { 14.0f, 74.0f, 64.0f, 26.0f }; }
-        juce::Rectangle<float> gateButton() const { return { 84.0f, 74.0f, 64.0f, 26.0f }; }
+        juce::Rectangle<float> arpButton() const  { return { 14.0f, 30.0f, 128.0f, 28.0f }; }
+        juce::Rectangle<float> gateButton() const { return { 150.0f, 30.0f, 128.0f, 28.0f }; }
         juce::Rectangle<float> tab (int i) const  { return { 300.0f + i * 86.0f, 2.0f, 82.0f, 18.0f }; }
         juce::Rectangle<float> bars() const       { return { 300.0f, 26.0f, (float) getWidth() - 314.0f, (float) getHeight() - 34.0f }; }
         juce::Rectangle<float> bar (int i) const  { auto b = bars(); const float w = b.getWidth() / 16.0f; return { b.getX() + i * w + 1.5f, b.getY(), w - 3.0f, b.getHeight() }; }
 
         void resized() override
         {
-            for (int i = 0; i < 3; ++i) knobs[i]->setBounds (156 + i * 46, 0, 46, 66);
             for (int i = 0; i < 4; ++i)
             {
-                arpKnobs[(size_t) i]->setBounds (10 + i * 70, 108, 70, 66);
-                gateKnobs[(size_t) i]->setBounds (10 + i * 70, 108, 70, 66);
+                arpKnobs[(size_t) i]->setBounds (10 + i * 70, 72, 70, 66);
+                gateKnobs[(size_t) i]->setBounds (10 + i * 70, 72, 70, 66);
             }
         }
 
@@ -1755,10 +1720,11 @@ namespace hama
             g.drawHorizontalLine (0, 10.0f, (float) getWidth() - 10.0f);
             g.setFont (spaced (8.5f, true, 0.2f));
             g.setColour (juce::Colour (0xff9aa0a7));
-            g.drawText ("THE HAND", juce::Rectangle<float> (14.0f, 8.0f, 130.0f, 14.0f), juce::Justification::centredLeft, false);
-            g.setFont (LookAndFeel::uiFont (10.5f));
+            g.drawText (view == 0 ? "ARPEGGIO" : "GATE", juce::Rectangle<float> (14.0f, 8.0f, 200.0f, 14.0f), juce::Justification::centredLeft, false);
+            g.setFont (LookAndFeel::uiFont (10.0f));
             g.setColour (juce::Colour (0xff6e737a));
-            g.drawFittedText ("pattern and keys:\nabove, on the panel", juce::Rectangle<int> (14, 24, 140, 30), juce::Justification::topLeft, 2);
+            g.drawFittedText (view == 0 ? "ARP plays the chord note by note. More in EDIT > ARP & GATE." : "GATE chops the sound in time. More in EDIT > ARP & GATE.",
+                              juce::Rectangle<int> (14, 146, 270, 28), juce::Justification::topLeft, 2);
 
             const bool arpOn = juce::roundToInt (plain (processor.apvts, "strumMode")) == 1;
             const bool gateOn = plain (processor.apvts, "gateOn") > 0.5f;
@@ -1818,9 +1784,9 @@ namespace hama
             if (arpButton().contains (p))
             {
                 const bool on = juce::roundToInt (plain (processor.apvts, "strumMode")) == 1;
-                setParam (processor.apvts, "strumMode", on ? 0.0f : 1.0f);
+                setParam (processor.apvts, "strumMode", on ? 3.0f : 1.0f);
                 showView (0);
-                if (onStatus) onStatus ("ARP", on ? "off (LIVE strum)" : "on: the chord is played note by note");
+                if (onStatus) onStatus ("ARP", on ? "off" : "on: the chord is played note by note");
                 return;
             }
             if (gateButton().contains (p))
@@ -1957,8 +1923,11 @@ namespace hama
         backdrop->setBounds (getLocalBounds());
         pad->setBounds (geo::padArea().withHeight (126));
         perform->setBounds (geo::padArea().withTrimmedTop (128).reduced (4, 4));
-        patternChoice->setBounds (geo::innerX + 170, geo::rearY + 6, 150, 46);
-        keysChoice->setBounds (geo::innerX + 330, geo::rearY + 6, 160, 46);
+        patternChoice->setVisible (false);   // LIVE strum retired
+        keysChoice->setVisible (false);      // keys always play Split (Settings)
+        modelDisplay->setVisible (false);    // character lives in EDIT > FILTER; the preset bar sits up here now
+        chordSel->setVisible (false);
+        bassSel->setVisible (false);
         plate->setBounds (geo::plateArea());
         module->setBounds (geo::moduleArea());
         capture->setBounds (MidiCapture::area());

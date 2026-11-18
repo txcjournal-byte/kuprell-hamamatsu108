@@ -26,7 +26,7 @@ private:
 class Hamamatsu108Editor : public juce::AudioProcessorEditor, public kuprell::KnobMenuProvider, private juce::Timer
 {
 public:
-    static constexpr int baseWidth = 1280, baseHeight = 760;
+    static constexpr int baseWidth = 1156, baseHeight = 664;   // compact: the top bar lives inside the panel
     static constexpr double minScale = 0.5, maxScale = 2.0;
 
     explicit Hamamatsu108Editor (Hamamatsu108Processor&);
@@ -52,7 +52,7 @@ private:
     Hamamatsu108Processor& audioProcessor;
 
     kuprell::LookAndFeel lookAndFeel;   // declared first, destroyed last
-    juce::Component content;            // drawn at 1280 x 760 and scaled as a whole (50-200 %)
+    juce::Component content;            // drawn at 1144 x 652 and scaled as a whole (50-200 %)
     kuprell::TopBar topBar { "Hamamatsu 144" };
     hama::InstrumentView instrument;
     hama::EditView editView;

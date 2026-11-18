@@ -65,8 +65,9 @@ Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
     };
 
     addAndMakeVisible (content);
-    content.addAndMakeVisible (topBar);
     content.addAndMakeVisible (instrument);
+    content.addAndMakeVisible (topBar);
+    topBar.setEmbedded (true);
     content.addChildComponent (editView);
     content.addChildComponent (browser);
     content.addChildComponent (settings);
@@ -193,7 +194,7 @@ void Hamamatsu108Editor::showSettingsMenu()
 void Hamamatsu108Editor::showPage (Page p)
 {
     page = p;
-    instrument.setVisible (p == Page::play);
+    instrument.setVisible (p != Page::edit);   // presets and settings open over the instrument
     editView.setVisible (p == Page::edit);
     browser.setVisible (p == Page::presets);
     settings.setVisible (p == Page::settings);
@@ -351,13 +352,26 @@ void Hamamatsu108Editor::resized()
     content.setTransform (juce::AffineTransform::scale (scale));
     content.setBounds (0, 0, baseWidth, baseHeight);
 
-    topBar.setBounds (0, 0, baseWidth, TopBar::height);
-    instrument.setBounds (0, TopBar::height, baseWidth, baseHeight - TopBar::height - StatusBar::height);
-    editView.setBounds (instrument.getBounds());
-    browser.setBounds (instrument.getBounds());
-    settings.setBounds (instrument.getBounds());
-    help.setBounds (0, 0, baseWidth, baseHeight - StatusBar::height);
-    about.setBounds (0, 0, baseWidth, baseHeight);
+    const int stageH = baseHeight - StatusBar::height;
+    instrument.setBounds (0, 0, baseWidth, stageH);
+    // the preset bar sits inside the panel, right of the logo (one logo only)
+    topBar.setBounds (hama::geo::innerX + 190, hama::geo::rearY + 3, hama::geo::innerW - 190, TopBar::height);
+    // EDIT is laid out at 1280 x 682 and shown at 89 %: its header plate holds the preset bar
+    const float editScale = (float) baseWidth / 1280.0f;
+    editView.setBounds (0, 0, 1280, 682);
+    editView.setTransform (juce::AffineTransform::scale (editScale));
+    // presets and settings: below the preset bar
+    const float ovScale = 0.8f;
+    for (auto* c : { (juce::Component*) &browser, (juce::Component*) &settings })
+    {
+        c->setBounds (0, 0, 1280, 682);
+        c->setTransform (juce::AffineTransform::scale (ovScale).translated ((baseWidth - 1280.0f * ovScale) * 0.5f, 84.0f));
+    }
+    help.setBounds (0, 0, 1280, 760);
+    help.setTransform (juce::AffineTransform::translation (-62.0f, -54.0f));   // help bubbles use the old stage coordinates
+    about.setBounds (0, 0, 1280, 760);
+    about.setTransform (juce::AffineTransform::scale ((float) baseWidth / 1280.0f));
+    topBar.toFront (false);
     status.setBounds (0, baseHeight - StatusBar::height, baseWidth, StatusBar::height);
 }
 

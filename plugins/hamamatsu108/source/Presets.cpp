@@ -47,7 +47,7 @@ namespace presets
                 Preset p;
                 p.name = names[c][i];
                 p.category = categories()[c];
-                p.model = i % 6;
+                p.model = c == 5 ? 4 : 1;   // presets are not tied to a character: Classic for all, Lo-fi for textures
                 b.set ("model", (float) p.model);
 
                 // musical defaults shared by every preset: clean chorus, a real room, gentle vibrato
