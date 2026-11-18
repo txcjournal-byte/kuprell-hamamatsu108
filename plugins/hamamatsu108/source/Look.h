@@ -73,7 +73,9 @@ namespace hama::look
         g.setColour (juce::Colour (0xff0a0b0c));
         g.fillRoundedRectangle (r, 6.0f);
         auto cap = r.withTrimmedBottom (side);
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff4a4f56), cap.getX(), cap.getY(),
+        if (th().lcd) stripLed = true;   // screen skins: every button has the same backlit bar
+        g.setGradientFill (th().lcd ? juce::ColourGradient (juce::Colour (0xff2c2e32), cap.getX(), cap.getY(), juce::Colour (0xff1c1d20), cap.getX(), cap.getBottom(), false)
+                                    : juce::ColourGradient (juce::Colour (0xff4a4f56), cap.getX(), cap.getY(),
                                                  juce::Colour (0xff2c2f34), cap.getX(), cap.getBottom(), false));
         g.fillRoundedRectangle (cap, 6.0f);
         g.setColour (juce::Colours::white.withAlpha (0.2f));
@@ -84,7 +86,7 @@ namespace hama::look
         g.setFont (spaced (9.5f, true, 0.06f));
         if (stripLed)
         {
-            auto strip = juce::Rectangle<float> (16.0f, 3.0f).withCentre ({ cap.getCentreX(), cap.getY() + 9.0f });
+            auto strip = juce::Rectangle<float> (th().lcd ? juce::jmax (16.0f, cap.getWidth() * 0.36f) : 16.0f, 3.0f).withCentre ({ cap.getCentreX(), cap.getY() + 9.0f });
             if (lit)
             {
                 g.setColour (th().accent.withAlpha (0.4f));
@@ -92,7 +94,7 @@ namespace hama::look
                 g.setColour (th().accent);
             }
             else
-                g.setColour (juce::Colour (0xff24272b));
+                g.setColour (th().lcd ? juce::Colour (0xff3e4146) : juce::Colour (0xff24272b));
             g.fillRoundedRectangle (strip, 1.5f);
             g.setColour (enabled ? juce::Colour (0xffecedef) : juce::Colour (0xff7e8187));
             g.drawText (text, cap.withTrimmedTop (12.0f), juce::Justification::centred, false);

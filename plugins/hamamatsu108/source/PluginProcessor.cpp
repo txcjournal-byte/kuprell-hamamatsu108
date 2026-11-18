@@ -400,7 +400,7 @@ void Hamamatsu108Processor::saveUserDefaults() const
     xml.setAttribute ("skin", skin.load());
     xml.setAttribute ("zoneOctave", zoneOctave.load());
     xml.setAttribute ("chordZones", chordZones.load());
-    xml.setAttribute ("version", 2);
+    xml.setAttribute ("version", 3);
     xml.setAttribute ("tuning", tuningA4.load());
     xml.setAttribute ("voices", maxVoices.load());
     xml.setAttribute ("mts", mtsEnabled.load());
@@ -415,7 +415,8 @@ void Hamamatsu108Processor::loadUserDefaults()
 {
     if (auto xml = juce::parseXML (settingsFile()))
     {
-        skin.store (juce::jlimit (0, 10, xml->getIntAttribute ("skin", 0)));
+        // from settings version 3 the default look is Graphite
+        skin.store (xml->getIntAttribute ("version", 1) >= 3 ? juce::jlimit (0, 10, xml->getIntAttribute ("skin", 10)) : 10);
         zoneOctave.store (juce::jlimit (0, 3, xml->getIntAttribute ("zoneOctave", 1)));
         // from settings version 2 every key plays by default (chord zones are an option): piano-roll notes in
         // octave 2-3 used to fall into the zones and stay silent

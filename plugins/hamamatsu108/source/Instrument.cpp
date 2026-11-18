@@ -348,7 +348,7 @@ namespace hama
                 const bool darkDeck = skins::get (skin).deckMid.getPerceivedBrightness() < 0.45f;
                 g.setColour (darkDeck ? juce::Colours::black.withAlpha (0.6f) : juce::Colours::white.withAlpha (0.6f));
                 g.drawText (gr.name, b.withHeight (12.0f).translated (0.0f, 1.0f), juce::Justification::centred, false);
-                g.setColour (gr.macro ? th().deep : (darkDeck ? juce::Colour (0xffb9bec5) : juce::Colour (0xff3a3f46)));
+                g.setColour (gr.macro && ! th().lcd ? th().deep : (darkDeck ? juce::Colour (0xffb9bec5) : juce::Colour (0xff3a3f46)));
                 g.drawText (gr.name, b.withHeight (12.0f), juce::Justification::centred, false);
                 drawSeparator (g, groups, i);
             }
@@ -425,6 +425,37 @@ namespace hama
                 on = (parts[chords::typeOf (activeChord)] >> type) & 1;
             }
             auto b = keyBounds (root, type);
+            const bool inKeyNow = chords::isInKey (idx, key, keyMinor);
+
+            if (th().lcd)
+            {
+                // matte key with a backlit bar: white = in key, aqua = playing
+                g.setColour (juce::Colours::black.withAlpha (0.7f));
+                g.fillRoundedRectangle (b.translated (0.0f, 3.0f), 7.0f);
+                g.setColour (juce::Colour (0xff0c0d0f));
+                g.fillRoundedRectangle (b, 7.0f);
+                auto cap = b.withTrimmedBottom (on ? 2.0f : 3.0f).withTrimmedTop (on ? 1.0f : 0.0f);
+                g.setGradientFill (juce::ColourGradient (juce::Colour (on ? 0xff2c2f33 : 0xff292b2f), 0.0f, cap.getY(), juce::Colour (0xff1c1d20), 0.0f, cap.getBottom(), false));
+                g.fillRoundedRectangle (cap, 7.0f);
+                g.setColour (juce::Colours::white.withAlpha (0.1f));
+                g.drawHorizontalLine ((int) cap.getY() + 1, cap.getX() + 6.0f, cap.getRight() - 6.0f);
+                auto bar = juce::Rectangle<float> (cap.getWidth() - 16.0f, 3.0f).withCentre ({ cap.getCentreX(), cap.getBottom() - 5.0f });
+                if (on)
+                {
+                    g.setColour (th().accent.withAlpha (0.28f));
+                    g.fillRoundedRectangle (bar.expanded (5.0f, 4.0f), 5.0f);
+                    g.setColour (th().accent.withAlpha (0.5f));
+                    g.fillRoundedRectangle (bar.expanded (2.0f, 1.5f), 3.0f);
+                    g.setColour (th().soft.brighter (0.3f));
+                }
+                else
+                    g.setColour (inKeyNow ? juce::Colour (0xffd9dde2).withAlpha (0.75f) : juce::Colour (0xff3a3d42));
+                g.fillRoundedRectangle (bar, 1.5f);
+                g.setColour (on ? juce::Colours::white : juce::Colour (inKeyNow ? 0xffe6e8eb : 0xff9a9fa6));
+                g.setFont (LookAndFeel::uiFont (10.0f, true));
+                g.drawText (chords::shortName (idx), cap.withTrimmedBottom (8.0f), juce::Justification::centred, false);
+                return;
+            }
 
             if (! on)
             {
@@ -519,7 +550,7 @@ namespace hama
     public:
         explicit StrumPlate (Hamamatsu108Processor& p) : processor (p)
         {
-            setTooltip (juce::String::fromUTF8 ("Strum plate \xc2\xb7 drag across the strings, or play C3-C6 on your keyboard"));
+            setTooltip (juce::String::fromUTF8 ("Strum plate \xc2\xb7 try it with the mouse; play it with your keys (right hand from C4), the wheels or - / = on the PC keyboard"));
         }
 
         static constexpr int numStrings = Hamamatsu108Processor::numStrings;
@@ -591,10 +622,12 @@ namespace hama
                     g.setColour (th().accent.withAlpha (0.35f * v));
                     g.fillRect (gl.getX() + 6.0f, y - 2.5f, gl.getWidth() - 12.0f, 5.0f);
                 }
-                juce::ColourGradient s (th().accent.withAlpha (0.0f), gl.getX(), y, th().accent.withAlpha (0.0f), gl.getRight(), y, false);
-                s.addColour (0.18, th().accent.withAlpha (alpha));
-                s.addColour (0.5, th().soft.withAlpha (alpha));
-                s.addColour (0.82, th().accent.withAlpha (alpha));
+                const auto sc = th().accent, sm = th().soft;
+                const float a2 = alpha;
+                juce::ColourGradient s (sc.withAlpha (0.0f), gl.getX(), y, sc.withAlpha (0.0f), gl.getRight(), y, false);
+                s.addColour (0.18, sc.withAlpha (a2));
+                s.addColour (0.5, sm.withAlpha (a2));
+                s.addColour (0.82, sc.withAlpha (a2));
                 g.setGradientFill (s);
                 g.fillRect (gl.getX(), y - 1.0f, gl.getWidth(), 2.0f);
             }
