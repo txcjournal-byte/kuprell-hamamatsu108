@@ -2115,6 +2115,27 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
     }
 
+    // PRISM peaks: the pitch classes on the strings (the playing chord), spread from C3 to B6; no chord = the key's tonic
+    {
+        int mask = 0;
+        for (int t : tones) mask |= 1 << (((t % 12) + 12) % 12);
+        if (mask == 0) mask = (1 << (juce::roundToInt (param (apvts, "keyRoot")) % 12)) | (1 << ((juce::roundToInt (param (apvts, "keyRoot")) + 7) % 12));
+        std::array<float, 12> hz {};
+        int np = 0;
+        std::array<int, 64> cand {};
+        int nc = 0;
+        for (int note = 48; note < 96 && nc < 64; ++note)
+            if (mask & (1 << (note % 12))) cand[(size_t) nc++] = note;
+        for (int k = 0; k < 12 && nc > 0; ++k)   // up to 12 peaks, evenly picked across the candidates
+        {
+            const int note = cand[(size_t) juce::jmin (nc - 1, (k * nc) / juce::jmin (12, nc))];
+            if (np > 0 && hz[(size_t) np - 1] >= 440.0f * std::pow (2.0f, (float) (note - 69) / 12.0f)) continue;
+            hz[(size_t) np++] = 440.0f * std::pow (2.0f, (float) (note - 69) / 12.0f);
+            if (np >= juce::jmin (12, nc)) break;
+        }
+        for (auto& u : fxUnits) { u.prismHz = hz; u.prismPeaks = np; }
+    }
+
     // FX chain: 8 slots in order
     for (int i = 0; i < fx::numSlots; ++i)
     {

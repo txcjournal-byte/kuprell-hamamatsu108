@@ -53,6 +53,8 @@ namespace kuprell
 
         // called while the user hovers or turns the knob (for the status bar)
         std::function<void (const Knob&)> onInteract;
+        // how far a modulation source moves this knob (-1..1 of the range, 0 = not modulated); set by the plugin
+        static inline std::function<float (const juce::String& paramID)> modulationOf;
 
     private:
         class Dial;

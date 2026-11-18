@@ -1,4 +1,5 @@
 #include "Presets.h"
+#include "Modulation.h"
 
 namespace presets
 {
@@ -151,6 +152,28 @@ namespace presets
                         b.set ("mod1Src", 1.0f); b.set ("mod1Dst", 1.0f); b.set ("mod1Amt", b.range (0.1f, 0.2f));
                         b.set ("lfo1Rate", b.range (0.15f, 0.6f));
                         break;
+                }
+                // modern colour on top of the era sound
+                if (p.model == 0 || p.model == 4)   // Warm and Lo-fi are narrow by nature: open them up (mono-safe)
+                {
+                    b.set ("fx5Type", 20.0f); b.set ("fx5On", 1.0f); b.set ("fx5A", b.range (0.5f, 0.7f)); b.set ("fx5B", b.range (0.35f, 0.6f)); b.set ("fx5Mix", 1.0f);
+                }
+                if (i % 6 == 3 && (c == 2 || c == 4 || c == 5 || c == 0))   // PRISM: the sound glows on the chord, a slow LFO scans it
+                {
+                    b.set ("fx4Type", 17.0f); b.set ("fx4On", 1.0f);
+                    b.set ("fx4A", b.range (0.3f, 0.7f)); b.set ("fx4B", b.range (0.35f, 0.7f)); b.set ("fx4Mix", b.range (0.35f, 0.6f));
+                    b.set ("lfo2QDst", (float) mod::targetIds().indexOf ("fx4A")); b.set ("lfo2QAmt", b.range (0.2f, 0.35f));
+                    b.set ("lfo2Rate", b.range (0.05f, 0.25f));
+                }
+                if (i % 6 == 5 && (c == 1 || c == 2))   // DISPERSE: laser-like attack on plucks and bells
+                {
+                    b.set ("fx4Type", 18.0f); b.set ("fx4On", 1.0f);
+                    b.set ("fx4A", b.range (0.3f, 0.6f)); b.set ("fx4B", b.range (0.3f, 0.6f)); b.set ("fx4Mix", b.range (0.35f, 0.6f));
+                }
+                if (i % 6 == 1 && (c == 5 || c == 3))   // SHAPE: morphing grit on textures and keys
+                {
+                    b.set ("fx4Type", 19.0f); b.set ("fx4On", 1.0f);
+                    b.set ("fx4A", b.range (0.2f, 0.8f)); b.set ("fx4B", b.range (0.15f, 0.35f)); b.set ("fx4Mix", b.range (0.25f, 0.45f));
                 }
                 p.values = std::move (b.v);
                 out.push_back (std::move (p));

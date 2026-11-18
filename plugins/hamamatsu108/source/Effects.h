@@ -6,7 +6,7 @@
 #include <array>
 #include <cmath>
 
-// 16 effects for the 8 FX slots. Every slot owns one FxUnit that can become any effect.
+// 20 effects for the 8 FX slots. Every slot owns one FxUnit that can become any effect.
 // Each effect has two controls (A, B) and Mix.
 namespace fx
 {
@@ -15,7 +15,8 @@ namespace fx
     inline const juce::StringArray& names()
     {
         static const juce::StringArray n { "Empty", "EQ", "Compressor", "Drive", "Bitcrush", "Filter", "Vibrato", "Chorus", "Flanger",
-                                           "Phaser", "Speaker", "Tape", "Delay", "Ping-Pong", "Reverb", "Shimmer", "Limiter" };
+                                           "Phaser", "Speaker", "Tape", "Delay", "Ping-Pong", "Reverb", "Shimmer", "Limiter",
+                                           "Prism", "Disperse", "Shape", "Wide" };
         return n;
     }
 
@@ -40,6 +41,10 @@ namespace fx
             case 14: return { "Size", "Damping" };
             case 15: return { "Size", "Shimmer" };
             case 16: return { "Ceiling", "Release" };
+            case 17: return { "Scan", "Reso" };
+            case 18: return { "Freq", "Amount" };
+            case 19: return { "Morph", "Drive" };
+            case 20: return { "Width", "Spread" };
             default: return { "A", "B" };
         }
     }
@@ -109,6 +114,10 @@ namespace fx
     class FxUnit
     {
     public:
+        // PRISM: the frequencies its peaks sit on (the playing chord over 4 octaves), set by the processor each block
+        std::array<float, 12> prismHz {};
+        int prismPeaks = 0;
+
         void prepare (double sampleRate, int maxBlock)
         {
             sr = sampleRate;
@@ -132,6 +141,10 @@ namespace fx
             dl.clear(); dr.clear(); ml.clear(); mr.clear();
             reverb.reset(); comp.reset(); limiter.reset();
             for (auto& a : ap) a = {};
+            for (auto& z : dsp) z = 0.0f;
+            for (auto& f : prL) f.reset();
+            for (auto& f : prR) f.reset();
+            pHz.fill (0.0f); shDc.fill (0.0f); wideLp = {}; agIn = agOut = 0; agGain = 1;
             phFb = {};
             lfo = 0; crushL = crushR = 0; crushCount = 0;
             for (auto* f : { &svfL, &svfR, &spkL, &spkR, &spk2L, &spk2R }) f->reset();
@@ -330,7 +343,126 @@ namespace fx
                     limiter.process (juce::dsp::ProcessContextReplacing<float> (blk));
                     break;
                 }
+                case 17: // PRISM: a bank of resonant peaks tuned to the chord; SCAN moves a spectral window across them
+                {
+                    const int np = juce::jmax (1, prismPeaks);
+                    const float q = 3.0f + b * b * 60.0f;
+                    // the window: centre runs low -> high, width shrinks to the middle and opens again (dark, vowel, glass, air)
+                    const float centre = a * (float) (np - 1);
+                    const float width = 0.9f + 2.6f * std::abs (a - 0.5f) * 2.0f;
+                    float gsum = 0.0f;
+                    for (int k = 0; k < np; ++k)
+                    {
+                        const float target = prismHz[(size_t) k] > 20.0f ? prismHz[(size_t) k] : 220.0f;
+                        pHz[(size_t) k] = pHz[(size_t) k] <= 0.0f ? target : pHz[(size_t) k] + (target - pHz[(size_t) k]) * 0.25f;   // glide to a new chord
+                        const float d = ((float) k - centre) / width;
+                        pG[(size_t) k] = std::exp (-d * d);
+                        gsum += pG[(size_t) k];
+                        // the right channel sits a few cents apart: a slow interference shimmer between the ears
+                        const float spreadC = 1.0f + 0.004f * (0.5f + 0.5f * harp::sine() (harp::wrap (lfo + 0.11f * (float) k)));
+                        prL[(size_t) k].set (pHz[(size_t) k], q, fsr);
+                        prR[(size_t) k].set (pHz[(size_t) k] * spreadC, q, fsr);
+                    }
+                    lfo = harp::wrap (lfo + 0.2f * (float) n / fsr);
+                    const float norm = 1.5f / juce::jmax (0.6f, gsum);
+                    for (int i = 0; i < n; ++i)
+                    {
+                        float yl = 0.0f, yr = 0.0f, bp;
+                        for (int k = 0; k < np; ++k)
+                        {
+                            prL[(size_t) k].process (wl[i], bp); yl += bp * pG[(size_t) k];
+                            prR[(size_t) k].process (wr[i], bp); yr += bp * pG[(size_t) k];
+                        }
+                        wl[i] = std::tanh (yl * norm); wr[i] = std::tanh (yr * norm);
+                    }
+                    break;
+                }
+                case 18: // DISPERSE: a chain of all-pass stages at one frequency stretches the attack into a falling chirp
+                {
+                    const float f = 80.0f * std::pow (60.0f, a);
+                    const float t = std::tan (juce::MathConstants<float>::pi * juce::jmin (f, fsr * 0.45f) / fsr);
+                    const float coef = (t - 1.0f) / (t + 1.0f);
+                    const float stages = 2.0f + b * 46.0f;
+                    const int full = (int) stages;
+                    const float frac = stages - (float) full;
+                    for (int i = 0; i < n; ++i)
+                        for (int ch = 0; ch < 2; ++ch)
+                        {
+                            float x = ch == 0 ? wl[i] : wr[i], prev = x;
+                            for (int st = 0; st <= juce::jmin (full, 47); ++st)
+                            {
+                                auto& z = dsp[(size_t) (ch * 48 + st)];
+                                const float c2 = coef;   // same on both sides: mono-safe
+                                const float y = c2 * x + z;
+                                z = x - c2 * y;
+                                prev = x; x = y;
+                            }
+                            (ch == 0 ? wl[i] : wr[i]) = prev + (x - prev) * frac;
+                        }
+                    break;
+                }
+                case 19: // SHAPE: one morph knob from warm to broken: soft clip -> tube -> fold -> grit
+                {
+                    const float drive = 1.0f + b * b * 24.0f;
+                    const float m = a * 3.0f;
+                    const int seg = juce::jmin (2, (int) m);
+                    const float x0 = m - (float) seg;
+                    auto curve = [] (int c, float x)
+                    {
+                        switch (c)
+                        {
+                            case 0:  return std::tanh (x);
+                            case 1:  return std::tanh (x + 0.35f * x * x) - 0.12f * std::tanh (0.35f * x * x);   // asymmetric: even harmonics
+                            case 2:  return std::sin (juce::jlimit (-6.0f, 6.0f, x) * 1.2f);                     // wavefolder
+                            default: { const float q2 = std::round (std::tanh (x) * 7.0f) / 7.0f; return 0.6f * q2 + 0.4f * std::sin (x * 2.3f); }
+                        }
+                    };
+                    const float comp2 = 1.0f;
+                    for (int i = 0; i < n; ++i)
+                        for (int ch = 0; ch < 2; ++ch)
+                        {
+                            const float x = (ch == 0 ? wl[i] : wr[i]) * drive;
+                            float y = curve (seg, x) * (1.0f - x0) + curve (seg + 1, x) * x0;
+                            auto& dc = shDc[(size_t) ch];
+                            dc += (y - dc) * 0.0015f;
+                            y -= dc;   // asymmetric curves add DC
+                            (ch == 0 ? wl[i] : wr[i]) = y * comp2;
+                        }
+                    break;
+                }
+                case 20: // WIDE: decorrelated side signal above 180 Hz; the low end stays mono, mono sum is unchanged
+                {
+                    const float width = a * 1.1f;
+                    const float d1 = (0.004f + b * 0.014f) * fsr, d2 = d1 * 1.37f;
+                    const float hp = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * 180.0f / fsr);
+                    for (int i = 0; i < n; ++i)
+                    {
+                        const float mid = 0.5f * (wl[i] + wr[i]), side = 0.5f * (wl[i] - wr[i]);
+                        const float mHigh = mid - wideLp.lp (mid, hp);
+                        ml.push (mHigh);
+                        const float extra = (ml.read (d1) - ml.read (d2)) * 0.5f;
+                        const float s2 = side + extra * width;
+                        wl[i] = mid + s2; wr[i] = mid - s2;
+                    }
+                    break;
+                }
                 default: return;
+            }
+
+            if (type == 17 || type == 19)
+            {
+                // level match: PRISM and SHAPE come out as loud as they went in, so SCAN / MORPH / DRIVE change colour, not volume
+                double ein = 1e-9, eout = 1e-9;
+                for (int i = 0; i < n; ++i) { ein += L[i] * L[i] + R[i] * R[i]; eout += wl[i] * wl[i] + wr[i] * wr[i]; }
+                const float k = 1.0f - std::exp (-(float) n / (0.25f * fsr));
+                agIn += ((float) ein / (float) n - agIn) * k;
+                agOut += ((float) eout / (float) n - agOut) * k;
+                const float target = (type == 19 ? 0.8f : 0.9f) * juce::jlimit (0.05f, 4.0f, std::sqrt ((agIn + 1e-9f) / (agOut + 1e-9f)));   // distortion sounds louder: a little under
+                for (int i = 0; i < n; ++i)
+                {
+                    agGain += (target - agGain) * 0.002f;
+                    wl[i] *= agGain; wr[i] *= agGain;
+                }
             }
 
             for (int i = 0; i < n; ++i)
@@ -352,6 +484,12 @@ namespace fx
         OnePole toneL, toneR, eqLowL, eqLowR, eqHiL, eqHiR, shLp, shRp;
         OctaveUp shL, shR;
         std::array<Ap, 12> ap {};
+        std::array<layers::Svf, 12> prL {}, prR {};
+        std::array<float, 12> pHz {}, pG {};
+        std::array<float, 96> dsp {};
+        std::array<float, 2> shDc {};
+        OnePole wideLp;
+        float agIn = 0, agOut = 0, agGain = 1;
         std::array<float, 2> phFb {};
         float lfo = 0, lfo2 = 0, crushL = 0, crushR = 0;
         int crushCount = 0;

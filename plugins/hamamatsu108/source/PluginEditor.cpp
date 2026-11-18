@@ -53,6 +53,16 @@ Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
     : AudioProcessorEditor (&p), audioProcessor (p), instrument (p), editView (p), browser (p), settings (p)
 {
     setLookAndFeel (&lookAndFeel);
+    kuprell::Knob::modulationOf = [this] (const juce::String& id)
+    {
+        const int t = mod::targetIds().indexOf (id);
+        if (t <= 0) return 0.0f;
+        float d = 0.0f;
+        for (auto* sid : { "lfo1", "lfo2", "func", "rand" })
+            if (juce::roundToInt (audioProcessor.apvts.getRawParameterValue (juce::String (sid) + "QDst")->load()) == t)
+                d += audioProcessor.apvts.getRawParameterValue (juce::String (sid) + "QAmt")->load();
+        return d;
+    };
 
     addAndMakeVisible (content);
     content.addAndMakeVisible (topBar);
@@ -120,6 +130,7 @@ Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
 
 Hamamatsu108Editor::~Hamamatsu108Editor()
 {
+    kuprell::Knob::modulationOf = nullptr;
     stopTimer();
     setLookAndFeel (nullptr);
 }
@@ -261,6 +272,23 @@ void Hamamatsu108Editor::addKnobMenuItems (juce::PopupMenu& m, const juce::Strin
     const int cc = audioProcessor.ccForParam (index);
     m.addItem (100, audioProcessor.learnParam.load() == index ? "MIDI Learn: waiting for a controller..." : "MIDI Learn");
     if (cc >= 0) m.addItem (101, "Forget MIDI (CC " + juce::String (cc) + ")");
+    // quick modulation: any modulatable knob can take one of the four sources
+    if (const int t = mod::targetIds().indexOf (paramID); t > 0)
+    {
+        juce::PopupMenu sub;
+        static const char* ids[] = { "lfo1", "lfo2", "func", "rand" };
+        static const char* names[] = { "LFO 1", "LFO 2", "Function", "Random" };
+        bool any = false;
+        for (int i = 0; i < 4; ++i)
+        {
+            const bool on = juce::roundToInt (audioProcessor.apvts.getRawParameterValue (juce::String (ids[i]) + "QDst")->load()) == t;
+            any = any || on;
+            sub.addItem (110 + i, names[i], true, on);
+        }
+        sub.addSeparator();
+        sub.addItem (119, "Remove modulation", any);
+        m.addSubMenu ("Modulate with", sub);
+    }
     const bool locked = audioProcessor.presetManager->locked.count (paramID) > 0;
     m.addItem (102, locked ? "Unlock (presets and dice change it again)" : "Lock (presets and dice keep it)", true, locked);
 }
@@ -272,6 +300,32 @@ void Hamamatsu108Editor::knobMenuResult (int result, const juce::String& paramID
     for (int i = 0; i < params.size(); ++i)
         if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (params[i])) if (rp->getParameterID() == paramID) index = i;
     if (index < 0) return;
+    if (result >= 110 && result <= 119)
+    {
+        static const char* ids[] = { "lfo1", "lfo2", "func", "rand" };
+        static const char* names[] = { "LFO 1", "LFO 2", "Function", "Random" };
+        const int t = mod::targetIds().indexOf (paramID);
+        auto setP = [this] (const juce::String& id, float v) { if (auto* p = audioProcessor.apvts.getParameter (id)) p->setValueNotifyingHost (p->convertTo0to1 (v)); };
+        for (int i = 0; i < 4; ++i)
+        {
+            const juce::String sid (ids[i]);
+            const bool on = juce::roundToInt (audioProcessor.apvts.getRawParameterValue (sid + "QDst")->load()) == t;
+            if (result == 119 && on) setP (sid + "QDst", 0.0f);
+            if (result == 110 + i)
+            {
+                if (on) { setP (sid + "QDst", 0.0f); say (juce::String (names[i]) + " removed"); }
+                else
+                {
+                    setP (sid + "QDst", (float) t);
+                    if (std::abs (audioProcessor.apvts.getRawParameterValue (sid + "QAmt")->load()) < 0.02f) setP (sid + "QAmt", 0.3f);
+                    say (juce::String (names[i]) + " moves " + mod::targetNames()[t] + " (depth in EDIT > MOD)");
+                }
+            }
+        }
+        if (result == 119) say ("Modulation removed");
+        content.repaint();
+        return;
+    }
     if (result == 100) { audioProcessor.learnParam.store (index); say ("MIDI Learn: move a knob or slider on your controller"); }
     if (result == 101) { const int cc = audioProcessor.ccForParam (index); if (cc >= 0) audioProcessor.ccMap[(size_t) cc].store (-1); say ("MIDI mapping removed"); }
     if (result == 102)

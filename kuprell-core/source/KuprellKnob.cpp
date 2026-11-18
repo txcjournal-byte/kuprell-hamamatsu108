@@ -54,6 +54,20 @@ namespace kuprell
                 g.strokePath (arc, juce::PathStrokeType (2.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
             }
 
+            // modulation: a thin outer arc from the value to where the modulation can take it
+            if (enabled && Knob::modulationOf)
+                if (const float depth = Knob::modulationOf (owner.getParamID()); std::abs (depth) > 0.001f)
+                {
+                    const float to = juce::jlimit (0.0f, 1.0f, prop + depth);
+                    const float a2 = startAngle + to * (endAngle - startAngle);
+                    juce::Path m;
+                    const float mr = ringR + 3.2f;
+                    m.addCentredArc (c.x, c.y, mr, mr, 0.0f, juce::jmin (angle, a2), juce::jmax (angle, a2), true);
+                    g.setColour (juce::Colours::white.withAlpha (0.85f));
+                    g.strokePath (m, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+                    g.fillEllipse (juce::Rectangle<float> (3.0f, 3.0f).withCentre (c.getPointOnCircumference (mr, a2)));
+                }
+
             // body with drop shadow
             auto body = area.reduced (size * 0.16f);
             g.setColour (juce::Colours::black.withAlpha (0.55f));
