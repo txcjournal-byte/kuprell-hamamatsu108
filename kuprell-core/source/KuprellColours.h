@@ -23,8 +23,8 @@ namespace kuprell::colours
     inline const juce::Colour textFaint { 0xff7e8187 };
 
     // single accent (turquoise)
-    inline const juce::Colour accent     { 0xff3fe0d0 };
-    inline const juce::Colour accentSoft { 0xffa6f7ef };
-    inline const juce::Colour accentDeep { 0xff139488 };
+    inline const juce::Colour accent     { 0xff10e8e0 };   // vivid aqua
+    inline const juce::Colour accentSoft { 0xff8afcf6 };
+    inline const juce::Colour accentDeep { 0xff079e9a };
     inline const juce::Colour onAccent   { 0xff06201d };
 }

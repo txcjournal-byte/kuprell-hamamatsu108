@@ -215,7 +215,7 @@ namespace hama
                     if (! rest)
                     {
                         auto bar = c.withTop (c.getBottom() - c.getHeight() * v);
-                        g.setGradientFill (juce::ColourGradient (th().accent.withAlpha (inLen ? 0.75f : 0.2f), 0.0f, bar.getY(), th().accent.withAlpha (inLen ? 0.25f : 0.08f), 0.0f, bar.getBottom(), false));   // same as the steps on the main page
+                        g.setGradientFill (juce::ColourGradient (th().accent.withAlpha (inLen ? 0.95f : 0.2f), 0.0f, bar.getY(), th().accent.withAlpha (inLen ? 0.5f : 0.08f), 0.0f, bar.getBottom(), false));   // same as the steps on the main page
                         g.fillRoundedRectangle (bar, 3.0f);
                         g.setColour (th().accent.withAlpha (inLen ? 1.0f : 0.25f));
                         g.fillRoundedRectangle (bar.withHeight (3.0f), 1.5f);

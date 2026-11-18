@@ -1763,7 +1763,7 @@ namespace hama
                 {
                     const float v = processor.seqVel[(size_t) i].load();
                     auto fill = c.withTop (c.getBottom() - c.getHeight() * v);
-                    g.setGradientFill (juce::ColourGradient (th().accent.withAlpha (col.getFloatAlpha() * 0.75f), 0.0f, fill.getY(), th().accent.withAlpha (col.getFloatAlpha() * 0.25f), 0.0f, fill.getBottom(), false));
+                    g.setGradientFill (juce::ColourGradient (th().accent.withAlpha (col.getFloatAlpha() * 0.95f), 0.0f, fill.getY(), th().accent.withAlpha (col.getFloatAlpha() * 0.5f), 0.0f, fill.getBottom(), false));
                     g.fillRoundedRectangle (fill, 3.0f);
                     g.setColour (th().accent.withAlpha (col.getFloatAlpha()));
                     g.fillRoundedRectangle (fill.withHeight (3.0f), 1.5f);   // bright top edge = the level

@@ -16,9 +16,9 @@ namespace skins
     inline Accent iceBlue()   { return { juce::Colour (0xff6fb8ff), juce::Colour (0xffc4e2ff), juce::Colour (0xff2f73c9) }; }
     inline Accent pink()      { return { juce::Colour (0xffff6fb4), juce::Colour (0xffffc2df), juce::Colour (0xffc93a7f) }; }
    #ifndef ACC_MAIN
-    #define ACC_MAIN 0xff3fe0d0   // = the Kuprell accent (top bar, EDIT): one teal everywhere
-    #define ACC_SOFT 0xffa6f7ef   // its light version, for text on dark displays
-    #define ACC_DEEP 0xff2bb8ab   // the same teal, only dimmer
+    #define ACC_MAIN 0xff10e8e0   // = the Kuprell accent (top bar, EDIT): one teal everywhere
+    #define ACC_SOFT 0xff8afcf6   // its light version, for text on dark displays
+    #define ACC_DEEP 0xff0bb8b3   // the same teal, only dimmer
    #endif
     inline Accent mint()      { return { juce::Colour (ACC_MAIN), juce::Colour (ACC_SOFT), juce::Colour (ACC_DEEP) }; }   // bright backlight
 
