@@ -24,6 +24,7 @@ namespace prog
         // strum
         juce::String strumSteps { "D...D.U...U.D.U." };   // 16ths, letters as the strum patterns
         float strumSpeedMs = 18.0f;
+        float feel = 0.5f;   // human looseness: timing, force and stroke speed vary a little
         // arp
         double arpStepBeats = 0.5;
         int arpOctaves = 1, arpPattern = 0;
@@ -82,12 +83,16 @@ namespace prog
             const int len = juce::jmax (1, s.strumSteps.length());
             const double stepBeats = 0.25;   // the steps are 16ths
             const double perString = s.strumSpeedMs / 1000.0 * s.bpm / 60.0;
+            const double msToBeats = s.bpm / 60.0 / 1000.0;
+            juce::Random hr (s.seed * 6151 + barIndex * 389 + chord * 7);   // a human hand: never twice the same
             std::vector<double> strokeStarts;
             for (int i = 0; i < len; ++i)
             {
                 const auto c = (char) s.strumSteps[i];
                 if (c == '.' || c == 'x') continue;
-                const double b = i * stepBeats;
+                // late / early by a few ms, the downbeat stays tight
+                const double drift = (i % 4 == 0 ? 0.3 : 1.0) * s.feel * (hr.nextFloat() * 2.0 - 0.8) * 14.0 * msToBeats;
+                const double b = juce::jmax (0.0, i * stepBeats + drift);
                 strokeStarts.push_back (b);
                 int lo = 0, hi = n - 1; bool up = false; float v = 0.9f; double speed = 1.0;
                 switch (c)
@@ -102,11 +107,18 @@ namespace prog
                     case 'S': speed = 3.0; v = 0.75f; break;
                     default: break;
                 }
-                const float accent = (i % 4 == 0) ? 1.0f : 0.9f;
+                // beat 1 strongest, other beats a little less, off-beats lighter; force varies with FEEL
+                const float accent = (i == 0 ? 1.0f : i % 4 == 0 ? 0.92f : i % 2 == 0 ? 0.82f : 0.74f) * (1.0f + s.feel * 0.18f * (hr.nextFloat() - 0.5f));
+                const double strokeSpeed = speed * (1.0 + s.feel * 0.5 * (hr.nextFloat() - 0.5)) * (up ? 0.8 : 1.0);   // up strokes are quicker
+                // a real stroke skips a string now and then (only with a loose hand, never on the downbeat)
+                const int skip = (s.feel > 0.3f && i % 4 != 0 && hr.nextFloat() < 0.25f * s.feel) ? hr.nextInt (juce::jmax (1, hi - lo + 1)) : -1;
                 for (int k = 0; k <= hi - lo; ++k)
                 {
+                    if (k == skip) continue;
                     const int idx = up ? hi - k : lo + k;
-                    out.push_back ({ b + k * perString * speed, tones[(size_t) idx], juce::jlimit (0.1f, 1.0f, v * accent * (1.0f - 0.2f * (float) k / (float) n)), 1.0 });
+                    // the first strings get the most force, the hand loses some on the way
+                    const float fall = 1.0f - 0.25f * (float) k / (float) juce::jmax (1, hi - lo);
+                    out.push_back ({ b + k * perString * strokeSpeed, tones[(size_t) idx], juce::jlimit (0.1f, 1.0f, v * accent * fall), 1.0 });
                 }
             }
             // every string rings until the next stroke (at least an 1/8, at most 2 beats)

@@ -210,6 +210,8 @@ private:
     int progBarCached = -1000;
     bool lastProgPlaying = false, progWasPlaying = false;
     int progBarOffset = 0, progLastHostBar = 0;
+    double progOwnPpq = 0.0;     // PLAY without FL: the plugin's own clock
+    bool progOnHost = false;
     layers::Svf masterFiltL, masterFiltR;   // FILTER on the whole instrument
     float cutSmooth = 20000.0f;             // mod wheel strum: the same for CC 1
     void wheelStrum (int samplePos, float pos, float& last);

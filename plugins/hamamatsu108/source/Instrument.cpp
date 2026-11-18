@@ -794,7 +794,8 @@ namespace hama
             glowText (g, dual ? shortVoice (voice) + "+" + shortVoice (voice2) : harp::voiceNames()[voice].toUpperCase(), l1, juce::Justification::centredRight);
             auto l2 = lines.removeFromTop (16.0f);
             const auto rateText = Hamamatsu108Processor::strumRateNames()[rate];
-            juce::String left = "PLAY", right = "KEYS + PLATE";
+            static const char* keysShort[] = { "NOTES", "STRUM", "PATTERN", "PLATE ONLY", "FLOURISH UP", "FLOURISH DN", "SPLIT" };
+            juce::String left = "KEYS", right = keysShort[juce::jlimit (0, 6, keysPlay)];
             if (mode == 1) { left = "ARP"; right = Hamamatsu108Processor::arpPatternNames()[pattern].toUpperCase().removeCharacters (" ") + " " + rateText; }
             glowText (g, left, l2, juce::Justification::centredLeft, 0.75f);
             glowText (g, right, l2, juce::Justification::centredRight, 0.75f);
@@ -850,7 +851,8 @@ namespace hama
         {
             auto& s = processor.apvts;
             const auto p = e.position;
-            if (juce::Rectangle<float> (12.0f, 12.0f, 192.0f, 42.0f).contains (p)) { showPresetMenu(); return; }
+            if (juce::Rectangle<float> (12.0f, 12.0f, 192.0f, 21.0f).contains (p)) { showPresetMenu(); return; }
+            if (juce::Rectangle<float> (12.0f, 33.0f, 192.0f, 21.0f).contains (p)) { showKeysMenu(); return; }
             if (holdArea().contains (p))       setParam (s, "hold", hold ? 0.0f : 1.0f);
             else if (dualArea().contains (p))  showDualMenu();
             else if (trDown().contains (p))    setParam (s, "transpose", (float) juce::jmax (-12, transpose - 1));
@@ -904,6 +906,27 @@ namespace hama
                 processor.presetManager->load (r - 1);
                 processor.previewPreset();
                 message ("Preset: " + processor.presetManager->currentName());
+            });
+        }
+
+        // what your keyboard / piano-roll notes do (click the KEYS line of the display)
+        void showKeysMenu()
+        {
+            juce::PopupMenu m;
+            m.addSectionHeader ("YOUR KEYS / PIANO ROLL: what the notes do");
+            static const char* keyText[] = { "Notes: the harp plays the exact pitch (melodies in the piano roll)",
+                                             "Strum: each key press strums the keys you hold",
+                                             "Pattern: the strum pattern plays the keys you hold",
+                                             "Plate only: hold keys, strum them on the plate / wheels",
+                                             "Flourish up: one key = a whole harp run of a chord (octave = chord type)",
+                                             "Flourish down: the same run falling",
+                                             "Split: left hand (below C4) = chord, right hand = strings, black keys = strum" };
+            for (int i = 0; i < 7; ++i) m.addItem (100 + i, keyText[i], true, keysPlay == i);
+            popup (m, { 12.0f, 33.0f, 192.0f, 21.0f }, [this] (int r)
+            {
+                setParam (processor.apvts, "keysPlay", (float) (r - 100));
+                static const char* names[] = { "Notes", "Strum", "Pattern", "Plate only", "Flourish up", "Flourish down", "Split" };
+                message (juce::String ("Your keys: ") + names[r - 100]);
             });
         }
 
@@ -1848,7 +1871,7 @@ namespace hama
     public:
         explicit ProgressionStrip (Hamamatsu108Processor& p) : processor (p)
         {
-            setTooltip ("PROGRESSION: click a slot, then chord buttons. PLAY = plays with the song, DRAG 4 / 8 = drag the MIDI into the piano roll.");
+            setTooltip ("PROGRESSION: click a slot, then chord buttons. PLAY = plays right away in the song tempo (follows the bars when FL plays), DRAG 4 / 8 = drag the MIDI into the piano roll.");
         }
         std::function<void (const juce::String&, const juce::String&)> onStatus;
 
@@ -1926,7 +1949,7 @@ namespace hama
             if (playButton().contains (p))
             {
                 processor.progOn.store (! processor.progOn.load());
-                status ("PROGRESSION", processor.progOn.load() ? "plays with the song: press play in FL Studio" : "off");
+                status ("PROGRESSION", processor.progOn.load() ? "playing (FL tempo); with FL playing it follows the song bars" : "stopped");
             }
             for (int i = 0; i < prog::numSlots; ++i)
                 if (slot (i).contains (p))
@@ -1987,7 +2010,7 @@ namespace hama
                     const auto& rm = prog::readyMade()[(size_t) (r - 100)];
                     for (int k = 0; k < prog::numSlots; ++k) pr.progSlots[(size_t) k].store (k < 4 ? prog::chordOnDegree (key, minor, rm.deg[(size_t) k]) : -1);
                     pr.progOn.store (true);
-                    safe->status ("PROGRESSION", juce::String (rm.name) + ": press play in FL Studio, or drag 4 / 8 bars");
+                    safe->status ("PROGRESSION", juce::String (rm.name) + ": playing, drag 4 / 8 bars into the piano roll");
                 }
                 safe->repaint();
             });

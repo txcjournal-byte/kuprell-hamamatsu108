@@ -862,6 +862,7 @@ prog::Settings Hamamatsu108Processor::progSettings()
     const int pat = juce::roundToInt (param (apvts, "strumPattern"));
     st.strumSteps = pat > 0 ? patternString (pat) : juce::String ("D.......D.......");
     st.strumSpeedMs = param (apvts, "strumSpeed");
+    st.feel = param (apvts, "strumFeel");
     st.arpStepBeats = rateInQuarters (juce::roundToInt (param (apvts, "strumRate")));
     st.arpOctaves = juce::roundToInt (param (apvts, "arpOctaves"));
     st.arpPattern = juce::roundToInt (param (apvts, "arpPattern"));
@@ -1586,15 +1587,24 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     std::array<int, prog::numSlots> usedSlots {};
     int numUsed = 0;
     for (int i = 0; i < prog::numSlots; ++i) if (progSlots[(size_t) i].load() >= 0) usedSlots[(size_t) numUsed++] = i;
-    const bool progPlaying = progOn.load() && hostPlaying && numUsed > 0;
+    // PLAY in the plugin is enough: with FL stopped it runs on its own clock (in the song tempo),
+    // with FL playing it follows the song
+    const bool progPlaying = progOn.load() && numUsed > 0;
     lastProgPlaying = progPlaying;
+    if (progPlaying && ! hostPlaying)
+    {
+        if (! progWasPlaying || progOnHost) progOwnPpq = 0.0;
+    }
+    const bool restartProg = progPlaying && (! progWasPlaying || progOnHost != hostPlaying);
+    progOnHost = hostPlaying;
+    const double progPpq = hostPlaying ? ppq : progOwnPpq;
     int progBar = 0;
     if (progPlaying)
     {
         // FL Studio loops a short pattern (1 bar when it is empty): the bars are counted here, so the
         // progression keeps moving on even when the song position jumps back to the start of the loop
-        const int hostBar = (int) std::floor (ppq / 4.0 + 1.0e-9);
-        if (! progWasPlaying) { progBarOffset = -hostBar; progLastHostBar = hostBar; }
+        const int hostBar = (int) std::floor (progPpq / 4.0 + 1.0e-9);
+        if (restartProg) { progBarOffset = -hostBar; progLastHostBar = hostBar; progBarCached = -1000; }
         else if (hostBar < progLastHostBar) progBarOffset += progLastHostBar - hostBar + 1;   // the loop jumped back
         progLastHostBar = hostBar;
         progBar = hostBar + progBarOffset;
@@ -1682,7 +1692,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     {
         const double beatsPerSample = bpm / 60.0 / getSampleRate();
         // work in the counted bars: shift the host position by the loop offset
-        const double vppq = ppq + 4.0 * progBarOffset;
+        const double vppq = progPpq + 4.0 * progBarOffset;
         const double endPpq = vppq + numSamples * beatsPerSample;
         const auto settings = progSettings();
         for (int b = progBar; b <= (int) std::floor (endPpq / 4.0); ++b)
@@ -1704,6 +1714,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
     }
     else progBarCached = -1000;
+    if (progPlaying && ! hostPlaying) progOwnPpq += numSamples * bpm / 60.0 / getSampleRate();
 
     // SPLIT right hand: white keys pluck one string each (C4 = the lowest), black keys strum the whole chord
     for (int i = 0; i < numSplitHits && ! tones.empty(); ++i)
@@ -1711,7 +1722,20 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         const auto& h = splitHits[(size_t) i];
         const int nt = (int) tones.size();
         const float v = juce::jlimit (0.1f, 1.0f, h.vel);
-        if (h.strum == 0) scheduleNote (h.pos, juce::jmin (h.string, nt - 1), v);
+        if (h.strum == 0)
+        {
+            if (h.string < nt) scheduleNote (h.pos, h.string, v);
+            else
+            {
+                // above the plate: keep climbing through the chord tones (every key plays, up to the top of the keyboard)
+                int mask = 0;
+                for (int t : tones) mask |= 1 << (t % 12);
+                int pitch = tones.back();
+                for (int k = nt - 1; k < h.string && pitch < 120; ++k)
+                    do ++pitch; while (pitch < 127 && ! (mask & (1 << (pitch % 12))));
+                schedulePitch (h.pos, juce::jmin (127, pitch), v, true);
+            }
+        }
         else sweep (h.pos, h.strum > 0, h.strum > 0 ? 0 : nt - 1, nt, juce::jlimit (0.2f, 1.0f, 0.35f + 0.65f * v), 1.5f - 0.9f * v);
     }
     numSplitHits = 0;
