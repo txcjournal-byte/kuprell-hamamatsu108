@@ -1591,13 +1591,20 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     int progBar = 0;
     if (progPlaying)
     {
-        progBar = (int) std::floor (ppq / 4.0 + 1.0e-9);
+        // FL Studio loops a short pattern (1 bar when it is empty): the bars are counted here, so the
+        // progression keeps moving on even when the song position jumps back to the start of the loop
+        const int hostBar = (int) std::floor (ppq / 4.0 + 1.0e-9);
+        if (! progWasPlaying) { progBarOffset = -hostBar; progLastHostBar = hostBar; }
+        else if (hostBar < progLastHostBar) progBarOffset += progLastHostBar - hostBar + 1;   // the loop jumped back
+        progLastHostBar = hostBar;
+        progBar = hostBar + progBarOffset;
         const int slot = usedSlots[(size_t) (((progBar % numUsed) + numUsed) % numUsed)];
         progSlotGui.store (slot);
         const int c = progSlots[(size_t) slot].load();
         if (c != latchedChord) { latchedChord = c; holdChord = -1; stackParts.clear(); stackParts.push_back (c); }
     }
     else progSlotGui.store (-1);
+    progWasPlaying = progPlaying;
 
     int chord = resolveChord();
     const bool splitOn = juce::roundToInt (param (apvts, "keysPlay")) == 6 && ! chordZones.load();
@@ -1674,7 +1681,9 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     if (progPlaying)
     {
         const double beatsPerSample = bpm / 60.0 / getSampleRate();
-        const double endPpq = ppq + numSamples * beatsPerSample;
+        // work in the counted bars: shift the host position by the loop offset
+        const double vppq = ppq + 4.0 * progBarOffset;
+        const double endPpq = vppq + numSamples * beatsPerSample;
         const auto settings = progSettings();
         for (int b = progBar; b <= (int) std::floor (endPpq / 4.0); ++b)
         {
@@ -1689,8 +1698,8 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             for (const auto& nt : progNotes)
             {
                 const double at = 4.0 * b + nt.beat;
-                if (at >= ppq - 1.0e-9 && at < endPpq)
-                    schedulePitch ((int) ((at - ppq) / beatsPerSample), nt.pitch, nt.velocity, true);
+                if (at >= vppq - 1.0e-9 && at < endPpq)
+                    schedulePitch ((int) ((at - vppq) / beatsPerSample), nt.pitch, nt.velocity, true);
             }
         }
     }

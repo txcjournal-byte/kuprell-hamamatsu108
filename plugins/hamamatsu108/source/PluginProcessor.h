@@ -208,7 +208,8 @@ public:
 private:
     std::vector<prog::Note> progNotes;   // the bar being played
     int progBarCached = -1000;
-    bool lastProgPlaying = false;
+    bool lastProgPlaying = false, progWasPlaying = false;
+    int progBarOffset = 0, progLastHostBar = 0;
     layers::Svf masterFiltL, masterFiltR;   // FILTER on the whole instrument
     float cutSmooth = 20000.0f;             // mod wheel strum: the same for CC 1
     void wheelStrum (int samplePos, float pos, float& last);
