@@ -629,7 +629,8 @@ namespace hama
                 }
                 // screen skins: plain white light, brighter only where a string sounds
                 const auto sc = th().accent, sm = th().soft;
-                const float a2 = alpha;
+                // screen skins: the strings stay dark and light up only where a string sounds
+                const float a2 = th().lcd ? 0.1f + 0.9f * v : alpha;
                 juce::ColourGradient s (sc.withAlpha (0.0f), gl.getX(), y, sc.withAlpha (0.0f), gl.getRight(), y, false);
                 s.addColour (0.18, sc.withAlpha (a2));
                 s.addColour (0.5, sm.withAlpha (a2));
