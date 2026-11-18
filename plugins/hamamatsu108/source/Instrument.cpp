@@ -608,7 +608,7 @@ namespace hama
             // haze where the hand plays
             float sum = 0.0f;
             for (auto v : glow) sum += v;
-            if (sum > 0.05f && ! th().lcd)
+            if (sum > 0.05f)
             {
                 juce::ColourGradient haze (th().accent.withAlpha (juce::jmin (0.3f, sum * 0.04f)), gl.getCentreX(), gl.getCentreY() + 20.0f,
                                            juce::Colours::transparentBlack, gl.getCentreX() + 90.0f, gl.getCentreY() + 20.0f, true);
@@ -624,13 +624,12 @@ namespace hama
                 const float alpha = chordIndex >= 0 ? 0.32f + 0.68f * v : 0.16f + 0.84f * v;
                 if (v > 0.05f)
                 {
-                    g.setColour ((th().lcd ? juce::Colours::white : th().accent).withAlpha ((th().lcd ? 0.15f : 0.35f) * v));
+                    g.setColour (th().accent.withAlpha (0.35f * v));
                     g.fillRect (gl.getX() + 6.0f, y - 2.5f, gl.getWidth() - 12.0f, 5.0f);
                 }
                 // screen skins: plain white light, brighter only where a string sounds
-                const auto sc = th().lcd ? juce::Colour (0xffc9cdd2) : th().accent;
-                const auto sm = th().lcd ? juce::Colours::white : th().soft;
-                const float a2 = th().lcd ? 0.16f + 0.84f * v : alpha;
+                const auto sc = th().accent, sm = th().soft;
+                const float a2 = alpha;
                 juce::ColourGradient s (sc.withAlpha (0.0f), gl.getX(), y, sc.withAlpha (0.0f), gl.getRight(), y, false);
                 s.addColour (0.18, sc.withAlpha (a2));
                 s.addColour (0.5, sm.withAlpha (a2));
@@ -646,12 +645,6 @@ namespace hama
             g.setColour (juce::Colours::black);
             g.drawHorizontalLine ((int) band.getBottom(), band.getX(), band.getRight());
             g.setFont (LookAndFeel::monoFont (16.0f));
-            if (th().lcd)
-            {
-                g.setColour (juce::Colour (0xffe6e8eb).withAlpha (chordIndex >= 0 ? 1.0f : 0.4f));
-                g.drawText (chordIndex >= 0 ? chords::shortName (chordIndex) : juce::String::fromUTF8 ("\xe2\x80\x94"), band, juce::Justification::centred, false);
-            }
-            else
                 glowText (g, chordIndex >= 0 ? chords::shortName (chordIndex) : juce::String::fromUTF8 ("\xe2\x80\x94"), band, juce::Justification::centred,
                           chordIndex >= 0 ? 1.0f : 0.5f);
 
