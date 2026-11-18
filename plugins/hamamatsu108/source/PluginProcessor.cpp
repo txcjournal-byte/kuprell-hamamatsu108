@@ -316,6 +316,8 @@ Hamamatsu108Processor::Hamamatsu108Processor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, &undoManager, "Hamamatsu108", createParameterLayout())
 {
+    for (auto& sl : progSlots) sl.store (-1);
+    progNotes.reserve (256);
     for (auto& c : ccMap) c.store (-1);
     for (auto& c : ccPending) c.store (0.0f);
 #if HAMA_MTS
@@ -546,6 +548,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "arpPattern", 1 }, "Arp Pattern", arpPatternNames(), 0));
     fl ("arpChance", "Arp Chance", 0.0f, 1.0f, 1.0f, pct);
     layout.add (std::make_unique<AudioParameterInt> (ParameterID { "arpOctaves", 1 }, "Arp Octaves", 1, 4, 2));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { "harpOctave", 1 }, "Octave", -3, 2, 0));   // the whole harp an octave down (bass) or up
     fl ("arpGate", "Arp Gate", 0.05f, 1.0f, 1.0f, pct);
     fl ("arpSwing", "Arp Swing", 0.0f, 1.0f, 0.0f, pct);
     fl ("arpVelScale", "Arp Dynamics", 0.0f, 1.0f, 1.0f, pct);
@@ -846,6 +849,29 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
     }
 }
 
+prog::Settings Hamamatsu108Processor::progSettings()
+{
+    prog::Settings st;
+    st.mode = progMode.load();
+    st.seed = progSeed.load();
+    st.keyRoot = juce::roundToInt (param (apvts, "keyRoot"));
+    st.minor = param (apvts, "keyMode") > 0.5f;
+    st.transpose = juce::roundToInt (param (apvts, "transpose"));
+    st.range = juce::roundToInt (param (apvts, "harpRange"));
+    st.octave = juce::roundToInt (param (apvts, "harpOctave"));
+    const int pat = juce::roundToInt (param (apvts, "strumPattern"));
+    st.strumSteps = pat > 0 ? patternString (pat) : juce::String ("D.......D.......");
+    st.strumSpeedMs = param (apvts, "strumSpeed");
+    st.arpStepBeats = rateInQuarters (juce::roundToInt (param (apvts, "strumRate")));
+    st.arpOctaves = juce::roundToInt (param (apvts, "arpOctaves"));
+    st.arpPattern = juce::roundToInt (param (apvts, "arpPattern"));
+    st.arpLength = param (apvts, "arpGate");
+    for (int i = 0; i < 16; ++i) st.stepVel[(size_t) i] = seqVel[(size_t) i].load();
+    st.stepLen = seqLen.load();
+    st.bpm = hostBpm.load() > 1.0 ? hostBpm.load() : 120.0;
+    return st;
+}
+
 void Hamamatsu108Processor::wheelStrum (int samplePos, float pos, float& last)
 {
     const int n = (int) tones.size();
@@ -890,7 +916,7 @@ void Hamamatsu108Processor::scheduleNote (int delay, int toneIndex, float veloci
     if (numEvents >= (int) events.size() || tones.empty()) return;
     toneIndex = juce::jlimit (0, (int) tones.size() - 1, toneIndex);
     const int visual = tones.size() > 1 ? juce::roundToInt ((float) toneIndex * (numStrings - 1) / (float) (tones.size() - 1)) : numStrings / 2;
-    events[(size_t) numEvents++] = { juce::jmax (0, delay), tones[(size_t) toneIndex], juce::jlimit (0.05f, 1.0f, velocity), visual, ! eventsFromHost };
+    events[(size_t) numEvents++] = { juce::jmax (0, delay), juce::jlimit (0, 127, tones[(size_t) toneIndex] + 12 * juce::roundToInt (param (apvts, "harpOctave"))), juce::jlimit (0.05f, 1.0f, velocity), visual, ! eventsFromHost };
 }
 
 void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity, bool record)
@@ -906,7 +932,7 @@ void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity, 
     }
     else
         visual = juce::jlimit (0, numStrings - 1, (note - 48) * (numStrings - 1) / 48);
-    events[(size_t) numEvents++] = { juce::jmax (0, delay), juce::jlimit (0, 127, note), juce::jlimit (0.05f, 1.0f, velocity), visual, record && ! eventsFromHost };
+    events[(size_t) numEvents++] = { juce::jmax (0, delay), juce::jlimit (0, 127, note + 12 * juce::roundToInt (param (apvts, "harpOctave"))), juce::jlimit (0.05f, 1.0f, velocity), visual, record && ! eventsFromHost };
 }
 
 // one hand gesture across the strings, with human variation driven by Feel
@@ -1466,7 +1492,8 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     const int range = juce::roundToInt (param (apvts, "harpRange"));
     const int transpose = juce::roundToInt (param (apvts, "transpose"));
     // LIVE (the auto hand) and MEMO are retired: the plugin plays what you play, ARP is the only automatic mode
-    const int mode = juce::roundToInt (param (apvts, "strumMode")) == 1 ? 1 : 3;
+    // while the progression plays, its own generator plays the arp (the engine's ARP stays quiet)
+    const int mode = (juce::roundToInt (param (apvts, "strumMode")) == 1 && ! lastProgPlaying) ? 1 : 3;
     const int rateIndex = juce::roundToInt (param (apvts, "strumRate"));
 
     // host tempo / position
@@ -1555,6 +1582,23 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     for (const auto meta : midi)
         handleMidi (meta.getMessage(), meta.samplePosition);
 
+    // PROGRESSION follows the song: bar N plays slot N (the filled slots in a loop)
+    std::array<int, prog::numSlots> usedSlots {};
+    int numUsed = 0;
+    for (int i = 0; i < prog::numSlots; ++i) if (progSlots[(size_t) i].load() >= 0) usedSlots[(size_t) numUsed++] = i;
+    const bool progPlaying = progOn.load() && hostPlaying && numUsed > 0;
+    lastProgPlaying = progPlaying;
+    int progBar = 0;
+    if (progPlaying)
+    {
+        progBar = (int) std::floor (ppq / 4.0 + 1.0e-9);
+        const int slot = usedSlots[(size_t) (((progBar % numUsed) + numUsed) % numUsed)];
+        progSlotGui.store (slot);
+        const int c = progSlots[(size_t) slot].load();
+        if (c != latchedChord) { latchedChord = c; holdChord = -1; stackParts.clear(); stackParts.push_back (c); }
+    }
+    else progSlotGui.store (-1);
+
     int chord = resolveChord();
     const bool splitOn = juce::roundToInt (param (apvts, "keysPlay")) == 6 && ! chordZones.load();
     if (! splitOn) { splitChord = -1; splitHeld = 0; splitLeft.fill (false); numSplitHits = 0; }
@@ -1626,6 +1670,31 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     if (const int st = pendingStrum.exchange (0); st != 0 && ! tones.empty())
         sweep (0, st > 0, st > 0 ? 0 : (int) tones.size() - 1, (int) tones.size(), 0.8f, 0.8f);
+
+    if (progPlaying)
+    {
+        const double beatsPerSample = bpm / 60.0 / getSampleRate();
+        const double endPpq = ppq + numSamples * beatsPerSample;
+        const auto settings = progSettings();
+        for (int b = progBar; b <= (int) std::floor (endPpq / 4.0); ++b)
+        {
+            if (b != progBarCached)
+            {
+                progNotes.clear();
+                const int slot = usedSlots[(size_t) (((b % numUsed) + numUsed) % numUsed)];
+                const int prevSlot = usedSlots[(size_t) ((((b - 1) % numUsed) + numUsed) % numUsed)];
+                prog::bar (progSlots[(size_t) slot].load(), b, progSlots[(size_t) prevSlot].load(), settings, progNotes);
+                progBarCached = b;
+            }
+            for (const auto& nt : progNotes)
+            {
+                const double at = 4.0 * b + nt.beat;
+                if (at >= ppq - 1.0e-9 && at < endPpq)
+                    schedulePitch ((int) ((at - ppq) / beatsPerSample), nt.pitch, nt.velocity, true);
+            }
+        }
+    }
+    else progBarCached = -1000;
 
     // SPLIT right hand: white keys pluck one string each (C4 = the lowest), black keys strum the whole chord
     for (int i = 0; i < numSplitHits && ! tones.empty(); ++i)
@@ -2291,6 +2360,12 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
             seq.add (juce::String (seqDeg[(size_t) i].load()) + ":" + juce::String (seqOct[(size_t) i].load()) + ":" + juce::String (seqVel[(size_t) i].load(), 3) + ":"
                      + juce::String (seqRatchet[(size_t) i].load()) + ":" + juce::String (seqProb[(size_t) i].load(), 3) + ":" + juce::String (seqTie[(size_t) i].load()));
         state.setProperty ("arpSteps", seq.joinIntoString (","), nullptr);
+        juce::StringArray pr;
+        for (auto& sl : progSlots) pr.add (juce::String (sl.load()));
+        state.setProperty ("progression", pr.joinIntoString (","), nullptr);
+        state.setProperty ("progOn", progOn.load(), nullptr);
+        state.setProperty ("progMode", progMode.load(), nullptr);
+        state.setProperty ("progSeed", progSeed.load(), nullptr);
     }
     juce::StringArray mem;
     for (auto& m : memory) mem.add (juce::String (m.load()));
@@ -2336,6 +2411,13 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
                     customLen.store (cp.length());
                     for (int i = 0; i < cp.length(); ++i) customSteps[(size_t) i].store (juce::String ("DUduBHTxS.").containsChar (cp[i]) ? (int) cp[i] : '.');
                 }
+            }
+            {
+                const auto pr = juce::StringArray::fromTokens (state.getProperty ("progression").toString(), ",", {});
+                for (int i = 0; i < prog::numSlots; ++i) progSlots[(size_t) i].store (i < pr.size() ? juce::jlimit (-1, 100000, pr[i].getIntValue()) : -1);
+                progOn.store ((bool) state.getProperty ("progOn", false));
+                progMode.store (juce::jlimit (0, prog::numModes - 1, (int) state.getProperty ("progMode", 0)));
+                progSeed.store ((int) state.getProperty ("progSeed", 1));
             }
             {
                 const auto seq = juce::StringArray::fromTokens (state.getProperty ("arpSteps").toString(), ",", {});

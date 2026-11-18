@@ -99,6 +99,7 @@ namespace hama
             knobAt ("harpTone", "Tone", 44, a.getX(), a.getY() + 20, 100);
             knobAt ("harpRange", "Range", 44, a.getX() + 240, a.getY() + 20, 100);
             choice ("keysPlay", "YOUR KEYS / PIANO ROLL", { a.getX(), a.getY() + 130, 240, 44 });
+            choice ("harpOctave", "OCTAVE", { a.getX() + 260, a.getY() + 130, 110, 44 });
 
             auto b = panel (juce::String::fromUTF8 ("LAYER B  \xc2\xb7  DUAL"), 412, 0, 400, 250);
             toggle ("dual", "DUAL", { b.getX(), b.getY() + 14, 110, 30 });

@@ -7,6 +7,7 @@
 #include "Chords.h"
 #include "HarpVoice.h"
 #include "Layers.h"
+#include "Progression.h"
 #include "Effects.h"
 #include "Modulation.h"
 #include "Presets.h"
@@ -198,6 +199,16 @@ private:
     int pressCount = 0;
     float bendPos = -1.0f;              // pitch wheel strum: last position on the strings (0..1, -1 = not moved yet)
     float wheelPos = -1.0f;
+public:
+    // PROGRESSION: up to 8 chords, one bar each; plays with the song and drags out as MIDI
+    std::array<std::atomic<int>, prog::numSlots> progSlots;
+    std::atomic<bool> progOn { false };
+    std::atomic<int> progMode { prog::strum }, progSeed { 1 }, progEdit { -1 }, progSlotGui { -1 };
+    prog::Settings progSettings();
+private:
+    std::vector<prog::Note> progNotes;   // the bar being played
+    int progBarCached = -1000;
+    bool lastProgPlaying = false;
     layers::Svf masterFiltL, masterFiltR;   // FILTER on the whole instrument
     float cutSmooth = 20000.0f;             // mod wheel strum: the same for CC 1
     void wheelStrum (int samplePos, float pos, float& last);

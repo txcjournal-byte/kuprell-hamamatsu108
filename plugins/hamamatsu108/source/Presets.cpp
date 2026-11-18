@@ -175,6 +175,30 @@ namespace presets
                     b.set ("fx4Type", 19.0f); b.set ("fx4On", 1.0f);
                     b.set ("fx4A", b.range (0.2f, 0.8f)); b.set ("fx4B", b.range (0.15f, 0.35f)); b.set ("fx4Mix", b.range (0.25f, 0.45f));
                 }
+                // harp bent into strings and into bass: the same instrument, a different job
+                if (c == 4 && i < 4)
+                {
+                    static const char* sn[] = { "String Harp", "String Harp Wide", "String Harp Warm", "String Harp Glow" };
+                    p.name = sn[i];
+                    b.set ("harpVoice", 9.0f); b.set ("harpAttack", b.range (0.12f, 0.35f)); b.set ("harpSustain", b.range (0.5f, 0.8f));
+                    b.set ("harpRelease", b.range (0.8f, 1.6f)); b.set ("drive", b.range (0.2f, 0.4f)); b.set ("filterCutoff", b.range (6000.0f, 12000.0f));
+                    b.set ("fx5Type", 20.0f); b.set ("fx5On", 1.0f); b.set ("fx5A", 0.65f); b.set ("fx5B", 0.5f); b.set ("fx5Mix", 1.0f);
+                }
+                if (c == 1 && i >= 20)
+                {
+                    // EPIC HARP: big modern cinematic harp, wide, glowing on the chord, shimmering tail
+                    static const char* en[] = { "Epic Harp", "Epic Harp Rise", "Cinematic Harp", "Epic Harp Low" };
+                    p.name = en[i - 20];
+                    b.set ("harpVoice", (float) b.pick ({ 3, 1, 7 })); b.set ("dual", 1.0f); b.set ("harpVoice2", 9.0f); b.set ("morph", b.range (0.3f, 0.45f));
+                    b.set ("harpRange", 3.0f); b.set ("harpDecay", b.range (3.0f, 5.0f)); b.set ("harpSustain", 0.6f);
+                    if (i == 21) b.set ("harpAttack", 0.35f);                       // the rise: a swelling attack
+                    if (i == 23) { b.set ("harpOctave", -1.0f); b.set ("drive", 0.35f); }
+                    else b.set ("drive", b.range (0.12f, 0.22f));
+                    b.set ("fx3Type", 15.0f); b.set ("fx3On", 1.0f); b.set ("fx3A", 0.8f); b.set ("fx3B", 0.55f); b.set ("fx3Mix", 0.4f);   // shimmer
+                    b.set ("fx4Type", 17.0f); b.set ("fx4On", 1.0f); b.set ("fx4A", 0.55f); b.set ("fx4B", 0.5f); b.set ("fx4Mix", 0.35f);   // prism
+                    b.set ("lfo2QDst", (float) mod::targetIds().indexOf ("fx4A")); b.set ("lfo2QAmt", 0.3f); b.set ("lfo2Rate", 0.08f);
+                    b.set ("fx5Type", 20.0f); b.set ("fx5On", 1.0f); b.set ("fx5A", 0.75f); b.set ("fx5B", 0.55f); b.set ("fx5Mix", 1.0f);     // wide
+                }
                 p.values = std::move (b.v);
                 out.push_back (std::move (p));
             }

@@ -51,6 +51,7 @@ namespace hama
     class GroupSelector;
     class ModelDisplay;
     class PerformPanel;
+    class ProgressionStrip;
     class DeckSlider;
     class RearChoice;
 
@@ -82,6 +83,7 @@ namespace hama
         std::unique_ptr<GroupSelector> chordSel, bassSel;
         std::unique_ptr<ModelDisplay> modelDisplay;
         std::unique_ptr<PerformPanel> perform;
+        std::unique_ptr<ProgressionStrip> progression;
         std::unique_ptr<RearChoice> patternChoice, keysChoice;
         std::array<kuprell::Knob*, 3> fxKnobs {};
         juce::OwnedArray<kuprell::Knob> deckKnobs;

@@ -517,7 +517,14 @@ namespace hama
                         if (e.mods.isCtrlDown() || e.mods.isShiftDown() || e.mods.isCommandDown())
                             processor.addChord (pressed);     // stack it on the chord that is on
                         else
+                        {
                             processor.latchChord (pressed);   // stays on until clicked again or another chord is chosen
+                            if (const int ed = processor.progEdit.load(); ed >= 0)
+                            {
+                                processor.progSlots[(size_t) ed].store (pressed);   // PROGRESSION: fill the slot, go to the next
+                                processor.progEdit.store (ed + 1 < prog::numSlots ? ed + 1 : -1);
+                            }
+                        }
                         repaint();
                         return;
                     }
@@ -1682,8 +1689,8 @@ namespace hama
             for (auto* k : knobs) k->setStyle (st);
         }
 
-        juce::Rectangle<float> arpButton() const  { return { 14.0f, 30.0f, 128.0f, 28.0f }; }
-        juce::Rectangle<float> gateButton() const { return { 150.0f, 30.0f, 128.0f, 28.0f }; }
+        juce::Rectangle<float> arpButton() const  { return { 14.0f, 8.0f, 128.0f, 26.0f }; }
+        juce::Rectangle<float> gateButton() const { return { 150.0f, 8.0f, 128.0f, 26.0f }; }
         juce::Rectangle<float> tab (int i) const  { return { 300.0f + i * 86.0f, 2.0f, 82.0f, 18.0f }; }
         juce::Rectangle<float> bars() const       { return { 300.0f, 26.0f, (float) getWidth() - 314.0f, (float) getHeight() - 34.0f }; }
         juce::Rectangle<float> bar (int i) const  { auto b = bars(); const float w = b.getWidth() / 16.0f; return { b.getX() + i * w + 1.5f, b.getY(), w - 3.0f, b.getHeight() }; }
@@ -1692,8 +1699,8 @@ namespace hama
         {
             for (int i = 0; i < 4; ++i)
             {
-                arpKnobs[(size_t) i]->setBounds (10 + i * 70, 72, 70, 66);
-                gateKnobs[(size_t) i]->setBounds (10 + i * 70, 72, 70, 66);
+                arpKnobs[(size_t) i]->setBounds (10 + i * 70, 40, 70, 66);
+                gateKnobs[(size_t) i]->setBounds (10 + i * 70, 40, 70, 66);
             }
         }
 
@@ -1720,11 +1727,6 @@ namespace hama
             g.drawHorizontalLine (0, 10.0f, (float) getWidth() - 10.0f);
             g.setFont (spaced (8.5f, true, 0.2f));
             g.setColour (juce::Colour (0xff9aa0a7));
-            g.drawText (view == 0 ? "ARPEGGIO" : "GATE", juce::Rectangle<float> (14.0f, 8.0f, 200.0f, 14.0f), juce::Justification::centredLeft, false);
-            g.setFont (LookAndFeel::uiFont (10.0f));
-            g.setColour (juce::Colour (0xff6e737a));
-            g.drawFittedText (view == 0 ? "ARP plays the chord note by note. More in EDIT > ARP & GATE." : "GATE chops the sound in time. More in EDIT > ARP & GATE.",
-                              juce::Rectangle<int> (14, 146, 270, 28), juce::Justification::topLeft, 2);
 
             const bool arpOn = juce::roundToInt (plain (processor.apvts, "strumMode")) == 1;
             const bool gateOn = plain (processor.apvts, "gateOn") > 0.5f;
@@ -1837,6 +1839,220 @@ namespace hama
         bool paintOn = true;
     };
 
+
+    //==========================================================================
+    // PROGRESSION: up to 8 chords, one bar each. Click a slot, then chord buttons fill it.
+    // PLAY follows the song; DRAG 4 / 8 drops the finished MIDI clip into the piano roll.
+    class ProgressionStrip : public juce::Component, public juce::SettableTooltipClient
+    {
+    public:
+        explicit ProgressionStrip (Hamamatsu108Processor& p) : processor (p)
+        {
+            setTooltip ("PROGRESSION: click a slot, then chord buttons. PLAY = plays with the song, DRAG 4 / 8 = drag the MIDI into the piano roll.");
+        }
+        std::function<void (const juce::String&, const juce::String&)> onStatus;
+
+        juce::Rectangle<float> playButton() const { return { 0.0f, 6.0f, 58.0f, 30.0f }; }
+        juce::Rectangle<float> slot (int i) const { return { 64.0f + i * 39.0f, 6.0f, 36.0f, 30.0f }; }
+        juce::Rectangle<float> modeButton() const { return { 382.0f, 6.0f, 78.0f, 30.0f }; }
+        juce::Rectangle<float> diceButton() const { return { 464.0f, 6.0f, 30.0f, 30.0f }; }
+        juce::Rectangle<float> dragButton (int i) const { return { 498.0f + i * 49.0f, 6.0f, 46.0f, 30.0f }; }
+
+        void update()
+        {
+            juce::String sig;
+            for (auto& sl : processor.progSlots) sig << sl.load() << ",";
+            sig << (processor.progOn.load() ? 1 : 0) << processor.progMode.load() << processor.progEdit.load() << "|" << processor.progSlotGui.load()
+                << "|" << plain (processor.apvts, "strumPattern");
+            if (sig != last) { last = sig; repaint(); }
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            drawHardButton (g, playButton(), "PLAY", processor.progOn.load(), true, true);
+            const int edit = processor.progEdit.load(), playing = processor.progSlotGui.load();
+            for (int i = 0; i < prog::numSlots; ++i)
+            {
+                auto r = slot (i);
+                const int c = processor.progSlots[(size_t) i].load();
+                drawDisplay (g, r, 5.0f);
+                if (i == playing)
+                {
+                    g.setColour (th().accent.withAlpha (0.22f));
+                    g.fillRoundedRectangle (r.reduced (2.0f), 4.0f);
+                }
+                if (i == edit)
+                {
+                    g.setColour (th().accent);
+                    g.drawRoundedRectangle (r.reduced (1.0f), 5.0f, 1.6f);
+                }
+                g.setFont (LookAndFeel::monoFont (c >= 0 && chords::shortName (c).length() > 4 ? 10.0f : 12.0f));
+                if (c >= 0) glowText (g, chords::shortName (c), r, juce::Justification::centred, i == playing ? 1.0f : 0.8f);
+                else
+                {
+                    g.setColour (juce::Colours::white.withAlpha (i == edit ? 0.6f : 0.22f));
+                    g.drawText (i == edit ? "?" : juce::String (i + 1), r, juce::Justification::centred, false);
+                }
+            }
+            const int mode = processor.progMode.load();
+            juce::String modeText = prog::modeNames()[mode];
+            drawHardButton (g, modeButton(), modeText + juce::String::fromUTF8 (" \xe2\x96\xbe"), false, true, false);
+            drawHardButton (g, diceButton(), {}, false, true, false);
+            {
+                // dice icon
+                auto d = diceButton().withTrimmedBottom (4.0f).withSizeKeepingCentre (14.0f, 14.0f);
+                g.setColour (juce::Colour (0xffecedef));
+                g.drawRoundedRectangle (d, 3.0f, 1.4f);
+                for (auto pt : { juce::Point<float> (0.3f, 0.3f), juce::Point<float> (0.7f, 0.7f), juce::Point<float> (0.5f, 0.5f) })
+                    g.fillEllipse (d.getX() + d.getWidth() * pt.x - 1.5f, d.getY() + d.getHeight() * pt.y - 1.5f, 3.0f, 3.0f);
+            }
+            for (int i = 0; i < 2; ++i)
+            {
+                drawHardButton (g, dragButton (i), {}, false, true, false);
+                auto t = dragButton (i).withTrimmedBottom (4.0f);
+                g.setFont (spaced (8.0f, true, 0.1f));
+                g.setColour (juce::Colour (0xff9aa0a7));
+                g.drawText ("DRAG", t.removeFromTop (t.getHeight() * 0.5f).translated (0.0f, 2.0f), juce::Justification::centred, false);
+                g.setFont (LookAndFeel::uiFont (11.0f, true));
+                g.setColour (th().accent);
+                g.drawText (i == 0 ? "4 BARS" : "8 BARS", t.translated (0.0f, -1.0f), juce::Justification::centred, false);
+            }
+        }
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            const auto p = e.position;
+            dragFrom = -1;
+            if (playButton().contains (p))
+            {
+                processor.progOn.store (! processor.progOn.load());
+                status ("PROGRESSION", processor.progOn.load() ? "plays with the song: press play in FL Studio" : "off");
+            }
+            for (int i = 0; i < prog::numSlots; ++i)
+                if (slot (i).contains (p))
+                {
+                    if (e.mods.isPopupMenu()) { slotMenu (i); return; }
+                    processor.progEdit.store (processor.progEdit.load() == i ? -1 : i);
+                    status ("Slot " + juce::String (i + 1), processor.progEdit.load() >= 0 ? "now click a chord button" : "done");
+                }
+            if (modeButton().contains (p)) modeMenu();
+            if (diceButton().contains (p))
+            {
+                processor.progSeed.store (juce::Random::getSystemRandom().nextInt (100000) + 1);
+                status ("New idea", processor.progMode.load() == prog::melody ? "a new melody" : "a new variation");
+            }
+            for (int i = 0; i < 2; ++i) if (dragButton (i).contains (p)) dragFrom = i;
+            repaint();
+        }
+
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            if (dragFrom < 0 || dragging || e.getDistanceFromDragStart() < 5) return;
+            const auto file = writeClip (dragFrom == 0 ? 4 : 8);
+            if (! file.existsAsFile()) { status ("PROGRESSION", "empty: click a slot, then chord buttons"); return; }
+            dragging = true;
+            juce::Component::SafePointer<ProgressionStrip> safe (this);
+            juce::DragAndDropContainer::performExternalDragDropOfFiles ({ file.getFullPathName() }, false, this,
+                                                                       [safe] { if (safe != nullptr) safe->dragging = false; });
+        }
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            if (dragFrom >= 0 && ! dragging && e.getDistanceFromDragStart() < 5)
+                status ("DRAG", "hold the mouse and drag this button into the piano roll or a track");
+            dragFrom = -1;
+        }
+
+    private:
+        void status (const juce::String& a, const juce::String& b) { if (onStatus) onStatus (a, b); }
+
+        void slotMenu (int i)
+        {
+            juce::PopupMenu m, ready;
+            const int key = juce::roundToInt (plain (processor.apvts, "keyRoot"));
+            const bool minor = plain (processor.apvts, "keyMode") > 0.5f;
+            for (int r = 0; r < (int) prog::readyMade().size(); ++r) ready.addItem (100 + r, prog::readyMade()[(size_t) r].name);
+            m.addSubMenu ("Ready-made in " + juce::String (chords::rootName (key)) + (minor ? " minor" : " major"), ready);
+            m.addSeparator();
+            m.addItem (1, "Clear this slot", processor.progSlots[(size_t) i].load() >= 0);
+            m.addItem (2, "Clear all");
+            juce::Component::SafePointer<ProgressionStrip> safe (this);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (slot (i).toNearestInt())), [safe, i, key, minor] (int r)
+            {
+                if (safe == nullptr || r <= 0) return;
+                auto& pr = safe->processor;
+                if (r == 1) pr.progSlots[(size_t) i].store (-1);
+                if (r == 2) for (auto& sl : pr.progSlots) sl.store (-1);
+                if (r >= 100)
+                {
+                    const auto& rm = prog::readyMade()[(size_t) (r - 100)];
+                    for (int k = 0; k < prog::numSlots; ++k) pr.progSlots[(size_t) k].store (k < 4 ? prog::chordOnDegree (key, minor, rm.deg[(size_t) k]) : -1);
+                    pr.progOn.store (true);
+                    safe->status ("PROGRESSION", juce::String (rm.name) + ": press play in FL Studio, or drag 4 / 8 bars");
+                }
+                safe->repaint();
+            });
+        }
+
+        void modeMenu()
+        {
+            juce::PopupMenu m, pats;
+            const int mode = processor.progMode.load();
+            const int pat = juce::roundToInt (plain (processor.apvts, "strumPattern"));
+            for (int i = 1; i < Hamamatsu108Processor::strumPatternNames().size() - 1; ++i)
+                pats.addItem (200 + i, Hamamatsu108Processor::strumPatternNames()[i], true, mode == prog::strum && pat == i);
+            m.addSubMenu ("STRUM: a strum rhythm", pats, true, nullptr, mode == prog::strum);
+            m.addItem (2, "ARP: note by note (settings: ARP panel / EDIT > ARP & GATE)", true, mode == prog::arp);
+            m.addItem (3, "MELODY: a tune over the chords (dice = new tune)", true, mode == prog::melody);
+            juce::Component::SafePointer<ProgressionStrip> safe (this);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (modeButton().toNearestInt())), [safe] (int r)
+            {
+                if (safe == nullptr || r <= 0) return;
+                auto& pr = safe->processor;
+                if (r >= 200) { pr.progMode.store (prog::strum); setParam (pr.apvts, "strumPattern", (float) (r - 200)); }
+                if (r == 2) pr.progMode.store (prog::arp);
+                if (r == 3) pr.progMode.store (prog::melody);
+                safe->repaint();
+            });
+        }
+
+        juce::File writeClip (int bars)
+        {
+            std::array<int, prog::numSlots> slots {};
+            for (int i = 0; i < prog::numSlots; ++i) slots[(size_t) i] = processor.progSlots[(size_t) i].load();
+            const auto st = processor.progSettings();
+            const auto notes = prog::clip (slots, bars, st);
+            if (notes.empty()) return {};
+            const int ppqTicks = 960;
+            juce::MidiMessageSequence seq;
+            seq.addEvent (juce::MidiMessage::tempoMetaEvent (juce::roundToInt (60000000.0 / st.bpm)), 0.0);
+            seq.addEvent (juce::MidiMessage::textMetaEvent (3, "Hamamatsu 144"), 0.0);
+            for (auto& n : notes)
+            {
+                const double on = n.beat * ppqTicks, off = (n.beat + n.length) * ppqTicks;
+                const int pitch = juce::jlimit (0, 127, n.pitch + 12 * st.octave);
+                seq.addEvent (juce::MidiMessage::noteOn (1, pitch, juce::jlimit (0.05f, 1.0f, n.velocity)), on);
+                seq.addEvent (juce::MidiMessage::noteOff (1, pitch), juce::jmax (on + 10.0, off));
+            }
+            seq.addEvent (juce::MidiMessage::endOfTrack(), 4.0 * bars * ppqTicks);
+            seq.updateMatchedPairs();
+            juce::MidiFile mf;
+            mf.setTicksPerQuarterNote (ppqTicks);
+            mf.addTrack (seq);
+            auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Hamamatsu " + prog::modeNames()[st.mode].toLowerCase() + " " + juce::String (bars) + " bars.mid");
+            f.deleteFile();
+            juce::FileOutputStream os (f);
+            if (! os.openedOk()) return {};
+            mf.writeTo (os);
+            os.flush();
+            return f;
+        }
+
+        Hamamatsu108Processor& processor;
+        juce::String last;
+        int dragFrom = -1;
+        bool dragging = false;
+    };
+
     //==========================================================================
     InstrumentView::InstrumentView (Hamamatsu108Processor& p) : processor (p)
     {
@@ -1847,6 +2063,7 @@ namespace hama
         capture = std::make_unique<MidiCapture> (p);
         rail = std::make_unique<MemoryRail> (p);
         perform = std::make_unique<PerformPanel> (p);
+        progression = std::make_unique<ProgressionStrip> (p);
         patternChoice = std::make_unique<RearChoice> (p, "strumPattern", "PATTERN", "How the hand strums (LIVE)");
         keysChoice = std::make_unique<RearChoice> (p, "keysPlay", "YOUR KEYS", "What your keyboard / piano-roll notes do");
         modelDisplay = std::make_unique<ModelDisplay> (p);
@@ -1860,6 +2077,8 @@ namespace hama
         addAndMakeVisible (*capture);
         addChildComponent (*rail);   // chord memory is not on the PLAY page any more
         addAndMakeVisible (*perform);
+        addAndMakeVisible (*progression);
+        progression->onStatus = [this] (const juce::String& a, const juce::String& b) { if (onStatus) onStatus (a, b); };
         addAndMakeVisible (*patternChoice);
         addAndMakeVisible (*keysChoice);
         perform->onStatus = [this] (const juce::String& a, const juce::String& b) { if (onStatus) onStatus (a, b); };
@@ -1922,7 +2141,8 @@ namespace hama
     {
         backdrop->setBounds (getLocalBounds());
         pad->setBounds (geo::padArea().withHeight (126));
-        perform->setBounds (geo::padArea().withTrimmedTop (128).reduced (4, 4));
+        progression->setBounds (geo::padArea().getX() + 14, geo::padArea().getY() + 128, geo::padArea().getWidth() - 28, 42);
+        perform->setBounds (geo::padArea().withTrimmedTop (172).reduced (4, 4));
         patternChoice->setVisible (false);   // LIVE strum retired
         keysChoice->setVisible (false);      // keys always play Split (Settings)
         modelDisplay->setVisible (false);    // character lives in EDIT > FILTER; the preset bar sits up here now
@@ -2017,6 +2237,7 @@ namespace hama
         capture->update();
         rail->update();
         perform->update();
+        progression->update();
         patternChoice->update();
         keysChoice->update();
         modelDisplay->update();

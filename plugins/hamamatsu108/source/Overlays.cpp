@@ -253,13 +253,13 @@ namespace hama
             { 140, 215, "Chord buttons", "Click = latch a chord, right-click = more types, Ctrl+click = combine. A dot = fits the key." },
             { 845, 330, "Strum plate", "Try the strings with the mouse. To really play, use the keys (see below)." },
             { 1030, 208, "Voice", "The lit screen: sound and what the strum does now. VOICE, MORPH, RATE, FEEL, SPEED." },
-            { 1030, 357, "Mode", "LIVE: the hand strums a pattern. ARP: arpeggio. OFF: only what you play." },
-            { 140, 330, "The hand", "Swing, variation, stroke. ARP / GATE switch the steps on the right; drag = step strength." },
-            { 550, 112, "Pattern / keys", "PATTERN = the LIVE rhythm. YOUR KEYS = what your keyboard does (Split by default)." },
-            { 740, 112, "MIDI capture", "Records what you play. Drag it into the piano roll. Menu: Detail / Smooth / Reset." },
+            { 1000, 360, "MIDI capture", "Records what you play. Drag it into the piano roll. Menu: Detail / Smooth / Reset." },
+            { 140, 380, "Arp / gate", "ARP plays the chord note by note, GATE chops it. Drag the bars = step strength." },
+            { 140, 318, "Progression", "Click a slot, then chord buttons. PLAY = with the song, STRUM / ARP / MELODY, DRAG 4 / 8 bars into the piano roll." },
+            { 1100, 112, "EDIT", "Sound, arp & gate, filter, modulation and FX." },
             { 140, 560, "Sound deck", "Harp, envelope (ADSR), chord layer, bass, FX, macros and master volume." },
-            { 560, 26, "Presets", "Click the name for the browser, arrows for next / previous, Save for your own bank." },
-            { 1225, 26, "EDIT", "Engine, strum & arp, keys, modulation, FX and character." } };
+            { 520, 112, "Presets", "Click the name for the browser, arrows for next / previous, Save for your own bank." },
+            { 140, 560, "Filter", "Cutoff, resonance and saturation on the whole instrument." } };
         int n = 1;
         for (auto& b : bubbles)
         {
