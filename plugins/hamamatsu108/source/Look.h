@@ -107,8 +107,30 @@ namespace hama::look
         }
     }
 
+   #ifndef LCD_TOP
+    #define LCD_TOP 0xff7ff6ff
+    #define LCD_MID 0xff3fe0f0
+    #define LCD_BOT 0xff16b9d4
+    #define LCD_INK 0xff032026
+   #endif
     inline void drawDisplay (juce::Graphics& g, juce::Rectangle<float> r, float radius)
     {
+        if (th().lcdNow)
+        {
+            // backlit LCD: pale aqua glass, a soft inner shadow at the top
+            // glow around the glass, then a strong aqua backlight
+            g.setColour (th().accent.withAlpha (0.35f));
+            g.fillRoundedRectangle (r.expanded (2.5f), radius + 2.5f);
+            juce::ColourGradient lcd (juce::Colour (LCD_TOP), r.getX(), r.getY(), juce::Colour (LCD_BOT), r.getX(), r.getBottom(), false);
+            lcd.addColour (0.45, juce::Colour (LCD_MID));
+            g.setGradientFill (lcd);
+            g.fillRoundedRectangle (r, radius);
+            g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.22f), r.getX(), r.getY(), juce::Colours::transparentBlack, r.getX(), r.getY() + 8.0f, false));
+            g.fillRoundedRectangle (r, radius);
+            g.setColour (juce::Colours::black.withAlpha (0.85f));
+            g.drawRoundedRectangle (r, radius, 1.5f);
+            return;
+        }
         g.setGradientFill (juce::ColourGradient (juce::Colour (0xff040607), r.getX(), r.getY(),
                                                  juce::Colour (0xff0a0e10), r.getX(), r.getBottom(), false));
         g.fillRoundedRectangle (r, radius);
@@ -118,6 +140,14 @@ namespace hama::look
 
     inline void glowText (juce::Graphics& g, const juce::String& text, juce::Rectangle<float> r, juce::Justification j, float alpha = 1.0f)
     {
+        if (th().lcdNow)
+        {
+            g.setColour (juce::Colours::black.withAlpha (0.08f * alpha));
+            g.drawText (text, r.translated (0.8f, 0.8f), j, false);   // LCD segment shadow
+            g.setColour (juce::Colour (LCD_INK).withAlpha (0.95f * alpha));
+            g.drawText (text, r, j, false);
+            return;
+        }
         g.setColour (th().accent.withAlpha (0.22f * alpha));
         g.drawText (text, r.translated (0.0f, 0.6f), j, false);
         g.setColour (th().soft.withAlpha (alpha));

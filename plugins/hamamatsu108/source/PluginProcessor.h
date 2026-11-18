@@ -99,6 +99,7 @@ public:
     std::array<std::atomic<int>, 4> stackGui { -1, -1, -1, -1 };                         // chords of the stack (GUI highlight)   // mouse up (matters when HOLD is off)
     void previewPreset() { previewRequest.store (true); }                            // short demo strum after a preset click
     void pluckString (int visualIndex) { pendingPlucks.fetch_or (1u << (unsigned) visualIndex); }
+    void strumNow (bool down) { pendingStrum.store (down ? 1 : -1); }   // PC keyboard: a whole stroke
 
     //== audio -> GUI state
     std::atomic<int> activeChord { -1 };
@@ -196,6 +197,16 @@ private:
     std::array<int, 32> pressOrder {};   // held notes in the order they were pressed (ARP "As Played")
     int pressCount = 0;
     float bendPos = -1.0f;              // pitch wheel strum: last position on the strings (0..1, -1 = not moved yet)
+    float wheelPos = -1.0f;             // mod wheel strum: the same for CC 1
+    void wheelStrum (int samplePos, float pos, float& last);
+    // SPLIT keys: below C4 the left hand picks the chord, from C4 up the white keys are the strings
+    static constexpr int splitPoint = 60;
+    int splitChord = -1, splitHeld = 0;
+    std::array<bool, 128> splitLeft {};
+    struct SplitHit { int pos; int string; float vel; int strum; };   // strum: 0 = one string, 1 = down, -1 = up
+    std::array<SplitHit, 64> splitHits {};
+    int numSplitHits = 0;
+    int chordFromMask (int mask, int lowest);
     double gateClock = 0.0;              // free-running gate position (host stopped), in steps
     float gateGain = 1.0f;
     std::vector<float> gateBuf;
@@ -229,6 +240,7 @@ private:
     bool previewStroke = false, previewMute = false;   // preview = one stroke, never recorded
     void capture (double seconds, int note, float velocity, int layer, bool on);
     std::atomic<std::uint32_t> pendingPlucks { 0 };
+    std::atomic<int> pendingStrum { 0 };
     int latchedChord = -1, holdChord = -1, deferredRelease = -1;
     int rootHeldMask = 0, lastRoot = -1, typeHeldStack[16] {}, numTypesHeld = 0;
     int sounding = -1;

@@ -48,7 +48,7 @@ namespace hama
 
     juce::Rectangle<float> SettingsView::swatch (int i) const
     {
-        return { 40.0f + (i % 5) * 150.0f, 60.0f + (i / 5) * 132.0f, 138.0f, 120.0f };
+        return { 36.0f + (i % 6) * 125.0f, 60.0f + (i / 6) * 132.0f, 117.0f, 120.0f };
     }
     juce::Rectangle<float> SettingsView::zoomButton (int i) const { return { 830.0f + (i % 3) * 136.0f, 70.0f + (i / 3) * 44.0f, 126.0f, 36.0f }; }
     juce::Rectangle<float> SettingsView::rowButton (int row, int i) const
@@ -63,7 +63,7 @@ namespace hama
         // skins
         panelBox (g, { 24.0f, 20.0f, 770.0f, 330.0f }, juce::String::fromUTF8 ("SKIN  \xc2\xb7  THEMED EDITIONS"));
         const int cur = processor.skin.load();
-        for (int i = 0; i < 10; ++i)
+        for (int i = 0; i < skins::numSkins; ++i)
         {
             const auto& sk = skins::get (i);
             auto r = swatch (i);
@@ -167,7 +167,7 @@ namespace hama
         g.setFont (LookAndFeel::uiFont (11.0f));
         g.drawFittedText ("Keyswitches (FL note names): C0..D#0 = LIVE / ARP / MEMO / OFF, C1..B1 = the LIVE pattern - write them in the piano roll. "
                           "PC keyboard (while the plugin window has focus): Q-row major, A-row minor, Z-row 7th chords, Shift = stack, "
-                          "number row = strings. Pitch wheel strums, mod wheel shortens the notes. MIDI OUT: harp ch 1, chord layer ch 2, bass ch 3 - "
+                          "number row = strings, - / = strum down / up. YOUR KEYS = Split: left hand chord, right hand (C4 up) white keys = strings, black keys = strum. Pitch wheel and mod wheel strum the strings. MIDI OUT: harp ch 1, chord layer ch 2, bass ch 3 - "
                           "in FL set this plugin's MIDI output port and another instrument's input port to the same number.", juce::Rectangle<int> (830, 536, 410, 62), juce::Justification::topLeft, 6);
         drawHardButton (g, { 830.0f, 600.0f, 398.0f, 40.0f }, "BACK TO PLAY", true, true, false);
     }
@@ -176,7 +176,7 @@ namespace hama
     {
         const auto p = e.position;
         bool changed = false;
-        for (int i = 0; i < 10; ++i) if (swatch (i).contains (p)) { processor.skin.store (i); changed = true; }
+        for (int i = 0; i < skins::numSkins; ++i) if (swatch (i).contains (p)) { processor.skin.store (i); changed = true; }
         for (int i = 0; i < 6; ++i) if (zoomButton (i).contains (p) && onZoom) onZoom (zooms[i] / 100.0);
         if (juce::Rectangle<float> (830.0f, 158.0f, 398.0f, 32.0f).contains (p) && onFit) onFit();
         if (juce::Rectangle<float> (960.0f, 250.0f, 40.0f, 34.0f).contains (p)) { processor.tuningA4.store (juce::jmax (400.0f, processor.tuningA4.load() - 0.5f)); changed = true; }
@@ -250,16 +250,16 @@ namespace hama
         struct Bubble { float x, y; const char* title; const char* text; };
         // positions in PLAY page coordinates (instrument area starts at y = 52)
         static const Bubble bubbles[] = {
-            { 150, 200, "Chord buttons", "108 chords: rows are types, columns are roots. Click one to play it. A dot = fits the key." },
-            { 845, 200, "Strum plate", "Drag the mouse across the strings. It lights up whenever a string sounds." },
-            { 1040, 180, "Voice", "VOICE picks one of 10 harp sounds, MORPH blends layer A and B when DUAL is on." },
-            { 1040, 360, "Strum mode", "LIVE: the hand strums in time. ARP: arpeggio. MEMO: plays the memory. OFF: only you." },
-            { 200, 612, "Sound deck", "Harp, chord layer, bass, vibrato, FX and the AGE / DREAM / WOBBLE macros." },
-            { 400, 708, "Chord memory", "8 banks of 16 chords. REC, click chords, then MEMO plays them. DRAG MIDI exports them." },
-            { 740, 130, "MIDI capture", "Records what the plugin plays. Drag it into FL Studio to get a MIDI clip." },
-            { 1000, 130, "Sound", "The sound playing now. Click to pick another voice." },
-            { 560, 26, "Presets", "144 factory sounds. Click the name for the browser, arrows for next / previous." },
-            { 1225, 26, "EDIT", "Deep editing: engine, strum, chords, memory, modulation, FX and character." } };
+            { 140, 215, "Chord buttons", "Click = latch a chord, right-click = more types, Ctrl+click = combine. A dot = fits the key." },
+            { 845, 330, "Strum plate", "Try the strings with the mouse. To really play, use the keys (see below)." },
+            { 1030, 208, "Voice", "The lit screen: sound and what the strum does now. VOICE, MORPH, RATE, FEEL, SPEED." },
+            { 1030, 357, "Mode", "LIVE: the hand strums a pattern. ARP: arpeggio. OFF: only what you play." },
+            { 140, 330, "The hand", "Swing, variation, stroke. ARP / GATE switch the steps on the right; drag = step strength." },
+            { 550, 112, "Pattern / keys", "PATTERN = the LIVE rhythm. YOUR KEYS = what your keyboard does (Split by default)." },
+            { 740, 112, "MIDI capture", "Records what you play. Drag it into the piano roll. Menu: Detail / Smooth / Reset." },
+            { 140, 560, "Sound deck", "Harp, envelope (ADSR), chord layer, bass, FX, macros and master volume." },
+            { 560, 26, "Presets", "Click the name for the browser, arrows for next / previous, Save for your own bank." },
+            { 1225, 26, "EDIT", "Engine, strum & arp, keys, modulation, FX and character." } };
         int n = 1;
         for (auto& b : bubbles)
         {
@@ -274,7 +274,7 @@ namespace hama
             ++n;
         }
         // legend
-        auto legend = juce::Rectangle<float> (170.0f, 222.0f, 640.0f, 360.0f);
+        auto legend = juce::Rectangle<float> (172.0f, 150.0f, 646.0f, 500.0f);
         g.setColour (juce::Colour (0xf0141517));
         g.fillRoundedRectangle (legend, 14.0f);
         g.setColour (th().accent.withAlpha (0.6f));
@@ -286,13 +286,33 @@ namespace hama
         n = 1;
         for (auto& b : bubbles)
         {
-            auto row = in.removeFromTop (28.0f);
+            auto row = in.removeFromTop (26.0f);
             g.setFont (LookAndFeel::uiFont (12.5f, true));
             g.setColour (th().accent);
             g.drawText (juce::String (n++) + "  " + b.title, row.removeFromLeft (150.0f), juce::Justification::centredLeft, false);
             g.setFont (LookAndFeel::uiFont (12.0f));
             g.setColour (juce::Colour (0xffc9ccd1));
             g.drawFittedText (b.text, row.toNearestInt(), juce::Justification::centredLeft, 2, 0.9f);
+        }
+        // playing with keys (the real way to play; the mouse is for trying)
+        in.removeFromTop (8.0f);
+        g.setFont (spaced (10.0f, true, 0.3f));
+        g.setColour (th().soft);
+        g.drawText ("PLAY WITH KEYS", in.removeFromTop (20.0f), juce::Justification::centredLeft, false);
+        static const char* keys[][2] = {
+            { "MIDI keyboard", "YOUR KEYS = Split: left hand (below C4) picks the chord - one key = the chord of the key on that degree." },
+            { "", "Right hand from C4: white keys = single strings (low to high), black keys = whole strum (C#, F# down, D# G# A# up)." },
+            { "Wheels", "Pitch wheel or mod wheel = a finger across the strings. Harder key = louder strum." },
+            { "PC keyboard", "Q-row major, A-row minor, Z-row 7th (Shift = add), number row = strings, - / = = strum down / up." } };
+        for (auto& k : keys)
+        {
+            auto row = in.removeFromTop (30.0f);
+            g.setFont (LookAndFeel::uiFont (12.5f, true));
+            g.setColour (th().accent);
+            g.drawText (k[0], row.removeFromLeft (150.0f), juce::Justification::centredLeft, false);
+            g.setFont (LookAndFeel::uiFont (12.0f));
+            g.setColour (juce::Colour (0xffc9ccd1));
+            g.drawFittedText (k[1], row.toNearestInt(), juce::Justification::centredLeft, 2, 0.85f);
         }
         g.setFont (LookAndFeel::uiFont (11.5f));
         g.setColour (juce::Colour (0xff9aa0a7));

@@ -15,6 +15,12 @@ namespace skins
     inline Accent turquoise() { return { juce::Colour (0xff3fe0d0), juce::Colour (0xffa6f7ef), juce::Colour (0xff139488) }; }
     inline Accent iceBlue()   { return { juce::Colour (0xff6fb8ff), juce::Colour (0xffc4e2ff), juce::Colour (0xff2f73c9) }; }
     inline Accent pink()      { return { juce::Colour (0xffff6fb4), juce::Colour (0xffffc2df), juce::Colour (0xffc93a7f) }; }
+   #ifndef ACC_MAIN
+    #define ACC_MAIN 0xff2ff0f5
+    #define ACC_SOFT 0xffbffcff
+    #define ACC_DEEP 0xff10c2d6
+   #endif
+    inline Accent mint()      { return { juce::Colour (ACC_MAIN), juce::Colour (ACC_SOFT), juce::Colour (ACC_DEEP) }; }   // bright backlight
 
     struct Skin
     {
@@ -33,12 +39,14 @@ namespace skins
         const char* frontText;
         Accent accent;
         float panelAlpha = 1.0f;              // Frozen: see-through acrylic
+        bool lcd = false;                     // Graphite: light LCD displays
     };
 
-    inline const std::array<Skin, 10>& all()
+    constexpr int numSkins = 11;
+    inline const std::array<Skin, numSkins>& all()
     {
         using C = juce::Colour;
-        static const std::array<Skin, 10> s {{
+        static const std::array<Skin, numSkins> s {{
             { "Classic", C (0xff555b63), C (0xff3a3f46), C (0xff2c3036), Cheek::walnut, C (0xff7a4b2a), C (0xff3e2412), Pattern::none, Grille::holes,
               C (0xff3a3e44), C (0xff2a2d32), C (0xffe4e7ea), C (0xffb9bec4), C (0xff9da3aa), C (0xff2e3237), C (0xff16181b), C (0xffa7aeb6),
               "", C (0x00000000), C (0x00000000), "ELECTRONIC STRUM HARP", turquoise() },
@@ -69,11 +77,22 @@ namespace skins
             { "Arcade", C (0xffff6fb4), C (0xff6fb8ff), C (0xff3fe0d0), Cheek::pixels, C (0xff6fb8ff), C (0xffff6fb4), Pattern::rainbow, Grille::checker,
               C (0xff2a2d32), C (0xff14161a), C (0xffeceef1), C (0xffc8cdd3), C (0xffaeb4bb), C (0xff2a2d32), C (0xff0e1013), C (0xd9ffffff),
               "\xe2\x99\xa5 ARCADE", C (0xff0e1013), C (0xff9df2b5), "INSERT COIN \xc2\xb7 ARCADE EDITION", pink() },
+            // Graphite: matte dark hardware, black rubber, white print
+            { "Graphite", C (0xff2a2b2f), C (0xff1f2023), C (0xff17181b), Cheek::carbon, C (0xff1d1e20), C (0xff111213), Pattern::none, Grille::holes,
+              C (0xff1d1e21), C (0xff121314), C (0xff2e2f33), C (0xff26272b), C (0xff1f2023), C (0xff1c1d20), C (0xff0c0d0e), C (0xd0ffffff),
+              "", C (0x00000000), C (0x00000000), "ELECTRONIC STRUM HARP", mint(), 1.0f, true },
         }};
         return s;
     }
 
-    inline const Skin& get (int i) { return all()[(size_t) juce::jlimit (0, 9, i)]; }
+    inline const Skin& get (int i) { return all()[(size_t) juce::jlimit (0, numSkins - 1, i)]; }
+    inline int& currentIndex() { static int i = 0; return i; }
+    // print on the deck: dark on the light silver decks, light on dark ones
+    inline juce::Colour deckInk (bool value)
+    {
+        const bool dark = get (currentIndex()).deckMid.getPerceivedBrightness() < 0.45f;
+        return dark ? juce::Colour (value ? 0xff9aa0a7 : 0xffe8eaee) : juce::Colour (value ? 0xff4a5058 : 0xff22262b);
+    }
 
     //==========================================================================
     inline void paintPattern (juce::Graphics& g, juce::Rectangle<float> r, Pattern p)

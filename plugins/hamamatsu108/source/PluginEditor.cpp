@@ -44,7 +44,7 @@ void StatusBar::paint (juce::Graphics& g)
     g.setColour (colours::textFaint);
     g.drawText ("Zoom " + juce::String (zoom) + " %", r.removeFromRight (80), juce::Justification::centredRight, false);
     g.drawText ("Voices " + juce::String (voices) + " / " + juce::String (Hamamatsu108Processor::numVoices), r.removeFromRight (110), juce::Justification::centredRight, false);
-    g.drawText (juce::String::fromUTF8 ("Keys: one key = a harp run \xc2\xb7 C3 major, C4 minor, C5 7"),
+    g.drawText (juce::String::fromUTF8 ("Keys: left hand = chord \xc2\xb7 from C4 white = strings, black = strum"),
                 r.removeFromRight (340), juce::Justification::centredRight, false);
 }
 
@@ -365,7 +365,7 @@ void Hamamatsu108Editor::updateKeyboardFocus()
     const bool on = audioProcessor.pcKeys.load();
     setWantsKeyboardFocus (on);
     if (on && isShowing()) grabKeyboardFocus();
-    say (on ? "PC keyboard plays: Q-row major, A-row minor, Z-row 7th, Shift = stack, number row = strings"
+    say (on ? "PC keyboard plays: Q-row major, A-row minor, Z-row 7th, Shift = stack, number row = strings, - / = = strum"
             : "PC keyboard off: every key goes to FL Studio");
 }
 
@@ -379,7 +379,7 @@ bool Hamamatsu108Editor::keyPressed (const juce::KeyPress& key)
 {
     if (! audioProcessor.pcKeys.load()) return false;
     const auto c = juce::CharacterFunctions::toLowerCase ((juce::juce_wchar) key.getKeyCode());
-    static const juce::String majorRow ("qwertyuiop[]"), minorRow ("asdfghjkl;'\\"), seventhRow ("zxcvbnm,./"), strings ("`1234567890-=");
+    static const juce::String majorRow ("qwertyuiop[]"), minorRow ("asdfghjkl;'\\"), seventhRow ("zxcvbnm,./"), strings ("`1234567890");
     int root = -1, type = 0;
     if ((root = majorRow.indexOfChar (c)) >= 0) type = 0;
     else if ((root = minorRow.indexOfChar (c)) >= 0) type = 1;
@@ -392,9 +392,15 @@ bool Hamamatsu108Editor::keyPressed (const juce::KeyPress& key)
         say ("Chord " + chords::shortName (chord));
         return true;
     }
+    if (c == '-' || c == '=')
+    {
+        audioProcessor.strumNow (c == '-');
+        say (c == '-' ? "Strum down" : "Strum up");
+        return true;
+    }
     if (const int s = strings.indexOfChar (c); s >= 0)
     {
-        audioProcessor.pluckString (juce::roundToInt ((float) s * (Hamamatsu108Processor::numStrings - 1) / 12.0f));
+        audioProcessor.pluckString (juce::roundToInt ((float) s * (Hamamatsu108Processor::numStrings - 1) / 10.0f));
         return true;
     }
     return false;   // space, transport and everything else stay with FL Studio

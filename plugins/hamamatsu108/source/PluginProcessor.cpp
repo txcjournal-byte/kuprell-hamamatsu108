@@ -26,8 +26,8 @@ const juce::StringArray& Hamamatsu108Processor::strumModeNames()
 // the others are one bar of 1/16 steps played like a person would.
 const juce::StringArray& Hamamatsu108Processor::strumPatternNames()
 {
-    static const juce::StringArray n { "Even", "Ballad", "Folk", "Pop 8ths", "Pop 16ths", "Tap", "Brush", "Fingerpick",
-                                       "Bossa", "Reggae", "Waltz 3/4", "Half Time", "Shimmer", "Custom" };
+    static const juce::StringArray n { "Straight", "Sparse", "Syncopated", "8ths", "16ths", "3-3-2", "Half Notes", "Picked 8ths",
+                                       "Bounce", "Backbeat", "3/4", "Half-Time", "Sweep + Pick", "Custom" };
     return n;
 }
 
@@ -36,18 +36,18 @@ const juce::StringArray& Hamamatsu108Processor::strumPatternNames()
 const char* Hamamatsu108Processor::strumPatternSteps (int index)
 {
     static const char* steps[] = { "",
-                                   "D.....u.d.....u.",   // Ballad
-                                   "D...D.U...U.D.U.",   // Folk
-                                   "D.u.D.U.d.u.D.U.",   // Pop 8ths
-                                   "D.dUx.dUD.dUx.dU",   // Pop 16ths
-                                   "T..TT.x.T..TT.x.",   // Tap
-                                   "S.......S.......",   // Brush
-                                   "B.H.T.H.B.H.T.H.",   // Fingerpick
-                                   "B..dB.d.B..dB.d.",   // Bossa
-                                   "....d.x.....d.x.",   // Reggae
-                                   "B...d.u.d.u.",       // Waltz 3/4 (12 steps)
-                                   "D.......d...u...",   // Half Time
-                                   "S...H.u.S...H.u." }; // Shimmer
+                                   "D.....u.d.....u.",   // Sparse
+                                   "D...D.U...U.D.U.",   // Syncopated
+                                   "D.u.D.U.d.u.D.U.",   // 8ths
+                                   "D.dUx.dUD.dUx.dU",   // 16ths
+                                   "T..TT.x.T..TT.x.",   // 3-3-2
+                                   "S.......S.......",   // Half Notes
+                                   "B.H.T.H.B.H.T.H.",   // Picked 8ths
+                                   "B..dB.d.B..dB.d.",   // Bounce
+                                   "....d.x.....d.x.",   // Backbeat
+                                   "B...d.u.d.u.",       // 3/4 (12 steps)
+                                   "D.......d...u...",   // Half-Time
+                                   "S...H.u.S...H.u." }; // Sweep + Pick
     return steps[juce::jlimit (0, 12, index)];
 }
 
@@ -61,7 +61,7 @@ juce::String Hamamatsu108Processor::patternString (int index) const
 
 const juce::StringArray& Hamamatsu108Processor::keysPlayNames()
 {
-    static const juce::StringArray n { "Notes", "Strum", "Pattern", "Plate only", "Flourish up", "Flourish down" };
+    static const juce::StringArray n { "Notes", "Strum", "Pattern", "Plate only", "Flourish up", "Flourish down", "Split" };
     return n;
 }
 
@@ -415,7 +415,7 @@ void Hamamatsu108Processor::loadUserDefaults()
 {
     if (auto xml = juce::parseXML (settingsFile()))
     {
-        skin.store (juce::jlimit (0, 9, xml->getIntAttribute ("skin", 0)));
+        skin.store (juce::jlimit (0, 10, xml->getIntAttribute ("skin", 0)));
         zoneOctave.store (juce::jlimit (0, 3, xml->getIntAttribute ("zoneOctave", 1)));
         // from settings version 2 every key plays by default (chord zones are an option): piano-roll notes in
         // octave 2-3 used to fall into the zones and stay silent
@@ -531,7 +531,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumShape", 1 }, "Stroke Shape", StringArray { "Linear", "Natural", "Fast start", "Fast finish" }, 1));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumSpeedMul", 1 }, "Pattern Speed", StringArray { "Half", "Normal", "Double" }, 1));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumRestart", 1 }, "Pattern Start", StringArray { "Follow the bar", "Restart on chord" }, 0));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "keysPlay", 1 }, "Keys Play", keysPlayNames(), 4));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "keysPlay", 1 }, "Keys Play", keysPlayNames(), 6));
 
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "hold", 1 }, "Hold", true));
 
@@ -629,6 +629,11 @@ int Hamamatsu108Processor::chordFromHeldNotes()
     int mask = 0, lowest = 128;
     for (int n = 0; n < 128; ++n)
         if (heldMelodic[(size_t) n]) { mask |= 1 << (n % 12); lowest = juce::jmin (lowest, n); }
+    return chordFromMask (mask, lowest);
+}
+
+int Hamamatsu108Processor::chordFromMask (int mask, int lowest)
+{
     if (mask == 0) return -1;
     const int keyRoot = juce::roundToInt (param (apvts, "keyRoot"));
     const bool minorKey = param (apvts, "keyMode") > 0.5f;
@@ -636,6 +641,14 @@ int Hamamatsu108Processor::chordFromHeldNotes()
     static const int minDeg[7][2] = { { 0, 1 }, { 2, 5 }, { 3, 0 }, { 5, 1 }, { 7, 1 }, { 8, 0 }, { 10, 0 } };
     const auto& deg = minorKey ? minDeg : majDeg;
     auto pcs = [] (int m) { int c = 0; for (int i = 0; i < 12; ++i) c += (m >> i) & 1; return c; };
+    if (pcs (mask) == 1)
+    {
+        // one key = the chord of the key on that degree (C in C major = C, D = Dm, E = Em ...), outside the key = major
+        const int pc = lowest % 12;
+        for (const auto& d : deg)
+            if ((keyRoot + d[0]) % 12 == pc) return chords::index (pc, d[1]);
+        return chords::index (pc, 0);
+    }
     int best = -1, bestScore = -1000;
     auto consider = [&] (int idx, int bonus)
     {
@@ -668,20 +681,37 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
     if (m.isPitchWheel())
     {
         // pitch wheel strums the strings (like dragging across the plate)
-        const float pos = (float) m.getPitchWheelValue() / 16383.0f;
-        const int n = (int) tones.size();
-        if (n > 0 && bendPos >= 0.0f)
+        wheelStrum (samplePos, (float) m.getPitchWheelValue() / 16383.0f, bendPos);
+        return;
+    }
+    const bool splitMode = juce::roundToInt (param (apvts, "keysPlay")) == 6 && ! chordZones.load();
+    if (splitMode && (m.isNoteOn() || m.isNoteOff()))
+    {
+        // SPLIT: left hand = chord, right hand = strings (white keys) and whole strums (black keys)
+        const int n = m.getNoteNumber();
+        if (n < splitPoint)
         {
-            const int a = juce::roundToInt (bendPos * (float) (n - 1)), b = juce::roundToInt (pos * (float) (n - 1));
-            const float vel = juce::jlimit (0.35f, 1.0f, 0.5f + 4.0f * std::abs (pos - bendPos));
-            if (a != b)
-                for (int i = a + (b > a ? 1 : -1);; i += (b > a ? 1 : -1))
-                {
-                    scheduleNote (samplePos, i, vel);
-                    if (i == b) break;
-                }
+            if (m.isNoteOn())
+            {
+                if (! splitLeft[(size_t) n]) { splitLeft[(size_t) n] = true; ++splitHeld; }
+                int mask = 0, lowest = 128;
+                for (int k = 0; k < splitPoint; ++k)
+                    if (splitLeft[(size_t) k]) { mask |= 1 << (k % 12); lowest = juce::jmin (lowest, k); }
+                splitChord = chordFromMask (mask, lowest);
+                latchedChord = -1; holdChord = -1; stackParts.clear();
+                lastVelocity = m.getFloatVelocity();
+            }
+            else if (splitLeft[(size_t) n]) { splitLeft[(size_t) n] = false; --splitHeld; }
         }
-        bendPos = pos;
+        else if (m.isNoteOn() && numSplitHits < (int) splitHits.size())
+        {
+            static const int white[] = { 0, -1, 1, -2, 2, 3, -3, 4, -4, 5, -5, 6 };   // negative = black key
+            const int w = white[(n - splitPoint) % 12];
+            const int oct = (n - splitPoint) / 12;
+            const int pc = (n - splitPoint) % 12;
+            if (w >= 0) splitHits[(size_t) numSplitHits++] = { samplePos, oct * 7 + w, m.getFloatVelocity(), 0 };
+            else        splitHits[(size_t) numSplitHits++] = { samplePos, 0, m.getFloatVelocity(), (pc == 1 || pc == 6) ? 1 : -1 };
+        }
         return;
     }
     if (m.isNoteOn())
@@ -774,7 +804,11 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
     else if (m.isController())
     {
         const int cc = m.getControllerNumber();
-        if (cc == 1) modWheel = m.getControllerValue() / 127.0f;
+        if (cc == 1)
+        {
+            modWheel = m.getControllerValue() / 127.0f;
+            wheelStrum (samplePos, modWheel, wheelPos);   // mod wheel = a finger across the strings
+        }
         const int learn = learnParam.load();
         if (learn >= 0 && cc != 120 && cc != 123)
         {
@@ -803,6 +837,23 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
         if (m.isAllSoundOff())
             for (auto& v : voices) v.release();
     }
+}
+
+void Hamamatsu108Processor::wheelStrum (int samplePos, float pos, float& last)
+{
+    const int n = (int) tones.size();
+    if (n > 0 && last >= 0.0f)
+    {
+        const int a = juce::roundToInt (last * (float) (n - 1)), b = juce::roundToInt (pos * (float) (n - 1));
+        const float vel = juce::jlimit (0.35f, 1.0f, 0.5f + 4.0f * std::abs (pos - last));
+        if (a != b)
+            for (int i = a + (b > a ? 1 : -1);; i += (b > a ? 1 : -1))
+            {
+                scheduleNote (samplePos, i, vel);
+                if (i == b) break;
+            }
+    }
+    last = pos;
 }
 
 void Hamamatsu108Processor::updateTones (int chordIndex, int transpose, int rangeOctaves)
@@ -1399,7 +1450,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     morphNow = param (apvts, "morph");
     voiceSettings.model = (harp::Model) juce::roundToInt (param (apvts, "harpVoice"));
     voiceSettings.tone = juce::jlimit (0.0f, 1.0f, mp ("harpTone") * model.tone * (1.0f - 0.35f * age));
-    voiceSettings.decay = mp ("harpDecay") * model.decay * (1.0f + 1.2f * dream) * (1.0f - 0.85f * modWheel);   // mod wheel = shorter notes
+    voiceSettings.decay = mp ("harpDecay") * model.decay * (1.0f + 1.2f * dream);
     voiceSettings.attack = param (apvts, "harpAttack");
     voiceSettings.sustain = param (apvts, "harpSustain");
     // long ringing strings pile up under dense strum patterns: trim the harp bus a little for long decays
@@ -1496,9 +1547,14 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         handleMidi (meta.getMessage(), meta.samplePosition);
 
     int chord = resolveChord();
+    const bool splitOn = juce::roundToInt (param (apvts, "keysPlay")) == 6 && ! chordZones.load();
+    if (! splitOn) { splitChord = -1; splitHeld = 0; splitLeft.fill (false); numSplitHits = 0; }
+    if (latchedChord >= 0 || rootHeldMask != 0) splitChord = -1;   // a chord button / zone wins
+    // the left-hand chord sounds (chord layer, bass, LIVE pattern) while held, or kept with HOLD
+    if (chord < 0 && splitChord >= 0 && (splitHeld > 0 || param (apvts, "hold") > 0.5f)) chord = splitChord;
     // notes coming from the host while its transport runs (piano roll, playlist) are already in the
     // project: the MIDI capture only records what is played by hand on the plugin
-    hostDriven = hostPlaying && (rootHeldMask != 0 || heldMelodicCount > 0 || numTypesHeld > 0);
+    hostDriven = hostPlaying && (rootHeldMask != 0 || heldMelodicCount > 0 || numTypesHeld > 0 || splitHeld > 0 || numSplitHits > 0);
 
     // preset preview: ONE stroke of the key chord (plus its chord layer and bass) so the sound can be heard.
     // It never changes the play mode, never repeats, never records, and a real chord always wins.
@@ -1544,7 +1600,13 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     else
         memPlayStep.store (-1);
 
-    updateTones (chord, transpose, range);
+    {
+        // the strings: the playing chord; in SPLIT the last left-hand chord stays on the strings, else the key chord
+        int strings = chord;
+        if (strings < 0 && splitOn)
+            strings = splitChord >= 0 ? splitChord : chords::index (juce::roundToInt (param (apvts, "keyRoot")), param (apvts, "keyMode") > 0.5f ? 1 : 0);
+        updateTones (strings, transpose, range);
+    }
     activeChord.store (previewing ? -1 : chord);   // a preview does not light a chord button
 
     const int eventsBefore = numEvents;
@@ -1552,6 +1614,20 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         for (int i = 0; i < numStrings; ++i)
             if (plucks & (1u << (unsigned) i))
                 scheduleNote (0, juce::roundToInt ((float) i * (float) (tones.size() - 1) / (float) (numStrings - 1)), 0.8f);
+
+    if (const int st = pendingStrum.exchange (0); st != 0 && ! tones.empty())
+        sweep (0, st > 0, st > 0 ? 0 : (int) tones.size() - 1, (int) tones.size(), 0.8f, 0.8f);
+
+    // SPLIT right hand: white keys pluck one string each (C4 = the lowest), black keys strum the whole chord
+    for (int i = 0; i < numSplitHits && ! tones.empty(); ++i)
+    {
+        const auto& h = splitHits[(size_t) i];
+        const int nt = (int) tones.size();
+        const float v = juce::jlimit (0.1f, 1.0f, h.vel);
+        if (h.strum == 0) scheduleNote (h.pos, juce::jmin (h.string, nt - 1), v);
+        else sweep (h.pos, h.strum > 0, h.strum > 0 ? 0 : nt - 1, nt, juce::jlimit (0.2f, 1.0f, 0.35f + 0.65f * v), 1.5f - 0.9f * v);
+    }
+    numSplitHits = 0;
 
     // ARP over held MIDI notes (piano roll melody / chords) when no chord button is active
     const bool arpHeld = ! previewing && mode == 1 && chord < 0 && heldMelodicCount > 0;
@@ -2221,7 +2297,7 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
             for (size_t i = 0; i < memLength.size(); ++i)
                 memLength[i].store (i < (size_t) lens.size() ? juce::jlimit (0, memSteps, lens[(int) i].getIntValue()) : 0);
             memBank.store (juce::jlimit (0, memBanks - 1, (int) state.getProperty ("memBank", 0)));
-            skin.store (juce::jlimit (0, 9, (int) state.getProperty ("skin", skin.load())));
+            skin.store (juce::jlimit (0, 10, (int) state.getProperty ("skin", skin.load())));
             zoneOctave.store (juce::jlimit (0, 3, (int) state.getProperty ("zoneOctave", zoneOctave.load())));
             if ((int) state.getProperty ("zonesVersion", 1) >= 2)   // older projects: zones off (every key plays)
                 chordZones.store ((bool) state.getProperty ("chordZones", chordZones.load()));

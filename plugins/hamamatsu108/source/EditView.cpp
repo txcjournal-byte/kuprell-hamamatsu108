@@ -731,6 +731,12 @@ namespace hama
                 zone (processor.typeZoneLow(), processor.typeZoneHigh(), "CHORD TYPE", th().soft);
                 zone (juce::jmin (last, processor.typeZoneHigh() + 1), last, "HARP NOTES (EXACT PITCH)", juce::Colour (0xff9aa0a7));
             }
+            else if (juce::roundToInt (plain (processor.apvts, "keysPlay")) == 6)
+            {
+                const int ksTop = processor.keyswitches.load() ? 24 : first;
+                zone (ksTop, 59, "LEFT HAND: CHORD (ONE KEY = CHORD IN KEY)", th().accent);
+                zone (60, last, "RIGHT HAND: WHITE = STRINGS, BLACK = STRUM", th().soft);
+            }
             else if (juce::roundToInt (plain (processor.apvts, "keysPlay")) >= 4)
             {
                 // FLOURISH: every octave is one chord type

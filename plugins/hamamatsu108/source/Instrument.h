@@ -13,8 +13,16 @@ namespace hama
     struct Theme
     {
         juce::Colour accent { 0xff3fe0d0 }, soft { 0xffa6f7ef }, deep { 0xff139488 };
+        bool lcd = false;     // skin has backlit LCD screens (Graphite)
+        bool lcdNow = false;  // the display being painted right now is one of those screens
     };
     inline Theme& th() { static Theme t; return t; }
+    // paints the displays inside it as backlit LCD screens (only on skins that have them)
+    struct LitScreen
+    {
+        LitScreen()  { th().lcdNow = th().lcd; }
+        ~LitScreen() { th().lcdNow = false; }
+    };
     // product shots: draw the instrument without the studio desk behind it
     inline bool& paintDesk() { static bool b = true; return b; }
 

@@ -317,15 +317,16 @@ namespace hama
             juce::Path clip;
             clip.addRoundedRectangle (r, 14.0f);
             g.reduceClipRegion (clip);
-            // brushed metal
-            for (float x = r.getX(); x < r.getRight(); x += 3.0f)
+            // brushed metal (dark decks stay smooth and matte)
+            const bool matte = sk.deckMid.getPerceivedBrightness() < 0.45f;
+            for (float x = r.getX(); x < r.getRight() && ! matte; x += 3.0f)
             {
                 g.setColour (juce::Colours::white.withAlpha (0.10f));
                 g.drawVerticalLine ((int) x, r.getY(), r.getBottom());
                 g.setColour (juce::Colours::black.withAlpha (0.04f));
                 g.drawVerticalLine ((int) x + 1, r.getY(), r.getBottom());
             }
-            juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.35f), r.getX(), r.getY(),
+            juce::ColourGradient sheen (juce::Colours::white.withAlpha (matte ? 0.06f : 0.35f), r.getX(), r.getY(),
                                         juce::Colours::transparentWhite, r.getX() + r.getWidth() * 0.5f, r.getBottom() + 200.0f, false);
             sheen.addColour (0.3, juce::Colours::transparentWhite);
             sheen.addColour (0.58, juce::Colours::white.withAlpha (0.18f));
@@ -344,9 +345,10 @@ namespace hama
                 auto b = groups[i].toFloat();
                 if (gr.selector != 0) { drawSeparator (g, groups, i); continue; }
                 g.setFont (spaced (9.0f, true, 0.25f));
-                g.setColour (juce::Colours::white.withAlpha (0.6f));
+                const bool darkDeck = skins::get (skin).deckMid.getPerceivedBrightness() < 0.45f;
+                g.setColour (darkDeck ? juce::Colours::black.withAlpha (0.6f) : juce::Colours::white.withAlpha (0.6f));
                 g.drawText (gr.name, b.withHeight (12.0f).translated (0.0f, 1.0f), juce::Justification::centred, false);
-                g.setColour (gr.macro ? th().deep : juce::Colour (0xff3a3f46));
+                g.setColour (gr.macro ? th().deep : (darkDeck ? juce::Colour (0xffb9bec5) : juce::Colour (0xff3a3f46)));
                 g.drawText (gr.name, b.withHeight (12.0f), juce::Justification::centred, false);
                 drawSeparator (g, groups, i);
             }
@@ -744,6 +746,7 @@ namespace hama
         {
             // VFD
             auto vfd = juce::Rectangle<float> (12.0f, 12.0f, 192.0f, 42.0f);
+            auto lit = std::make_unique<LitScreen>();   // the main screen is backlit
             drawDisplay (g, vfd, 8.0f);
             auto lines = vfd.reduced (10.0f, 5.0f);
             g.setFont (LookAndFeel::monoFont (13.0f));
@@ -756,7 +759,7 @@ namespace hama
             switch (mode)
             {
                 case 0: right = (keysPlay > 0 ? juce::String ("KEYS ") : juce::String ("LIVE "))
-                              + (strumPat == 0 ? rateText : Hamamatsu108Processor::strumPatternNames()[strumPat].toUpperCase().removeCharacters (" /34")); break;
+                              + (strumPat == 0 ? rateText : Hamamatsu108Processor::strumPatternNames()[strumPat].toUpperCase().removeCharacters (" ")); break;
                 case 1: left = "ARP"; right = Hamamatsu108Processor::arpPatternNames()[pattern].toUpperCase().removeCharacters (" ") + " " + rateText; break;
                 case 2: left = "MEMO " + juce::String::charToString ((juce::juce_wchar) ('A' + bank));
                         right = step >= 0 ? "STEP " + juce::String (step + 1) : juce::String ("EMPTY"); break;
@@ -764,6 +767,7 @@ namespace hama
             }
             glowText (g, left, l2, juce::Justification::centredLeft, 0.75f);
             glowText (g, right, l2, juce::Justification::centredRight, 0.75f);
+            lit.reset();
 
             drawHardButton (g, dualArea(), "DUAL", dual, true, false);
             drawHardButton (g, holdArea(), "HOLD", hold, true, false);
@@ -915,8 +919,9 @@ namespace hama
             static const char* keyText[] = { "Notes: play the exact pitch", "Strum: each key press strums the held notes", "Pattern: the pattern plays the held notes",
                                              "Plate only: hold the keys, strum them on the plate / pitch wheel",
                                              "Flourish up: one key = a harp run (octave = chord type, harder = faster)",
-                                             "Flourish down: the same run falling" };
-            for (int i = 0; i < 6; ++i) m.addItem (100 + i, keyText[i], true, keysPlay == i);
+                                             "Flourish down: the same run falling",
+                                             "Split: left hand = chord, right hand (from C4) = strings, black keys = whole strum" };
+            for (int i = 0; i < 7; ++i) m.addItem (100 + i, keyText[i], true, keysPlay == i);
             m.addSeparator();
             juce::PopupMenu shape, speed, start;
             static const char* shapes[] = { "Linear", "Natural", "Fast start", "Fast finish" };
@@ -1554,19 +1559,19 @@ namespace hama
             const float v = param->getValue();
             g.setColour (juce::Colours::black.withAlpha (0.35f));
             g.fillRoundedRectangle (t, 3.0f);
-            g.setColour (th().deep);
+            g.setColour (th().lcd ? juce::Colour (0xff8d959e) : th().deep);
             g.fillRoundedRectangle (t.withTop (t.getBottom() - t.getHeight() * v), 3.0f);
             auto cap = juce::Rectangle<float> (20.0f, 9.0f).withCentre ({ t.getCentreX(), t.getBottom() - t.getHeight() * v });
             g.setColour (juce::Colours::black.withAlpha (0.4f));
             g.fillRoundedRectangle (cap.translated (0.0f, 1.5f), 2.5f);
             g.setGradientFill (juce::ColourGradient (juce::Colour (0xfff2f4f6), 0.0f, cap.getY(), juce::Colour (0xff9aa1a9), 0.0f, cap.getBottom(), false));
             g.fillRoundedRectangle (cap, 2.5f);
-            g.setColour (th().deep);
+            g.setColour (th().lcd ? juce::Colour (0xff3a4048) : th().deep);
             g.fillRect (cap.withSizeKeepingCentre (14.0f, 1.5f));
-            g.setColour (juce::Colour (0xff22262b));
+            g.setColour (skins::deckInk (false));
             g.setFont (LookAndFeel::uiFont (10.0f, true));
             g.drawText (label, getLocalBounds().removeFromBottom (24).removeFromTop (12), juce::Justification::centred, false);
-            g.setColour (juce::Colour (0xff4a5058));
+            g.setColour (skins::deckInk (true));
             g.setFont (LookAndFeel::monoFont (8.5f));
             g.drawText (param->getCurrentValueAsText(), getLocalBounds().removeFromBottom (12).expanded (8, 0), juce::Justification::centred, false);
         }
@@ -1662,6 +1667,15 @@ namespace hama
 
         std::function<void (const juce::String&, const juce::String&)> onStatus;
 
+        // screen skins: neutral knobs here, colour stays on the steps
+        void restyle (bool neutral)
+        {
+            Knob::Style st;
+            st.labelHeight = 8.0f;
+            if (neutral) { st.ring = juce::Colour (0xffaeb5bd); st.themed = 0; st.pointer = juce::Colour (0xffd9dde2); st.value = juce::Colour (0xffc9ced4); }
+            for (auto* k : knobs) k->setStyle (st);
+        }
+
         juce::Rectangle<float> arpButton() const  { return { 14.0f, 74.0f, 64.0f, 26.0f }; }
         juce::Rectangle<float> gateButton() const { return { 84.0f, 74.0f, 64.0f, 26.0f }; }
         juce::Rectangle<float> tab (int i) const  { return { 300.0f + i * 86.0f, 2.0f, 82.0f, 18.0f }; }
@@ -1738,12 +1752,15 @@ namespace hama
                 g.setColour (juce::Colour (0xff1b1e22));
                 g.fillRoundedRectangle (c, 3.0f);
                 const bool active = view == 0 ? arpOn : gateOn;
-                const auto col = th().accent.withAlpha ((in ? 0.9f : 0.25f) * (active ? 1.0f : 0.45f));
+                const auto col = th().accent.withAlpha ((in ? 0.95f : 0.3f) * (active ? 1.0f : 0.7f));
                 if (view == 0)
                 {
                     const float v = processor.seqVel[(size_t) i].load();
-                    g.setColour (col);
-                    g.fillRoundedRectangle (c.withTop (c.getBottom() - c.getHeight() * v), 3.0f);
+                    auto fill = c.withTop (c.getBottom() - c.getHeight() * v);
+                    g.setGradientFill (juce::ColourGradient (th().deep.withAlpha (col.getFloatAlpha() * 0.9f), 0.0f, fill.getY(), th().deep.withAlpha (col.getFloatAlpha() * 0.35f), 0.0f, fill.getBottom(), false));
+                    g.fillRoundedRectangle (fill, 3.0f);
+                    g.setColour (th().soft.withAlpha (col.getFloatAlpha()));
+                    g.fillRoundedRectangle (fill.withHeight (3.0f), 1.5f);   // bright top edge = the level
                 }
                 else if ((mask >> (unsigned) i) & 1u)
                 {
@@ -1853,15 +1870,16 @@ namespace hama
         deck.themed = 2;
         deck.track = juce::Colours::black.withAlpha (0.18f);
         deck.pointer = th().deep;
-        deck.label = juce::Colour (0xff22262b);
-        deck.value = juce::Colour (0xff4a5058);
+        skins::currentIndex() = processor.skin.load();
+        deck.label = skins::deckInk (false);
+        deck.value = skins::deckInk (true);
         deck.labelHeight = 10.0f;
 
         for (auto& gr : deckGroups())
             for (auto& k : gr.knobs)
             {
                 auto st = deck;
-                if (std::string (gr.name) == "MASTER") { st.ring = juce::Colour (0xff22262b); st.pointer = juce::Colour (0xff22262b); st.themed = 0; }
+                if (std::string (gr.name) == "MASTER") { st.ring = skins::deckInk (false); st.pointer = skins::deckInk (false); st.themed = 0; }
                 if (k.param != nullptr && k.size == 0)
                 {
                     auto* sl = deckSliders.add (new DeckSlider (p.apvts, k.param, k.label));
@@ -1938,6 +1956,8 @@ namespace hama
     {
         const auto& sk = skins::get (skinIndex);
         currentSkin = skinIndex;
+        skins::currentIndex() = skinIndex;
+        th().lcd = sk.lcd;
         th().accent = sk.accent.main;
         th().soft = sk.accent.soft;
         th().deep = sk.accent.deep;
@@ -1946,15 +1966,31 @@ namespace hama
         Knob::themeDeep = sk.accent.deep;
         backdrop->skin = skinIndex;
         backdrop->repaint();
+        if (perform != nullptr) perform->restyle (sk.lcd);
         for (auto* k : deckKnobs)
         {
-            if (k->getParamID() == "master") continue;
             Knob::Style st;
+            if (k->getParamID() == "master")
+            {
+                st.ring = st.pointer = skins::deckInk (false); st.themed = 0;
+                st.track = juce::Colours::black.withAlpha (0.18f);
+                st.label = skins::deckInk (false); st.value = skins::deckInk (true);
+                st.labelHeight = 10.0f;
+                k->setStyle (st);
+                continue;
+            }
             st.ring = sk.accent.deep; st.themed = 2;
             st.track = juce::Colours::black.withAlpha (0.18f);
             st.pointer = sk.accent.deep;
-            st.label = juce::Colour (0xff22262b);
-            st.value = juce::Colour (0xff4a5058);
+            if (sk.lcd)
+            {
+                // screen skins: the deck stays calm and neutral, colour is kept for what plays
+                st.ring = juce::Colour (0xffaeb5bd); st.themed = 0;
+                st.pointer = juce::Colour (0xffd9dde2);
+                st.track = juce::Colours::white.withAlpha (0.08f);
+            }
+            st.label = skins::deckInk (false);
+            st.value = skins::deckInk (true);
             st.labelHeight = 10.0f;
             k->setStyle (st);
         }
