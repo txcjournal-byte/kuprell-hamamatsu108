@@ -11,7 +11,7 @@
 #include "Modulation.h"
 #include "Presets.h"
 
-// Kuprell Hamamatsu 108 - step 2: 108 chords, strum plate, Live Strum, harp voices, basic FX.
+// Kuprell Hamamatsu 144 - step 2: 108 chords, strum plate, Live Strum, harp voices, basic FX.
 class Hamamatsu108Processor : public juce::AudioProcessor, private juce::Timer
 {
 public:

@@ -957,9 +957,9 @@ namespace hama
             juce::MidiFile mf;
             mf.setTicksPerQuarterNote (ppq);
             mf.addTrack (seq);
-            auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Kuprell Hamamatsu 108");
+            auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Kuprell Hamamatsu 144");
             dir.createDirectory();
-            auto file = dir.getChildFile ("Hamamatsu 108 memory " + juce::String::charToString ((juce::juce_wchar) ('A' + bank)) + ".mid");
+            auto file = dir.getChildFile ("Hamamatsu 144 memory " + juce::String::charToString ((juce::juce_wchar) ('A' + bank)) + ".mid");
             file.deleteFile();
             juce::FileOutputStream out (file);
             if (out.openedOk()) mf.writeTo (out);
@@ -1729,7 +1729,7 @@ namespace hama
             logo->drawWithin (g, { 52.0f, 24.0f, 100.0f, 16.0f }, juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yTop, 1.0f);
         g.setFont (spaced (10.0f, true, 0.4f));
         g.setColour (engrave);
-        g.drawText ("HAMAMATSU 108", juce::Rectangle<float> (52.0f, 46.0f, 160.0f, 14.0f), juce::Justification::centredLeft, false);
+        g.drawText ("HAMAMATSU 144", juce::Rectangle<float> (52.0f, 46.0f, 160.0f, 14.0f), juce::Justification::centredLeft, false);
 
         auto vfd = juce::Rectangle<float> (220.0f, 21.0f, 600.0f, 44.0f);
         drawDisplay (g, vfd, 8.0f);

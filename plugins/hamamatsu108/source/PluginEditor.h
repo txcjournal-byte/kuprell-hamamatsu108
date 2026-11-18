@@ -53,7 +53,7 @@ private:
 
     kuprell::LookAndFeel lookAndFeel;   // declared first, destroyed last
     juce::Component content;            // drawn at 1280 x 760 and scaled as a whole (50-200 %)
-    kuprell::TopBar topBar { "Hamamatsu 108" };
+    kuprell::TopBar topBar { "Hamamatsu 144" };
     hama::InstrumentView instrument;
     hama::EditView editView;
     hama::BrowserView browser;

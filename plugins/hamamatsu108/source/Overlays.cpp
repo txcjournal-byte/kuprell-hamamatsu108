@@ -225,14 +225,14 @@ namespace hama
         in.removeFromTop (18.0f);
         g.setColour (juce::Colour (0xffe6e7e9));
         g.setFont (LookAndFeel::uiFont (26.0f, true));
-        g.drawText ("Hamamatsu 108", in.removeFromTop (34.0f), juce::Justification::centredLeft, false);
+        g.drawText ("Hamamatsu 144", in.removeFromTop (34.0f), juce::Justification::centredLeft, false);
         g.setFont (spaced (11.0f, true, 0.3f));
         g.setColour (th().soft);
         g.drawText ("ELECTRONIC STRUM HARP", in.removeFromTop (20.0f), juce::Justification::centredLeft, false);
         in.removeFromTop (16.0f);
         g.setFont (LookAndFeel::uiFont (13.0f));
         g.setColour (juce::Colour (0xffb9bec4));
-        g.drawFittedText ("108 chords, a living strum hand and six eras of sound. Inspired by the electronic strum harps of the 1980s, "
+        g.drawFittedText ("144 chords, a living strum hand and six eras of sound. Inspired by the electronic strum harps of the 1980s, "
                           "made from pure synthesis.", in.removeFromTop (60.0f).toNearestInt(), juce::Justification::topLeft, 4);
         in.removeFromTop (10.0f);
         g.setFont (LookAndFeel::monoFont (12.0f));

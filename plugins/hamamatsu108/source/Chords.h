@@ -9,7 +9,7 @@
 namespace chords
 {
     constexpr int numRoots = 12;
-    constexpr int numTypes = 9;
+    constexpr int numTypes = 12;
     constexpr int numChords = numRoots * numTypes;
 
     struct Type
@@ -33,6 +33,9 @@ namespace chords
             { "AUG",  "+",           "aug",     3, { 0, 4, 8, 0 } },
             { "SUS4", "s4",          "sus4",    3, { 0, 5, 7, 0 } },
             { "ADD9", "a9",          "add9",    4, { 0, 4, 7, 14 } },
+            { "SUS2", "s2",          "sus2",    3, { 0, 2, 7, 0 } },
+            { "m9",   "m9",          "m9",      4, { 0, 3, 10, 14 } },
+            { "6/9",  "6/9",         "6/9",     4, { 0, 4, 9, 14 } },
         }};
         return t;
     }

@@ -260,7 +260,7 @@ namespace hama
                 g.drawText (badgeText, badge, juce::Justification::centred, false);
             }
             else
-            g.drawText ("HAMAMATSU 108", juce::Rectangle<float> (tx, (float) rearY + 36.0f, 240.0f, 14.0f), juce::Justification::centredLeft, false);
+            g.drawText ("HAMAMATSU 144", juce::Rectangle<float> (tx, (float) rearY + 36.0f, 240.0f, 14.0f), juce::Justification::centredLeft, false);
 
             // model display (models arrive in step 4)
             auto disp = juce::Rectangle<float> ((float) (innerX + innerW - 230), (float) rearY + 6.0f, 230.0f, 46.0f);
@@ -421,7 +421,7 @@ namespace hama
             if (! on && activeChord >= 0 && ! chords::isCustom (activeChord) && chords::typeOf (activeChord) >= shownTypes && chords::rootOf (activeChord) == root)
             {
                 // a combination chord lights the buttons it is made of
-                static const int parts[9] = { 0, 0, 0, 0b101, 0b110, 0b011, 0b111, 0b001, 0b001 };
+                static const int parts[12] = { 0, 0, 0, 0b101, 0b110, 0b011, 0b111, 0b001, 0b001, 0b001, 0b010, 0b001 };
                 on = (parts[chords::typeOf (activeChord)] >> type) & 1;
             }
             auto b = keyBounds (root, type);
@@ -1241,9 +1241,9 @@ namespace hama
                 if (count > 0 || layer == 0) mf.addTrack (seq);
             }
 
-            auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Kuprell Hamamatsu 108");
+            auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Kuprell Hamamatsu 144");
             dir.createDirectory();
-            auto file = dir.getChildFile ("Hamamatsu 108 take " + juce::Time::getCurrentTime().formatted ("%H%M%S") + ".mid");
+            auto file = dir.getChildFile ("Hamamatsu 144 take " + juce::Time::getCurrentTime().formatted ("%H%M%S") + ".mid");
             file.deleteFile();
             juce::FileOutputStream out (file);
             if (out.openedOk())
@@ -1514,9 +1514,9 @@ namespace hama
             juce::MidiFile mf;
             mf.setTicksPerQuarterNote (ppq);
             mf.addTrack (seq);
-            auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Kuprell Hamamatsu 108");
+            auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Kuprell Hamamatsu 144");
             dir.createDirectory();
-            auto file = dir.getChildFile ("Hamamatsu 108 memory " + juce::String::charToString ((juce::juce_wchar) ('A' + bank)) + ".mid");
+            auto file = dir.getChildFile ("Hamamatsu 144 memory " + juce::String::charToString ((juce::juce_wchar) ('A' + bank)) + ".mid");
             file.deleteFile();
             juce::FileOutputStream out (file);
             if (out.openedOk()) mf.writeTo (out);

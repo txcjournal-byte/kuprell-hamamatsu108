@@ -4,7 +4,7 @@
 #include "KuprellLookAndFeel.h"
 #include "Instrument.h"
 
-// Shared drawing helpers for the Hamamatsu 108 views (hardware look).
+// Shared drawing helpers for the Hamamatsu 144 views (hardware look).
 namespace hama::look
 {
     using kuprell::LookAndFeel;

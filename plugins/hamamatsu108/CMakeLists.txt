@@ -3,7 +3,7 @@ juce_add_plugin(Hamamatsu108
     BUNDLE_ID                   com.kuprell.hamamatsu108
     PLUGIN_MANUFACTURER_CODE    Kprl
     PLUGIN_CODE                 Hm08
-    PRODUCT_NAME                "Hamamatsu 108"
+    PRODUCT_NAME                "Hamamatsu 144"
     FORMATS                     VST3 Standalone
     IS_SYNTH                    TRUE
     NEEDS_MIDI_INPUT            TRUE

@@ -180,7 +180,10 @@ namespace presets
 
     juce::File Manager::userFolder()
     {
-        return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("Kuprell").getChildFile ("Hamamatsu 108").getChildFile ("Presets");
+        const auto kuprell = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("Kuprell");
+        const auto dir = kuprell.getChildFile ("Hamamatsu 144"), old = kuprell.getChildFile ("Hamamatsu 108");
+        if (! dir.exists() && old.isDirectory()) old.copyDirectoryTo (dir);   // renamed from Hamamatsu 108: keep user presets
+        return dir.getChildFile ("Presets");
     }
 
     void Manager::rescanUser()

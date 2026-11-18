@@ -391,7 +391,10 @@ void Hamamatsu108Processor::timerCallback()
 
 static juce::File settingsFile()
 {
-    return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("Kuprell").getChildFile ("Hamamatsu 108").getChildFile ("settings.xml");
+    const auto kuprell = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("Kuprell");
+    const auto dir = kuprell.getChildFile ("Hamamatsu 144"), old = kuprell.getChildFile ("Hamamatsu 108");
+    if (! dir.exists() && old.isDirectory()) old.copyDirectoryTo (dir);   // renamed from Hamamatsu 108: keep settings and presets
+    return dir.getChildFile ("settings.xml");
 }
 
 void Hamamatsu108Processor::saveUserDefaults() const

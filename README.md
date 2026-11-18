@@ -1,4 +1,4 @@
-# Kuprell Hamamatsu 108
+# Kuprell Hamamatsu 144
 
 Elektronická drnkací harfa: 108 akordů, Live Strum a šest zvukových modelů. Inspirováno japonskými elektronickými drnkacími harfami 80. a 90. let. VST3 a Standalone pro Windows, JUCE 8 (C++17) a CMake.
 
@@ -21,7 +21,7 @@ Elektronická drnkací harfa: 108 akordů, Live Strum a šest zvukových modelů
 Engine (vrstvy A/B, model, akordová vrstva, bas, vibrato, 8 cílů Morphu) · Strum & Arp (náhled ruky a vzoru) · Chords (tónina, voicing, akordy tóniny, klaviatura se zónami) · Memory (8 bank × 16) · Mod (2 LFO, Function s 8 body posuvnými v čase i úrovni: Shift = jemně, dvojklik = reset bodu, pravé tlačítko = menu s tvary; Random; matice 8 slotů; modulace stojí, když nic nehraje) · FX (8 slotů × 16 efektů, přetahování pořadí) · Character (makra, karty modelů).
 
 ### PRESETS
-144 továrních presetů (Harp, Pluck, Bell, Keys, Pad, Texture; 4 na model), hledání, filtr podle typu a modelu, oblíbené (srdíčko), vlastní presety (Save, Save As, Delete) v `Dokumenty/Kuprell/Hamamatsu 108/Presets`.
+144 továrních presetů (Harp, Pluck, Bell, Keys, Pad, Texture; 4 na model), hledání, filtr podle typu a modelu, oblíbené (srdíčko), vlastní presety (Save, Save As, Delete) v `Dokumenty/Kuprell/Hamamatsu 144/Presets`.
 
 ### Horní lišta a SETTINGS
 Šipky = další/předchozí preset, Save, **A | B** (porovnání dvou nastavení), kostka (Randomize po sekcích), Undo/Redo, **?** (nápověda s čísly), ozubené kolo (**Settings**: 10 skinů, velikost okna, zóny akordů, polyfonie, MIDI Learn, ladění A4, MTS-ESP), logo Kuprell = About.
@@ -46,9 +46,9 @@ C2–B2 základní tón akordu, C3–G#3 typ (C3 dur, C#3 moll, D3 7, D#3 maj7, 
 
 ## Instalace (Windows)
 
-1. Otevři **Releases** tohoto repozitáře a stáhni nejnovější `Kuprell_Hamamatsu108_…_Windows.exe`.
-2. Spusť instalátor (Windows se zeptá na povolení: Ano). Plugin se nainstaluje do `C:\Program Files\Common Files\VST3\Hamamatsu 108.vst3`, Standalone do `C:\Program Files\Kuprell\Hamamatsu 108`.
-3. Ve FL Studiu: Channel rack → **+** → **Hamamatsu 108**.
+1. Otevři **Releases** tohoto repozitáře a stáhni nejnovější `Kuprell_Hamamatsu144_…_Windows.exe`.
+2. Spusť instalátor (Windows se zeptá na povolení: Ano). Plugin se nainstaluje do `C:\Program Files\Common Files\VST3\Hamamatsu 144.vst3`, Standalone do `C:\Program Files\Kuprell\Hamamatsu 144`.
+3. Ve FL Studiu: Channel rack → **+** → **Hamamatsu 144**.
 
 ## Sestavení (automaticky)
 
