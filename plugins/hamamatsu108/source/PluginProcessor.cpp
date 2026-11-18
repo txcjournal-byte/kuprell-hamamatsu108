@@ -1630,7 +1630,9 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     // preset preview: ONE stroke of the key chord (plus its chord layer and bass) so the sound can be heard.
     // It never changes the play mode, never repeats, never records, and a real chord always wins.
-    if (previewRequest.exchange (false) && chord < 0)
+    const bool previewAsked = previewRequest.exchange (false);
+    if (previewAsked && chord >= 0) pendingStrum.store (1);   // a chord is on: hear the new sound on it right away
+    if (previewAsked && chord < 0)
     {
         previewSamplesLeft = (int) (2.2 * sr);
         previewStroke = true;

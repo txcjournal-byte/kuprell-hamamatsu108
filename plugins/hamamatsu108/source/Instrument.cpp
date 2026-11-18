@@ -2043,6 +2043,10 @@ namespace hama
             std::array<int, prog::numSlots> slots {};
             for (int i = 0; i < prog::numSlots; ++i) slots[(size_t) i] = processor.progSlots[(size_t) i].load();
             const auto st = processor.progSettings();
+            // never cut the progression short: 6 chords in "4 bars" become 6 bars
+            int used = 0;
+            for (int c : slots) if (c >= 0) ++used;
+            if (used > bars) bars = used;
             const auto notes = prog::clip (slots, bars, st);
             if (notes.empty()) return {};
             const int ppqTicks = 960;
