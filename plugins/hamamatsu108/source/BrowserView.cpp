@@ -55,7 +55,7 @@ namespace hama
             if (category == 7 && ! pm.isFavourite (i)) continue;
             if (category == 8 && pr.factory) continue;
             if (category == 8 && bankFilter.isNotEmpty() && pr.bank != bankFilter) continue;
-            if (model >= 0 && pr.model != model) continue;
+            // presets are sorted by type only (character is a filter on the sound, not a preset group)
             if (text.isNotEmpty() && ! pr.name.toLowerCase().contains (text) && ! pr.category.toLowerCase().contains (text) && ! pr.bank.toLowerCase().contains (text)) continue;
             shown.push_back (i);
         }
@@ -89,7 +89,6 @@ namespace hama
         g.setFont (spaced (9.0f, true, 0.28f));
         g.setColour (engrave);
         g.drawText ("TYPE", 40, 34, 200, 24, juce::Justification::centredLeft, false);
-        g.drawText ("CHARACTER", 40, 388, 200, 24, juce::Justification::centredLeft, false);
 
         auto& pm = *processor.presetManager;
         for (int i = 0; i < 9; ++i)
@@ -113,16 +112,6 @@ namespace hama
             g.setFont (LookAndFeel::monoFont (11.0f));
             g.drawText (juce::String (count), r.reduced (10.0f, 0.0f), juce::Justification::centredRight, false);
         }
-        for (int i = 0; i < 7; ++i)
-        {
-            auto r = modelRow (i).toFloat();
-            const bool on = (i == 0 && model < 0) || i - 1 == model;
-            if (on) { g.setColour (th().accent.withAlpha (0.16f)); g.fillRoundedRectangle (r, 6.0f); }
-            g.setFont (LookAndFeel::uiFont (12.5f, on));
-            g.setColour (on ? th().soft : juce::Colour (0xffc9ccd1));
-            g.drawText (i == 0 ? juce::String ("All characters") : Hamamatsu108Processor::modelNames()[i - 1], r.reduced (12.0f, 0.0f), juce::Justification::centredLeft, false);
-        }
-
         g.setFont (LookAndFeel::uiFont (12.0f));
         g.setColour (juce::Colour (0xff6e737a));
         g.drawText (juce::String ((int) shown.size()) + " presets", 820, 30, 190, 32, juce::Justification::centredRight, false);
@@ -139,7 +128,6 @@ namespace hama
         glowText (g, pm.currentName() + (pm.isModified() ? " *" : ""), disp.reduced (10.0f, 6.0f).withHeight (24.0f), juce::Justification::centredLeft);
         g.setFont (LookAndFeel::monoFont (11.0f));
         juce::String info = pm.currentCategory().toUpperCase();
-        if (cur >= 0) info << juce::String::fromUTF8 ("  \xc2\xb7  ") << Hamamatsu108Processor::modelNames()[pm.all()[(size_t) cur].model].toUpperCase();
         glowText (g, info, disp.reduced (10.0f, 6.0f).withTrimmedTop (30.0f), juce::Justification::centredLeft, 0.65f);
         g.setFont (LookAndFeel::uiFont (12.0f));
         g.setColour (juce::Colour (0xff9aa0a7));
@@ -165,7 +153,6 @@ namespace hama
                 refresh();
                 return;
             }
-        for (int i = 0; i < 7; ++i) if (modelRow (i).contains (p)) { model = i - 1; refresh(); return; }
         auto& pm = *processor.presetManager;
         if (button (0).contains (p)) saveCurrent();
         if (button (1).contains (p)) saveAs();
@@ -341,7 +328,6 @@ namespace hama
         g.drawText (pr.category.toUpperCase(), tag, juce::Justification::centred, false);
         g.setFont (LookAndFeel::uiFont (12.0f));
         g.setColour (juce::Colour (0xff9aa0a7));
-        g.drawText (Hamamatsu108Processor::modelNames()[pr.model], 480, 0, 140, height, juce::Justification::centredLeft, false);
         g.drawText (pr.factory ? juce::String ("Factory") : (pr.bank.isNotEmpty() ? pr.bank : juce::String ("User")), width - 140, 0, 130, height, juce::Justification::centredRight, false);
     }
 
