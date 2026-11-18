@@ -215,9 +215,9 @@ namespace hama
                     if (! rest)
                     {
                         auto bar = c.withTop (c.getBottom() - c.getHeight() * v);
-                        g.setGradientFill (juce::ColourGradient (th().deep.withAlpha (inLen ? 0.9f : 0.25f), 0.0f, bar.getY(), th().deep.withAlpha (inLen ? 0.35f : 0.1f), 0.0f, bar.getBottom(), false));   // same as the steps on the main page
+                        g.setGradientFill (juce::ColourGradient (th().accent.withAlpha (inLen ? 0.75f : 0.2f), 0.0f, bar.getY(), th().accent.withAlpha (inLen ? 0.25f : 0.08f), 0.0f, bar.getBottom(), false));   // same as the steps on the main page
                         g.fillRoundedRectangle (bar, 3.0f);
-                        g.setColour (th().soft.withAlpha (inLen ? 0.9f : 0.2f));
+                        g.setColour (th().accent.withAlpha (inLen ? 1.0f : 0.25f));
                         g.fillRoundedRectangle (bar.withHeight (3.0f), 1.5f);
                     }
                     if (i == playing && inLen) { g.setColour (juce::Colours::white.withAlpha (0.6f)); g.drawRoundedRectangle (c.expanded (1.0f), 3.0f, 1.5f); }

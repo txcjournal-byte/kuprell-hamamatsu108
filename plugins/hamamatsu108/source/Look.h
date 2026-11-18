@@ -110,10 +110,10 @@ namespace hama::look
     }
 
    #ifndef LCD_TOP
-    #define LCD_TOP 0xff7ff6ff
-    #define LCD_MID 0xff3fe0f0
-    #define LCD_BOT 0xff16b9d4
-    #define LCD_INK 0xff032026
+    #define LCD_TOP 0xffa6f7ef
+    #define LCD_MID 0xff3fe0d0
+    #define LCD_BOT 0xff2fcdbf
+    #define LCD_INK 0xff04201d
    #endif
     inline void drawDisplay (juce::Graphics& g, juce::Rectangle<float> r, float radius)
     {
