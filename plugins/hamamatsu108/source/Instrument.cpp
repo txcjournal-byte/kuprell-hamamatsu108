@@ -549,7 +549,7 @@ namespace hama
     public:
         explicit StrumPlate (Hamamatsu108Processor& p) : processor (p)
         {
-            setTooltip (juce::String::fromUTF8 ("Strum plate \xc2\xb7 try it with the mouse; play it with your keys (right hand from C4), the wheels or - / = on the PC keyboard"));
+            setTooltip (juce::String::fromUTF8 ("Strum plate \xc2\xb7 try it with the mouse; play it with your keys (right hand from C5), the wheels or - / = on the PC keyboard"));
         }
 
         static constexpr int numStrings = Hamamatsu108Processor::numStrings;
@@ -920,7 +920,7 @@ namespace hama
                                              "Plate only: hold keys, strum them on the plate / wheels",
                                              "Flourish up: one key = a whole harp run of a chord (octave = chord type)",
                                              "Flourish down: the same run falling",
-                                             "Split: left hand (below C4) = chord, right hand = strings, black keys = strum" };
+                                             "Split: left hand (below C5 = middle C) = chord, right hand = strings, black keys = strum" };
             for (int i = 0; i < 7; ++i) m.addItem (100 + i, keyText[i], true, keysPlay == i);
             popup (m, { 12.0f, 33.0f, 192.0f, 21.0f }, [this] (int r)
             {
@@ -957,7 +957,7 @@ namespace hama
                                              "Plate only: hold the keys, strum them on the plate / pitch wheel",
                                              "Flourish up: one key = a harp run (octave = chord type, harder = faster)",
                                              "Flourish down: the same run falling",
-                                             "Split: left hand = chord, right hand (from C4) = strings, black keys = whole strum" };
+                                             "Split: left hand = chord, right hand (from C5) = strings, black keys = whole strum" };
             for (int i = 0; i < 7; ++i) m.addItem (100 + i, keyText[i], true, keysPlay == i);
             m.addSeparator();
             juce::PopupMenu shape, speed, start;

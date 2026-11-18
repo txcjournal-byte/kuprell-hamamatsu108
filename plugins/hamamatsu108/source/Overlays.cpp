@@ -167,7 +167,7 @@ namespace hama
         g.setFont (LookAndFeel::uiFont (11.0f));
         g.drawFittedText ("Keyswitches (FL note names): C0..D#0 = LIVE / ARP / MEMO / OFF, C1..B1 = the LIVE pattern - write them in the piano roll. "
                           "PC keyboard (while the plugin window has focus): Q-row major, A-row minor, Z-row 7th chords, Shift = stack, "
-                          "number row = strings, - / = strum down / up. YOUR KEYS = Split: left hand chord, right hand (C4 up) white keys = strings, black keys = strum. Pitch wheel and mod wheel strum the strings. MIDI OUT: harp ch 1, chord layer ch 2, bass ch 3 - "
+                          "number row = strings, - / = strum down / up. YOUR KEYS = Split: left hand chord, right hand (from C5, middle C) white keys = strings, black keys = strum. Pitch wheel and mod wheel strum the strings. MIDI OUT: harp ch 1, chord layer ch 2, bass ch 3 - "
                           "in FL set this plugin's MIDI output port and another instrument's input port to the same number.", juce::Rectangle<int> (830, 536, 410, 62), juce::Justification::topLeft, 6);
         drawHardButton (g, { 830.0f, 600.0f, 398.0f, 40.0f }, "BACK TO PLAY", true, true, false);
     }
@@ -300,8 +300,8 @@ namespace hama
         g.setColour (th().soft);
         g.drawText ("PLAY WITH KEYS", in.removeFromTop (20.0f), juce::Justification::centredLeft, false);
         static const char* keys[][2] = {
-            { "MIDI keyboard", "YOUR KEYS = Split: left hand (below C4) picks the chord - one key = the chord of the key on that degree." },
-            { "", "Right hand from C4: white keys = single strings (low to high), black keys = whole strum (C#, F# down, D# G# A# up)." },
+            { "MIDI keyboard", "YOUR KEYS = Split: left hand (below C5, middle C) picks the chord - one key = the chord of the key on that degree." },
+            { "", "Right hand from C5: white keys = single strings (low to high), black keys = whole strum (C#, F# down, D# G# A# up)." },
             { "Wheels", "Pitch wheel or mod wheel = a finger across the strings. Harder key = louder strum." },
             { "PC keyboard", "Q-row major, A-row minor, Z-row 7th (Shift = add), number row = strings, - / = = strum down / up." } };
         for (auto& k : keys)

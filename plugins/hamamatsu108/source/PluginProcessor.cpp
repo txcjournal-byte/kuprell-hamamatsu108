@@ -710,6 +710,8 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
                 splitChord = chordFromMask (mask, lowest);
                 latchedChord = -1; holdChord = -1; stackParts.clear();
                 lastVelocity = m.getFloatVelocity();
+                // the left hand sounds too: one soft down stroke of the new chord (unless the progression plays)
+                if (numSplitHits < (int) splitHits.size()) splitHits[(size_t) numSplitHits++] = { samplePos, 0, m.getFloatVelocity() * 0.85f, 2 };
             }
             else if (splitLeft[(size_t) n]) { splitLeft[(size_t) n] = false; --splitHeld; }
         }
@@ -1722,6 +1724,12 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         const auto& h = splitHits[(size_t) i];
         const int nt = (int) tones.size();
         const float v = juce::jlimit (0.1f, 1.0f, h.vel);
+        if (h.strum == 2)
+        {
+            // left-hand chord: a soft down stroke so you hear what you picked
+            if (! lastProgPlaying) sweep (h.pos, true, 0, nt, juce::jlimit (0.2f, 0.9f, 0.3f + 0.6f * v), 1.2f);
+            continue;
+        }
         if (h.strum == 0)
         {
             if (h.string < nt) scheduleNote (h.pos, h.string, v);
