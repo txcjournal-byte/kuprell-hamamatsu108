@@ -25,7 +25,7 @@ public:
     std::atomic<int> zoneOctave { 1 };      // 0..3 -> root zone starts at C0..C3
     std::atomic<bool> keyswitches { true };   // C0-B0 pick the LIVE pattern, C-1..D#-1 the mode (below the chord zones)
     std::atomic<bool> pcKeys { false };
-    std::atomic<bool> midiOut { true };       // send the harp (ch 1), chord layer (ch 2) and bass (ch 3) as MIDI
+    std::atomic<bool> midiOut { false };       // send the harp (ch 1), chord layer (ch 2) and bass (ch 3) as MIDI
     //== custom strum pattern (pattern "Custom"): one stroke character per step, see strumPatternSteps()
     std::array<std::atomic<int>, 16> customSteps;
     std::atomic<int> customLen { 16 };

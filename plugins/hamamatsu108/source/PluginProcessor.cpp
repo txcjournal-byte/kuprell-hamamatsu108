@@ -405,7 +405,7 @@ void Hamamatsu108Processor::saveUserDefaults() const
     xml.setAttribute ("skin", skin.load());
     xml.setAttribute ("zoneOctave", zoneOctave.load());
     xml.setAttribute ("chordZones", chordZones.load());
-    xml.setAttribute ("version", 3);
+    xml.setAttribute ("version", 4);
     xml.setAttribute ("tuning", tuningA4.load());
     xml.setAttribute ("voices", maxVoices.load());
     xml.setAttribute ("mts", mtsEnabled.load());
@@ -431,7 +431,8 @@ void Hamamatsu108Processor::loadUserDefaults()
         mtsEnabled.store (xml->getBoolAttribute ("mts", true));
         keyswitches.store (xml->getBoolAttribute ("keyswitches", true));
         pcKeys.store (xml->getBoolAttribute ("pcKeys", false));
-        midiOut.store (xml->getBoolAttribute ("midiOut", true));
+        // MIDI OUT is off by default from settings version 4: FL Studio records the plugin's notes into the pattern otherwise
+        midiOut.store (xml->getIntAttribute ("version", 1) >= 4 && xml->getBoolAttribute ("midiOut", false));
     }
 }
 
