@@ -320,6 +320,11 @@ Hamamatsu108Processor::Hamamatsu108Processor()
     progNotes.reserve (256);
     gridNotes.reserve (256);
     setGridPreset (0);
+    {   // STRINGS default: a slow bass, a quarter, a dotted eighth, triplets on top: a moving web of pulses
+        const int rate[] = { 2, 0, 3, 0, 4, 5, 0, 7 }, off[] = { 0, 0, 2, 0, 1, 2, 0, 1 };
+        const float lvl[] = { 0.9f, 0.7f, 0.75f, 0.7f, 0.7f, 0.65f, 0.6f, 0.55f };
+        for (int r = 0; r < prog::gridRows; ++r) { strRate[(size_t) r].store (rate[r]); strOffset[(size_t) r].store (off[r]); strLevel[(size_t) r].store (lvl[r]); }
+    }
     for (int i = 0; i < prog::linePoints; ++i)   // a default wave: up and down twice per bar
         motionLine[(size_t) i].store (0.5f + 0.45f * (float) std::sin (i / (float) prog::linePoints * juce::MathConstants<float>::twoPi * 2.0f));
     for (auto& c : ccMap) c.store (-1);
@@ -557,7 +562,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "gridOn", 1 }, "Motion", true));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "gridRate", 1 }, "Motion Rate", strumRateNames(), 4));
     layout.add (std::make_unique<AudioParameterInt> (ParameterID { "gridLen", 1 }, "Motion Steps", 2, 16, 16));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "motionType", 1 }, "Motion Type", juce::StringArray { "Grid", "Lines", "Rhythm" }, 0));   // the whole harp an octave down (bass) or up
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "motionType", 1 }, "Motion Type", juce::StringArray { "Grid", "Lines", "Rhythm", "Strings" }, 0));   // the whole harp an octave down (bass) or up
     fl ("arpGate", "Arp Gate", 0.05f, 1.0f, 1.0f, pct);
     fl ("arpSwing", "Arp Swing", 0.0f, 1.0f, 0.0f, pct);
     fl ("arpVelScale", "Arp Dynamics", 0.0f, 1.0f, 1.0f, pct);
@@ -886,6 +891,7 @@ prog::Settings Hamamatsu108Processor::progSettings()
     st.gridStepBeats = rateInQuarters (juce::roundToInt (param (apvts, "gridRate")));
     st.motionType = juce::roundToInt (param (apvts, "motionType"));
     for (int i = 0; i < prog::linePoints; ++i) st.line[(size_t) i] = motionLine[(size_t) i].load();
+    for (int r = 0; r < prog::gridRows; ++r) { st.strRate[(size_t) r] = strRate[(size_t) r].load(); st.strOffset[(size_t) r] = strOffset[(size_t) r].load(); st.strLevel[(size_t) r] = strLevel[(size_t) r].load(); }
     return st;
 }
 
@@ -1793,7 +1799,8 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
                         schedulePitch ((int) ((at - start) / bps), nt.pitch + 12 * 0, nt.velocity, true);
                 }
             }
-            gridStepGui.store (st.motionType == 2 ? (int) std::floor (std::fmod (start, 4.0) / 0.25) % juce::jmax (1, st.strumSteps.length())
+            gridStepGui.store (st.motionType == 3 ? 2000 + (int) (std::fmod (start, 4.0) * 100.0)
+                             : st.motionType == 2 ? (int) std::floor (std::fmod (start, 4.0) / 0.25) % juce::jmax (1, st.strumSteps.length())
                              : st.motionType == 1 ? 1000 + (int) (std::fmod (start, 4.0) / 4.0 * prog::linePoints)
                                                   : (int) std::floor (std::fmod (start, 4.0) / st.gridStepBeats) % juce::jmax (1, st.gridLen));
             if (! hostPlaying) gridOwnPpq = end;
@@ -2464,6 +2471,9 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
         juce::StringArray ln;
         for (auto& v : motionLine) ln.add (juce::String (v.load(), 3));
         state.setProperty ("motionLine", ln.joinIntoString (","), nullptr);
+        juce::StringArray sr;
+        for (int r = 0; r < prog::gridRows; ++r) sr.add (juce::String (strRate[(size_t) r].load()) + ":" + juce::String (strOffset[(size_t) r].load()) + ":" + juce::String (strLevel[(size_t) r].load(), 2));
+        state.setProperty ("motionStrings", sr.joinIntoString (","), nullptr);
         state.setProperty ("progOn", progOn.load(), nullptr);
         state.setProperty ("progMode", progMode.load(), nullptr);
         state.setProperty ("progSeed", progSeed.load(), nullptr);
@@ -2523,6 +2533,17 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
                 {
                     const auto gc = juce::StringArray::fromTokens (state.getProperty ("motion").toString(), ",", {});
                     for (int i = 0; i < prog::gridSteps; ++i) gridCells[(size_t) i].store (i < gc.size() ? (gc[i].getIntValue() & 255) : 0);
+                }
+                if (state.hasProperty ("motionStrings"))
+                {
+                    const auto sr = juce::StringArray::fromTokens (state.getProperty ("motionStrings").toString(), ",", {});
+                    for (int r = 0; r < prog::gridRows && r < sr.size(); ++r)
+                    {
+                        const auto f = juce::StringArray::fromTokens (sr[r], ":", {});
+                        strRate[(size_t) r].store (juce::jlimit (0, 9, f[0].getIntValue()));
+                        strOffset[(size_t) r].store (juce::jlimit (0, 15, f[1].getIntValue()));
+                        strLevel[(size_t) r].store (juce::jlimit (0.0f, 1.0f, f[2].getFloatValue()));
+                    }
                 }
                 if (state.hasProperty ("motionLine"))
                 {

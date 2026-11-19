@@ -209,6 +209,8 @@ public:
     std::array<std::atomic<int>, prog::gridSteps> gridCells;
     std::atomic<bool> gridPlay { false };          // PLAY: loop the chord without holding keys
     std::array<std::atomic<float>, prog::linePoints> motionLine;   // LINES: the drawn path (-1 = lifted)
+    std::array<std::atomic<int>, prog::gridRows> strRate, strOffset;   // STRINGS: each string its own pulse
+    std::array<std::atomic<float>, prog::gridRows> strLevel;
     std::atomic<int> gridStepGui { -1 };
     void setGridPreset (int i) { const auto& g = prog::gridPresets()[(size_t) juce::jlimit (0, (int) prog::gridPresets().size() - 1, i)]; for (int k = 0; k < prog::gridSteps; ++k) gridCells[(size_t) k].store (g.cells[(size_t) k]); }
 private:

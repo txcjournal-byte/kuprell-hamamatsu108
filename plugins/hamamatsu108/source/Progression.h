@@ -16,6 +16,9 @@ namespace prog
 
     // MOTION: your own pattern on a grid of 8 rows (the chord's strings, low to high) x up to 16 steps
     constexpr int gridRows = 8, gridSteps = 16, linePoints = 64;
+    // STRINGS: the pulse of each string, in beats
+    inline const std::array<double, 10>& stringRates() { static const std::array<double, 10> r { 0.0, 2.0, 1.0, 1.5, 0.75, 0.5, 2.0 / 3.0, 1.0 / 3.0, 0.25, 1.25 }; return r; }
+    inline const juce::StringArray& stringRateNames() { static const juce::StringArray n { "off", "1/2", "1/4", "1/4.", "1/8.", "1/8", "1/4T", "1/8T", "1/16", "5/16" }; return n; }
     struct GridPreset { const char* name; std::array<int, 16> cells; };   // bit r = row r on
     inline const std::array<GridPreset, 8>& gridPresets()
     {
@@ -54,6 +57,9 @@ namespace prog
         double gridStepBeats = 0.25;
         int motionType = 0;                  // 0 = GRID (cells), 1 = LINES (a drawn finger path)
         std::array<float, 64> line {};       // LINES: height 0..1 at 64 points of the bar, < 0 = finger lifted
+        std::array<int, 8> strRate {};       // STRINGS: every string its own pulse (index into stringRates, 0 = silent)
+        std::array<int, 8> strOffset {};     //          where it starts, in 16ths
+        std::array<float, 8> strLevel {};    //          how strong
         double bpm = 120.0;
     };
 
@@ -177,6 +183,24 @@ namespace prog
                     default: idx = i % m; break;                                                      // up
                 }
                 out.push_back ({ i * s.arpStepBeats, run[(size_t) idx], juce::jlimit (0.1f, 1.0f, 0.35f + 0.65f * sv), s.arpStepBeats * juce::jlimit (0.1f, 1.0f, s.arpLength) });
+            }
+        }
+        else if (s.mode == grid && s.motionType == 3)
+        {
+            // STRINGS: every string pulses at its own rate from its own start: the patterns drift against each other
+            const double barStart = 4.0 * barIndex;
+            for (int r = 0; r < gridRows; ++r)
+            {
+                const double period = stringRates()[(size_t) juce::jlimit (0, 9, s.strRate[(size_t) r])];
+                if (period <= 0.0) continue;
+                const double t0 = 0.25 * s.strOffset[(size_t) r];
+                const int idx = juce::roundToInt ((float) r * (float) (n - 1) / (float) (gridRows - 1));
+                // the first hit at or after the bar start (the pulse runs from song position 0)
+                double k = std::ceil ((barStart - t0) / period - 1.0e-9);
+                for (double t = t0 + k * period; t < barStart + 4.0 - 1.0e-9; t += period)
+                    if (t >= barStart - 1.0e-9)
+                        out.push_back ({ t - barStart, tones[(size_t) idx], juce::jlimit (0.05f, 1.0f, s.strLevel[(size_t) r] * ((std::fmod (t, 1.0) < 1.0e-6) ? 1.0f : 0.85f)),
+                                         juce::jlimit (0.25, 2.0, period) });
             }
         }
         else if (s.mode == grid && s.motionType == 1)

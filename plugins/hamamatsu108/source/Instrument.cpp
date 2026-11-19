@@ -2105,6 +2105,7 @@ namespace hama
             juce::String sig;
             for (auto& c : processor.gridCells) sig << c.load() << ",";
             sig << plain (processor.apvts, "motionType") << plain (processor.apvts, "strumPattern");
+            for (int r = 0; r < prog::gridRows; ++r) sig << processor.strRate[(size_t) r].load() << processor.strOffset[(size_t) r].load() << processor.strLevel[(size_t) r].load();
             for (auto& c : processor.customSteps) sig << c.load();
             sig << processor.gridStepGui.load() << "|" << plain (processor.apvts, "gridLen") << "|" << processor.activeChord.load() << (plain (processor.apvts, "gridOn") > 0.5f ? "on" : "off");
             if (sig != last) { last = sig; repaint(); }
@@ -2119,16 +2120,17 @@ namespace hama
             const int type = juce::roundToInt (plain (processor.apvts, "motionType"));
             g.drawText (type == 0 ? "CLICK / DRAG = LIGHT CELLS  /  HOLD A CHORD TO PLAY"
                         : type == 1 ? "DRAW A LINE = A FINGER OVER THE STRINGS  /  RIGHT-DRAG = ERASE"
-                                    : "CLICK A STEP = CHANGE THE STROKE  /  IDEAS = 3-3-2, HALF-TIME ...",
-                        r.reduced (14.0f, 6.0f).withHeight (12.0f).withTrimmedLeft (214.0f), juce::Justification::centredLeft, false);
-            for (int t = 0; t < 3; ++t)
+                        : type == 2 ? "CLICK A STEP = CHANGE THE STROKE  /  IDEAS = 3-3-2, HALF-TIME ..."
+                                    : "EVERY STRING ITS OWN PULSE: CLICK THE RATE, CLICK ON THE STRING = START, DRAG UP / DOWN = LEVEL",
+                        r.reduced (14.0f, 6.0f).withHeight (12.0f).withTrimmedLeft (280.0f), juce::Justification::centredLeft, false);
+            for (int t = 0; t < 4; ++t)
             {
                 auto tb = typeTab (t);
                 g.setColour (t == type ? th().accent.withAlpha (0.18f) : juce::Colour (0xff202226));
                 g.fillRoundedRectangle (tb, 4.0f);
                 g.setColour (t == type ? th().accent : juce::Colour (0xff8a9097));
                 g.setFont (spaced (8.5f, true, 0.15f));
-                g.drawText (t == 0 ? "GRID" : t == 1 ? "LINES" : "RHYTHM", tb, juce::Justification::centred, false);
+                g.drawText (t == 0 ? "GRID" : t == 1 ? "LINES" : t == 2 ? "RHYTHM" : "STRINGS", tb, juce::Justification::centred, false);
             }
             const bool on = plain (processor.apvts, "gridOn") > 0.5f;
             const int len = juce::roundToInt (plain (processor.apvts, "gridLen"));
@@ -2140,6 +2142,7 @@ namespace hama
             static const char* nn[] = { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
             if (type == 1) { paintLines (g, tones, on, playing); return; }
             if (type == 2) { paintRhythm (g, on, playing); return; }
+            if (type == 3) { paintStrings (g, tones, on, playing); return; }
             for (int row = 0; row < prog::gridRows; ++row)
             {
                 auto c0 = cell (row, 0);
@@ -2189,6 +2192,100 @@ namespace hama
         }
 
         juce::Rectangle<float> typeTab (int t) const { return { 12.0f + t * 66.0f, 4.0f, 62.0f, 16.0f }; }
+
+        // STRINGS: every string a line with its own pulse; dots = where it plays in this bar, the line glows when it sounds
+        juce::Rectangle<float> rateChip (int row) const { const float y = rowY (row); return { gridArea().getX(), y - 8.0f, 44.0f, 16.0f }; }
+        juce::Rectangle<float> stringLane() const { return gridArea().withTrimmedLeft (52.0f); }
+        void paintStrings (juce::Graphics& g, const std::vector<int>& tones, bool on, int playing)
+        {
+            static const char* nn[] = { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
+            auto lane = stringLane();
+            const double pos = playing >= 2000 ? (playing - 2000) / 100.0 : -1.0;   // beats into the bar
+            for (int b = 1; b < 4; ++b)
+            {
+                g.setColour (juce::Colours::white.withAlpha (0.05f));
+                g.drawVerticalLine ((int) (lane.getX() + lane.getWidth() * b / 4.0f), lane.getY() - 6.0f, lane.getBottom() + 6.0f);
+            }
+            for (int row = 0; row < prog::gridRows; ++row)
+            {
+                const float y = rowY (row);
+                const int rate = processor.strRate[(size_t) row].load();
+                const float lvl = processor.strLevel[(size_t) row].load();
+                const double period = prog::stringRates()[(size_t) juce::jlimit (0, 9, rate)];
+                const double t0 = 0.25 * processor.strOffset[(size_t) row].load();
+                if (! tones.empty())
+                {
+                    const int t = tones[(size_t) juce::roundToInt ((float) row * (float) ((int) tones.size() - 1) / (float) (prog::gridRows - 1))];
+                    g.setFont (LookAndFeel::monoFont (9.5f));
+                    g.setColour (juce::Colour (0xff8a9097));
+                    g.drawText (juce::String (nn[t % 12]) + juce::String (t / 12 - 1), juce::Rectangle<float> (getLocalBounds().toFloat().getX() + 8.0f, y - 7.0f, 34.0f, 14.0f), juce::Justification::centredLeft, false);
+                }
+                // rate chip
+                auto chip = rateChip (row);
+                g.setColour (rate > 0 ? th().accent.withAlpha (0.16f) : juce::Colour (0xff202226));
+                g.fillRoundedRectangle (chip, 4.0f);
+                g.setFont (LookAndFeel::monoFont (9.5f));
+                g.setColour (rate > 0 ? th().accent : juce::Colour (0xff6e737a));
+                g.drawText (prog::stringRateNames()[rate], chip, juce::Justification::centred, false);
+                // the string: thicker = louder; it lights up just after a hit
+                bool ringing = false;
+                if (period > 0.0 && pos >= 0.0)
+                {
+                    const double since = std::fmod (pos - t0 + 64.0 * period, period);
+                    ringing = since < juce::jmin (0.2, period * 0.5);
+                }
+                g.setColour (rate == 0 ? juce::Colour (0xff2a2d32) : th().accent.withAlpha ((on ? 0.35f + 0.4f * lvl : 0.2f) * (ringing ? 1.6f : 1.0f)));
+                g.fillRoundedRectangle (lane.getX(), y - (0.6f + 1.6f * lvl) * (ringing ? 1.6f : 1.0f), lane.getWidth(), (1.2f + 3.2f * lvl) * (ringing ? 1.6f : 1.0f), 2.0f);
+                if (period > 0.0)
+                    for (double t = t0; t < 4.0 - 1.0e-9; t += period)
+                    {
+                        const float x = lane.getX() + lane.getWidth() * (float) (t / 4.0);
+                        g.setColour (th().accent.withAlpha (on ? 0.95f : 0.45f));
+                        g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ x, y }));
+                    }
+            }
+            if (pos >= 0.0 && on)
+            {
+                const float x = lane.getX() + lane.getWidth() * (float) (pos / 4.0);
+                g.setColour (juce::Colours::white.withAlpha (0.3f));
+                g.drawVerticalLine ((int) x, lane.getY() - 6.0f, lane.getBottom() + 6.0f);
+            }
+        }
+        int stringAt (juce::Point<float> p) const
+        {
+            int best = -1; float bd = 1.0e9f;
+            for (int r = 0; r < prog::gridRows; ++r) { const float d = std::abs (p.y - rowY (r)); if (d < bd) { bd = d; best = r; } }
+            return bd < 14.0f ? best : -1;
+        }
+        void stringsMouseDown (const juce::MouseEvent& e)
+        {
+            const int r = stringAt (e.position);
+            if (r < 0) return;
+            if (rateChip (r).contains (e.position))
+            {
+                juce::PopupMenu m;
+                m.addSectionHeader ("STRING " + juce::String (r + 1) + ": HOW OFTEN IT PLAYS");
+                for (int i = 0; i < prog::stringRateNames().size(); ++i) m.addItem (100 + i, prog::stringRateNames()[i], true, processor.strRate[(size_t) r].load() == i);
+                juce::Component::SafePointer<MotionGrid> safe (this);
+                m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (rateChip (r).toNearestInt())), [safe, r] (int res)
+                {
+                    if (safe == nullptr || res < 100) return;
+                    safe->processor.strRate[(size_t) r].store (res - 100);
+                    safe->repaint();
+                });
+                return;
+            }
+            auto lane = stringLane();
+            if (lane.expanded (0.0f, 14.0f).contains (e.position))
+            {
+                // click on the string = it starts there (snapped to 16ths); then drag up / down for the level
+                processor.strOffset[(size_t) r].store (juce::jlimit (0, 15, (int) ((e.position.x - lane.getX()) / lane.getWidth() * 16.0f)));
+                if (processor.strRate[(size_t) r].load() == 0) processor.strRate[(size_t) r].store (5);
+                levelRow = r; levelStart = processor.strLevel[(size_t) r].load(); levelY = e.position.y;
+                repaint();
+            }
+        }
+        int levelRow = -1; float levelStart = 0.0f, levelY = 0.0f;
 
         // LINES: strings as thin lines, the drawn path glowing, the playhead running across
         void paintLines (juce::Graphics& g, const std::vector<int>& tones, bool on, int playing)
@@ -2331,9 +2428,10 @@ namespace hama
 
         void mouseDown (const juce::MouseEvent& e) override
         {
-            for (int t = 0; t < 3; ++t)
+            for (int t = 0; t < 4; ++t)
                 if (typeTab (t).contains (e.position)) { setParam (processor.apvts, "motionType", (float) t); drawValue = -1; repaint(); return; }
             if (juce::roundToInt (plain (processor.apvts, "motionType")) == 2) { rhythmClick (e.position); drawValue = -1; return; }
+            if (juce::roundToInt (plain (processor.apvts, "motionType")) == 3) { levelRow = -1; stringsMouseDown (e); drawValue = 3; return; }
             if (juce::roundToInt (plain (processor.apvts, "motionType")) == 1)
             {
                 lastLineIndex = -1;
@@ -2349,6 +2447,11 @@ namespace hama
         }
         void mouseDrag (const juce::MouseEvent& e) override
         {
+            if (drawValue == 3)
+            {
+                if (levelRow >= 0) { processor.strLevel[(size_t) levelRow].store (juce::jlimit (0.1f, 1.0f, levelStart + (levelY - e.position.y) / 60.0f)); repaint(); }
+                return;
+            }
             if (drawValue == 2) { if (gridArea().expanded (0.0f, 6.0f).contains (e.position)) drawLine (e.position.withY (juce::jlimit (gridArea().getY(), gridArea().getBottom(), e.position.y)), lineErase); return; }
             int row, st;
             if (drawValue >= 0 && hit (e.position, row, st)) set (row, st);
@@ -2449,6 +2552,11 @@ namespace hama
                     for (int i = 0; i < Hamamatsu108Processor::strumPatternNames().size(); ++i) rh.addItem (400 + i, Hamamatsu108Processor::strumPatternNames()[i]);
                     m.addSubMenu ("RHYTHM patterns (3-3-2, half-time ...)", rh);
                 }
+                m.addSectionHeader ("STRINGS");
+                m.addItem (500, "Web (mixed pulses)");
+                m.addItem (501, "Polyrhythm 3 against 4");
+                m.addItem (502, "Steady eighths");
+                m.addItem (503, "Slow bells");
                 m.addSectionHeader ("LINES");
                 m.addItem (300, "Wave");
                 m.addItem (301, "Zig-zag");
@@ -2463,6 +2571,19 @@ namespace hama
                 menu (m, btn (0, 2), [this] (int r)
                 {
                     auto& c = processor.gridCells;
+                    if (r >= 500)
+                    {
+                        static const int rates[4][8] = { { 2, 0, 3, 0, 4, 5, 0, 7 }, { 2, 0, 0, 6, 0, 2, 0, 6 }, { 5, 0, 5, 0, 5, 0, 5, 0 }, { 1, 0, 3, 0, 9, 0, 4, 0 } };
+                        static const int offs[4][8] = { { 0, 0, 2, 0, 1, 2, 0, 1 }, { 0, 0, 0, 0, 0, 2, 0, 1 }, { 0, 0, 1, 0, 2, 0, 3, 0 }, { 0, 0, 2, 0, 0, 0, 1, 0 } };
+                        for (int k = 0; k < prog::gridRows; ++k)
+                        {
+                            processor.strRate[(size_t) k].store (rates[r - 500][k]);
+                            processor.strOffset[(size_t) k].store (offs[r - 500][k]);
+                            processor.strLevel[(size_t) k].store (0.85f - 0.04f * k);
+                        }
+                        setParam (processor.apvts, "motionType", 3.0f);
+                        return;
+                    }
                     if (r >= 400) { setParam (processor.apvts, "strumPattern", (float) (r - 400)); setParam (processor.apvts, "motionType", 2.0f); return; }
                     if (r >= 300)
                     {
