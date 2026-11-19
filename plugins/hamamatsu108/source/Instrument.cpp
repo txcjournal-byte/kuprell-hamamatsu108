@@ -522,6 +522,7 @@ namespace hama
                         else
                         {
                             processor.latchChord (pressed);   // stays on until clicked again or another chord is chosen
+                            if (! processor.gridPlay.load()) processor.strumNow (true);   // hear it once (MOTION loops only with PLAY or held keys)
                             if (const int ed = processor.progEdit.load(); ed >= 0)
                             {
                                 processor.progSlots[(size_t) ed].store (pressed);   // PROGRESSION: fill the slot, go to the next

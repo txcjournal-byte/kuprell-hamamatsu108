@@ -1783,7 +1783,11 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     // MOTION: the grid plays the chord that is on (keys, chord buttons, PLAY), in time with the song
     {
-        const int motionChord = previewing ? -1 : (chord >= 0 ? chord : -1);
+        // MOTION plays only when asked: PLAY is on, or keys are held (MIDI keyboard / piano roll).
+        // Picking a preset or clicking a chord button only lets you hear the sound (one stroke), it never starts the loop.
+        const bool keysHeld = splitHeld > 0 || rootHeldMask != 0 || numTypesHeld > 0
+                              || (heldMelodicCount > 0 && juce::roundToInt (param (apvts, "keysPlay")) != 0);   // Notes mode = a melody, not a chord to move
+        const int motionChord = (previewing || ! (gridPlay.load() || keysHeld)) ? -1 : (chord >= 0 ? chord : -1);
         if (motionOn && motionChord >= 0 && ! tones.empty())
         {
             const double bps = bpm / 60.0 / getSampleRate();
