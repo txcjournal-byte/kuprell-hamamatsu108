@@ -11,8 +11,25 @@
 namespace prog
 {
     constexpr int numSlots = 8;
-    enum Mode { strum = 0, arp, melody, numModes };
-    inline const juce::StringArray& modeNames() { static const juce::StringArray n { "STRUM", "ARP", "MELODY" }; return n; }
+    enum Mode { strum = 0, arp, melody, grid, numModes };
+    inline const juce::StringArray& modeNames() { static const juce::StringArray n { "STRUM", "ARP", "MELODY", "MOTION" }; return n; }
+
+    // MOTION: your own pattern on a grid of 8 rows (the chord's strings, low to high) x up to 16 steps
+    constexpr int gridRows = 8, gridSteps = 16, linePoints = 64;
+    struct GridPreset { const char* name; std::array<int, 16> cells; };   // bit r = row r on
+    inline const std::array<GridPreset, 8>& gridPresets()
+    {
+        static const std::array<GridPreset, 8> p { {
+            { "Glide",    { 0b00010001, 0, 0b00100000, 0b01000000, 0b10000000, 0, 0b00100000, 0b00010000, 0b00010010, 0, 0b01000000, 0b10000000, 0b00100000, 0, 0b00001000, 0b01000000 } },
+            { "Rise",     { 1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128 } },
+            { "Fall",     { 128, 64, 32, 16, 8, 4, 2, 1, 128, 64, 32, 16, 8, 4, 2, 1 } },
+            { "Pendulum", { 1, 4, 16, 64, 128, 32, 8, 2, 1, 4, 16, 64, 128, 32, 8, 2 } },
+            { "Pulse",    { 0b10010011, 0, 0, 0b01001000, 0, 0, 0b10010011, 0, 0, 0b01001000, 0, 0, 0b10010011, 0, 0b01000100, 0 } },
+            { "Broken",   { 0b00000011, 0, 0b00110000, 0, 0b00001100, 0, 0b11000000, 0, 0b00000011, 0, 0b00110000, 0, 0b00001100, 0b01000000, 0b10000000, 0 } },
+            { "Sparkle",  { 0b00000001, 0b10000000, 0, 0b01000000, 0b00000100, 0, 0b10100000, 0, 0b00000001, 0, 0b01000000, 0b10000000, 0b00010000, 0, 0b11000000, 0 } },
+            { "Strum",    { 0b11111111, 0, 0, 0, 0, 0, 0b11111100, 0, 0b11111111, 0, 0b11110000, 0, 0, 0, 0b11111100, 0 } } } };
+        return p;
+    }
 
     struct Note { double beat; int pitch; float velocity; double length; };
 
@@ -31,6 +48,12 @@ namespace prog
         float arpLength = 0.8f;
         std::array<float, 16> stepVel {};
         int stepLen = 16;
+        // motion grid
+        std::array<int, 16> gridCells {};
+        int gridLen = 16;
+        double gridStepBeats = 0.25;
+        int motionType = 0;                  // 0 = GRID (cells), 1 = LINES (a drawn finger path)
+        std::array<float, 64> line {};       // LINES: height 0..1 at 64 points of the bar, < 0 = finger lifted
         double bpm = 120.0;
     };
 
@@ -154,6 +177,58 @@ namespace prog
                     default: idx = i % m; break;                                                      // up
                 }
                 out.push_back ({ i * s.arpStepBeats, run[(size_t) idx], juce::jlimit (0.1f, 1.0f, 0.35f + 0.65f * sv), s.arpStepBeats * juce::jlimit (0.1f, 1.0f, s.arpLength) });
+            }
+        }
+        else if (s.mode == grid && s.motionType == 1)
+        {
+            // LINES: the drawn path is a finger moving over the strings during the bar; every string it crosses sounds
+            const double dt = 4.0 / linePoints;
+            int prev = -1;
+            auto rowTone = [&] (int row) { return tones[(size_t) juce::roundToInt ((float) row * (float) (n - 1) / (float) (gridRows - 1))]; };
+            for (int i = 0; i < linePoints; ++i)
+            {
+                const float y = s.line[(size_t) i];
+                if (y < 0.0f) { prev = -1; continue; }
+                const int row = juce::jlimit (0, gridRows - 1, juce::roundToInt (y * (gridRows - 1)));
+                if (prev < 0)
+                    out.push_back ({ i * dt, rowTone (row), 0.85f, 0.5 });   // the finger lands
+                else if (row != prev)
+                {
+                    const int dir = row > prev ? 1 : -1, count = std::abs (row - prev);
+                    const float vel = juce::jlimit (0.35f, 1.0f, 0.55f + 0.12f * count);   // a faster move = a stronger stroke
+                    for (int k = 1; k <= count; ++k)
+                        out.push_back ({ i * dt - dt + dt * k / (double) count, rowTone (prev + dir * k), vel, 0.5 });
+                }
+                prev = row;
+            }
+            for (size_t i = first; i < out.size(); ++i) out[i].length = juce::jlimit (0.25, 2.0, 4.0 - out[i].beat);
+        }
+        else if (s.mode == grid)
+        {
+            // every lit cell plays its row's string; several cells on one step roll quickly upwards (like a fast hand)
+            const int steps = juce::jmax (1, (int) std::round (4.0 / s.gridStepBeats));
+            const int len = juce::jlimit (1, gridSteps, s.gridLen);
+            const double roll = s.strumSpeedMs * 0.5 / 1000.0 * s.bpm / 60.0;
+            juce::Random hr (s.seed * 4099 + barIndex * 61 + chord);
+            for (int i = 0; i < steps; ++i)
+            {
+                const int mask = s.gridCells[(size_t) (i % len)];
+                if (mask == 0) continue;
+                const float accent = (i * s.gridStepBeats == std::floor (i * s.gridStepBeats)) ? 0.95f : 0.78f;
+                int k = 0;
+                for (int r = 0; r < gridRows; ++r)
+                    if (mask & (1 << r))
+                    {
+                        const int idx = juce::roundToInt ((float) r * (float) (n - 1) / (float) (gridRows - 1));
+                        const double drift = s.feel * (hr.nextFloat() - 0.5) * 10.0 / 1000.0 * s.bpm / 60.0;
+                        const float vel = juce::jlimit (0.1f, 1.0f, accent * (1.0f - 0.06f * k) * (1.0f + s.feel * 0.15f * (hr.nextFloat() - 0.5f)));
+                        // the note rings until this row plays again (at most 2 beats)
+                        int gapSteps = 1;
+                        while (gapSteps < steps && (s.gridCells[(size_t) ((i + gapSteps) % len)] & (1 << r)) == 0) ++gapSteps;
+                        out.push_back ({ juce::jmax (0.0, i * s.gridStepBeats + k * roll + drift), tones[(size_t) idx], vel,
+                                         juce::jlimit (s.gridStepBeats * 0.9, 2.0, gapSteps * s.gridStepBeats) });
+                        ++k;
+                    }
             }
         }
         else   // melody: chord tones on the strong 8ths, scale steps in between, a few rests; the same seed = the same tune

@@ -318,6 +318,10 @@ Hamamatsu108Processor::Hamamatsu108Processor()
 {
     for (auto& sl : progSlots) sl.store (-1);
     progNotes.reserve (256);
+    gridNotes.reserve (256);
+    setGridPreset (0);
+    for (int i = 0; i < prog::linePoints; ++i)   // a default wave: up and down twice per bar
+        motionLine[(size_t) i].store (0.5f + 0.45f * (float) std::sin (i / (float) prog::linePoints * juce::MathConstants<float>::twoPi * 2.0f));
     for (auto& c : ccMap) c.store (-1);
     for (auto& c : ccPending) c.store (0.0f);
 #if HAMA_MTS
@@ -549,7 +553,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "arpPattern", 1 }, "Arp Pattern", arpPatternNames(), 0));
     fl ("arpChance", "Arp Chance", 0.0f, 1.0f, 1.0f, pct);
     layout.add (std::make_unique<AudioParameterInt> (ParameterID { "arpOctaves", 1 }, "Arp Octaves", 1, 4, 2));
-    layout.add (std::make_unique<AudioParameterInt> (ParameterID { "harpOctave", 1 }, "Octave", -3, 2, 0));   // the whole harp an octave down (bass) or up
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { "harpOctave", 1 }, "Octave", -3, 2, 0));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { "gridOn", 1 }, "Motion", true));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "gridRate", 1 }, "Motion Rate", strumRateNames(), 4));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { "gridLen", 1 }, "Motion Steps", 2, 16, 16));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "motionType", 1 }, "Motion Type", juce::StringArray { "Grid", "Lines", "Rhythm" }, 0));   // the whole harp an octave down (bass) or up
     fl ("arpGate", "Arp Gate", 0.05f, 1.0f, 1.0f, pct);
     fl ("arpSwing", "Arp Swing", 0.0f, 1.0f, 0.0f, pct);
     fl ("arpVelScale", "Arp Dynamics", 0.0f, 1.0f, 1.0f, pct);
@@ -873,6 +881,11 @@ prog::Settings Hamamatsu108Processor::progSettings()
     for (int i = 0; i < 16; ++i) st.stepVel[(size_t) i] = seqVel[(size_t) i].load();
     st.stepLen = seqLen.load();
     st.bpm = hostBpm.load() > 1.0 ? hostBpm.load() : 120.0;
+    for (int i = 0; i < prog::gridSteps; ++i) st.gridCells[(size_t) i] = gridCells[(size_t) i].load();
+    st.gridLen = juce::roundToInt (param (apvts, "gridLen"));
+    st.gridStepBeats = rateInQuarters (juce::roundToInt (param (apvts, "gridRate")));
+    st.motionType = juce::roundToInt (param (apvts, "motionType"));
+    for (int i = 0; i < prog::linePoints; ++i) st.line[(size_t) i] = motionLine[(size_t) i].load();
     return st;
 }
 
@@ -1497,7 +1510,8 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     const int transpose = juce::roundToInt (param (apvts, "transpose"));
     // LIVE (the auto hand) and MEMO are retired: the plugin plays what you play, ARP is the only automatic mode
     // while the progression plays, its own generator plays the arp (the engine's ARP stays quiet)
-    const int mode = (juce::roundToInt (param (apvts, "strumMode")) == 1 && ! lastProgPlaying) ? 1 : 3;
+    const bool motionOn = param (apvts, "gridOn") > 0.5f;
+    const int mode = (juce::roundToInt (param (apvts, "strumMode")) == 1 && ! lastProgPlaying && ! motionOn) ? 1 : 3;
     const int rateIndex = juce::roundToInt (param (apvts, "strumRate"));
 
     // host tempo / position
@@ -1592,7 +1606,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     for (int i = 0; i < prog::numSlots; ++i) if (progSlots[(size_t) i].load() >= 0) usedSlots[(size_t) numUsed++] = i;
     // PLAY in the plugin is enough: with FL stopped it runs on its own clock (in the song tempo),
     // with FL playing it follows the song
-    const bool progPlaying = progOn.load() && numUsed > 0;
+    const bool progPlaying = false && progOn.load() && numUsed > 0;   // the progression row is retired (MOTION grid instead)
     lastProgPlaying = progPlaying;
     if (progPlaying && ! hostPlaying)
     {
@@ -1620,6 +1634,8 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     progWasPlaying = progPlaying;
 
     int chord = resolveChord();
+    if (gridPlay.load() && chord < 0)
+        chord = splitChord >= 0 ? splitChord : chords::index (juce::roundToInt (param (apvts, "keyRoot")), param (apvts, "keyMode") > 0.5f ? 1 : 0);
     const bool splitOn = juce::roundToInt (param (apvts, "keysPlay")) == 6 && ! chordZones.load();
     if (! splitOn) { splitChord = -1; splitHeld = 0; splitLeft.fill (false); numSplitHits = 0; }
     if (latchedChord >= 0 || rootHeldMask != 0) splitChord = -1;   // a chord button / zone wins
@@ -1730,7 +1746,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         if (h.strum == 2)
         {
             // left-hand chord: a soft down stroke so you hear what you picked
-            if (! lastProgPlaying) sweep (h.pos, true, 0, nt, juce::jlimit (0.2f, 0.9f, 0.3f + 0.6f * v), 1.2f);
+            if (! lastProgPlaying && param (apvts, "gridOn") < 0.5f) sweep (h.pos, true, 0, nt, juce::jlimit (0.2f, 0.9f, 0.3f + 0.6f * v), 1.2f);
             continue;
         }
         if (h.strum == 0)
@@ -1750,6 +1766,41 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         else sweep (h.pos, h.strum > 0, h.strum > 0 ? 0 : nt - 1, nt, juce::jlimit (0.2f, 1.0f, 0.35f + 0.65f * v), 1.5f - 0.9f * v);
     }
     numSplitHits = 0;
+
+    // MOTION: the grid plays the chord that is on (keys, chord buttons, PLAY), in time with the song
+    {
+        const int motionChord = previewing ? -1 : (chord >= 0 ? chord : -1);
+        if (motionOn && motionChord >= 0 && ! tones.empty())
+        {
+            const double bps = bpm / 60.0 / getSampleRate();
+            if (gridLastChord < 0 && ! hostPlaying) gridOwnPpq = 0.0;   // a new chord without the song: start at step 1
+            const double start = hostPlaying ? ppq : gridOwnPpq;
+            const double end = start + numSamples * bps;
+            auto st = progSettings();
+            st.mode = st.motionType == 2 ? prog::strum : prog::grid;   // RHYTHM = the strum patterns (3-3-2, half-time ...)
+            for (int b = (int) std::floor (start / 4.0); b <= (int) std::floor (end / 4.0); ++b)
+            {
+                if (b != gridBarCached || motionChord != gridCachedChord)
+                {
+                    gridNotes.clear();
+                    prog::bar (motionChord, b, motionChord, st, gridNotes);
+                    gridBarCached = b; gridCachedChord = motionChord;
+                }
+                for (const auto& nt : gridNotes)
+                {
+                    const double at = 4.0 * b + nt.beat;
+                    if (at >= start - 1.0e-9 && at < end)
+                        schedulePitch ((int) ((at - start) / bps), nt.pitch + 12 * 0, nt.velocity, true);
+                }
+            }
+            gridStepGui.store (st.motionType == 2 ? (int) std::floor (std::fmod (start, 4.0) / 0.25) % juce::jmax (1, st.strumSteps.length())
+                             : st.motionType == 1 ? 1000 + (int) (std::fmod (start, 4.0) / 4.0 * prog::linePoints)
+                                                  : (int) std::floor (std::fmod (start, 4.0) / st.gridStepBeats) % juce::jmax (1, st.gridLen));
+            if (! hostPlaying) gridOwnPpq = end;
+        }
+        else gridStepGui.store (-1);
+        gridLastChord = motionOn ? motionChord : -1;
+    }
 
     // ARP over held MIDI notes (piano roll melody / chords) when no chord button is active
     const bool arpHeld = ! previewing && mode == 1 && chord < 0 && heldMelodicCount > 0;
@@ -2407,6 +2458,12 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
         juce::StringArray pr;
         for (auto& sl : progSlots) pr.add (juce::String (sl.load()));
         state.setProperty ("progression", pr.joinIntoString (","), nullptr);
+        juce::StringArray gc;
+        for (auto& c : gridCells) gc.add (juce::String (c.load()));
+        state.setProperty ("motion", gc.joinIntoString (","), nullptr);
+        juce::StringArray ln;
+        for (auto& v : motionLine) ln.add (juce::String (v.load(), 3));
+        state.setProperty ("motionLine", ln.joinIntoString (","), nullptr);
         state.setProperty ("progOn", progOn.load(), nullptr);
         state.setProperty ("progMode", progMode.load(), nullptr);
         state.setProperty ("progSeed", progSeed.load(), nullptr);
@@ -2462,6 +2519,16 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
                 progOn.store ((bool) state.getProperty ("progOn", false));
                 progMode.store (juce::jlimit (0, prog::numModes - 1, (int) state.getProperty ("progMode", 0)));
                 progSeed.store ((int) state.getProperty ("progSeed", 1));
+                if (state.hasProperty ("motion"))
+                {
+                    const auto gc = juce::StringArray::fromTokens (state.getProperty ("motion").toString(), ",", {});
+                    for (int i = 0; i < prog::gridSteps; ++i) gridCells[(size_t) i].store (i < gc.size() ? (gc[i].getIntValue() & 255) : 0);
+                }
+                if (state.hasProperty ("motionLine"))
+                {
+                    const auto ln = juce::StringArray::fromTokens (state.getProperty ("motionLine").toString(), ",", {});
+                    for (int i = 0; i < prog::linePoints; ++i) motionLine[(size_t) i].store (i < ln.size() ? juce::jlimit (-1.0f, 1.0f, ln[i].getFloatValue()) : -1.0f);
+                }
             }
             {
                 const auto seq = juce::StringArray::fromTokens (state.getProperty ("arpSteps").toString(), ",", {});

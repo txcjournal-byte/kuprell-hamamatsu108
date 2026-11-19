@@ -205,12 +205,21 @@ public:
     std::atomic<bool> progOn { false };
     std::atomic<int> progMode { prog::strum }, progSeed { 1 }, progEdit { -1 }, progSlotGui { -1 };
     prog::Settings progSettings();
+    // MOTION grid: 8 rows (strings of the chord) x 16 steps, bit r of a step = row r lit
+    std::array<std::atomic<int>, prog::gridSteps> gridCells;
+    std::atomic<bool> gridPlay { false };          // PLAY: loop the chord without holding keys
+    std::array<std::atomic<float>, prog::linePoints> motionLine;   // LINES: the drawn path (-1 = lifted)
+    std::atomic<int> gridStepGui { -1 };
+    void setGridPreset (int i) { const auto& g = prog::gridPresets()[(size_t) juce::jlimit (0, (int) prog::gridPresets().size() - 1, i)]; for (int k = 0; k < prog::gridSteps; ++k) gridCells[(size_t) k].store (g.cells[(size_t) k]); }
 private:
     std::vector<prog::Note> progNotes;   // the bar being played
     int progBarCached = -1000;
     bool lastProgPlaying = false, progWasPlaying = false;
     int progBarOffset = 0, progLastHostBar = 0;
     double progOwnPpq = 0.0;     // PLAY without FL: the plugin's own clock
+    double gridOwnPpq = 0.0;     // the grid's clock when FL is stopped (starts with the chord)
+    int gridLastChord = -1, gridBarCached = -1000, gridCachedChord = -1;
+    std::vector<prog::Note> gridNotes;
     bool progOnHost = false;
     layers::Svf masterFiltL, masterFiltR;   // FILTER on the whole instrument
     float cutSmooth = 20000.0f;             // mod wheel strum: the same for CC 1

@@ -94,7 +94,8 @@ namespace hama
 
             paintRear (g);
             paintLabels (g);
-            drawWell (g, padArea().toFloat(), 16.0f);
+            drawWell (g, padArea().toFloat().withHeight (128.0f), 16.0f);
+            drawWell (g, plateArea().toFloat().withHeight (128.0f), 14.0f);
             drawWell (g, moduleArea().toFloat(), 16.0f);
             paintDeck (g);
         }
@@ -289,7 +290,7 @@ namespace hama
             using namespace geo;
             const float y = (float) labelY;
             engravedLabel (g, padArea().toFloat().withY (y).withHeight (12.0f), "CHORD BUTTONS", juce::String::fromUTF8 ("RIGHT-CLICK = MORE CHORDS \xc2\xb7 CTRL+CLICK = COMBINE   \xe2\x97\x8f IN KEY"));
-            engravedLabel (g, plateArea().toFloat().withY (y).withHeight (12.0f), "STRUM PLATE");
+            engravedLabel (g, plateArea().toFloat().withY (y).withHeight (12.0f), "MOTION");
             engravedLabel (g, moduleArea().toFloat().withY (y).withHeight (12.0f), juce::String::fromUTF8 ("VOICE \xc2\xb7 PLAY"));
         }
 
@@ -2081,6 +2082,511 @@ namespace hama
     };
 
     //==========================================================================
+    // MOTION: a grid of 8 rows (the strings of the chord, low to high) x 16 steps. Light cells, hold a chord
+    // (keys, chord buttons or PLAY) and it loops in time with the song.
+    class MotionGrid : public juce::Component, public juce::SettableTooltipClient
+    {
+    public:
+        explicit MotionGrid (Hamamatsu108Processor& p) : processor (p)
+        {
+            setTooltip ("MOTION: click or drag to light cells. Rows = strings of the chord (low to high), columns = steps. Hold a chord and it plays.");
+        }
+
+        juce::Rectangle<float> gridArea() const { return getLocalBounds().toFloat().reduced (12.0f, 8.0f).withTrimmedLeft (34.0f).withTrimmedTop (16.0f); }
+        juce::Rectangle<float> cell (int row, int step) const
+        {
+            auto g = gridArea();
+            const float cw = g.getWidth() / prog::gridSteps, ch = g.getHeight() / prog::gridRows;
+            return { g.getX() + step * cw + 1.5f, g.getBottom() - (row + 1) * ch + 1.5f, cw - 3.0f, ch - 3.0f };
+        }
+
+        void update()
+        {
+            juce::String sig;
+            for (auto& c : processor.gridCells) sig << c.load() << ",";
+            sig << plain (processor.apvts, "motionType") << plain (processor.apvts, "strumPattern");
+            for (auto& c : processor.customSteps) sig << c.load();
+            sig << processor.gridStepGui.load() << "|" << plain (processor.apvts, "gridLen") << "|" << processor.activeChord.load() << (plain (processor.apvts, "gridOn") > 0.5f ? "on" : "off");
+            if (sig != last) { last = sig; repaint(); }
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat();
+            drawWell (g, r, 14.0f);
+            g.setFont (spaced (8.5f, true, 0.18f));
+            g.setColour (juce::Colour (0xff9aa0a7));
+            const int type = juce::roundToInt (plain (processor.apvts, "motionType"));
+            g.drawText (type == 0 ? "CLICK / DRAG = LIGHT CELLS  /  HOLD A CHORD TO PLAY"
+                        : type == 1 ? "DRAW A LINE = A FINGER OVER THE STRINGS  /  RIGHT-DRAG = ERASE"
+                                    : "CLICK A STEP = CHANGE THE STROKE  /  IDEAS = 3-3-2, HALF-TIME ...",
+                        r.reduced (14.0f, 6.0f).withHeight (12.0f).withTrimmedLeft (214.0f), juce::Justification::centredLeft, false);
+            for (int t = 0; t < 3; ++t)
+            {
+                auto tb = typeTab (t);
+                g.setColour (t == type ? th().accent.withAlpha (0.18f) : juce::Colour (0xff202226));
+                g.fillRoundedRectangle (tb, 4.0f);
+                g.setColour (t == type ? th().accent : juce::Colour (0xff8a9097));
+                g.setFont (spaced (8.5f, true, 0.15f));
+                g.drawText (t == 0 ? "GRID" : t == 1 ? "LINES" : "RHYTHM", tb, juce::Justification::centred, false);
+            }
+            const bool on = plain (processor.apvts, "gridOn") > 0.5f;
+            const int len = juce::roundToInt (plain (processor.apvts, "gridLen"));
+            const int playing = processor.gridStepGui.load();
+            // row labels: the notes of the chord that is on
+            const int chord = processor.activeChord.load();
+            const auto tones = prog::chordTones (chord >= 0 ? chord : chords::index (juce::roundToInt (plain (processor.apvts, "keyRoot")), plain (processor.apvts, "keyMode") > 0.5f ? 1 : 0),
+                                                 juce::roundToInt (plain (processor.apvts, "transpose")), juce::roundToInt (plain (processor.apvts, "harpRange")));
+            static const char* nn[] = { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
+            if (type == 1) { paintLines (g, tones, on, playing); return; }
+            if (type == 2) { paintRhythm (g, on, playing); return; }
+            for (int row = 0; row < prog::gridRows; ++row)
+            {
+                auto c0 = cell (row, 0);
+                juce::String lab;
+                if (! tones.empty())
+                {
+                    const int t = tones[(size_t) juce::roundToInt ((float) row * (float) ((int) tones.size() - 1) / (float) (prog::gridRows - 1))];
+                    lab = juce::String (nn[t % 12]) + juce::String (t / 12 - 1);
+                }
+                g.setFont (LookAndFeel::monoFont (9.5f));
+                g.setColour (juce::Colour (0xff8a9097));
+                g.drawText (lab, juce::Rectangle<float> (r.getX() + 8.0f, c0.getY(), 34.0f, c0.getHeight()), juce::Justification::centredLeft, false);
+                for (int st = 0; st < prog::gridSteps; ++st)
+                {
+                    auto c = cell (row, st);
+                    const bool lit = (processor.gridCells[(size_t) st].load() >> row) & 1;
+                    const bool inLen = st < len;
+                    g.setColour (st % 4 == 0 ? juce::Colour (0xff23262a) : juce::Colour (0xff1b1d20));
+                    g.fillRoundedRectangle (c, 3.0f);
+                    if (lit)
+                    {
+                        const float a = (inLen ? 1.0f : 0.25f) * (on ? 1.0f : 0.45f);
+                        if (st == playing && on)
+                        {
+                            g.setColour (th().accent.withAlpha (0.35f * a));
+                            g.fillRoundedRectangle (c.expanded (2.0f), 4.0f);
+                        }
+                        g.setColour (th().accent.withAlpha (a * (st == playing ? 1.0f : 0.82f)));
+                        g.fillRoundedRectangle (c, 3.0f);
+                        g.setColour (juce::Colours::white.withAlpha (0.25f * a));
+                        g.fillRoundedRectangle (c.withHeight (2.0f), 1.0f);
+                    }
+                }
+            }
+            if (playing >= 0 && on)
+            {
+                auto top = cell (prog::gridRows - 1, playing), bottom = cell (0, playing);
+                g.setColour (juce::Colours::white.withAlpha (0.18f));
+                g.drawRoundedRectangle (top.getUnion (bottom).expanded (1.5f), 3.0f, 1.0f);
+            }
+            if (len < prog::gridSteps)
+            {
+                auto edge = cell (0, len).getX() - 1.5f;
+                g.setColour (juce::Colours::white.withAlpha (0.25f));
+                g.drawVerticalLine ((int) edge, gridArea().getY(), gridArea().getBottom());
+            }
+        }
+
+        juce::Rectangle<float> typeTab (int t) const { return { 12.0f + t * 66.0f, 4.0f, 62.0f, 16.0f }; }
+
+        // LINES: strings as thin lines, the drawn path glowing, the playhead running across
+        void paintLines (juce::Graphics& g, const std::vector<int>& tones, bool on, int playing)
+        {
+            static const char* nn[] = { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
+            auto a = gridArea();
+            for (int row = 0; row < prog::gridRows; ++row)
+            {
+                const float y = rowY (row);
+                g.setColour (juce::Colour (0xff2a2d32));
+                g.drawHorizontalLine ((int) y, a.getX(), a.getRight());
+                if (! tones.empty())
+                {
+                    const int t = tones[(size_t) juce::roundToInt ((float) row * (float) ((int) tones.size() - 1) / (float) (prog::gridRows - 1))];
+                    g.setFont (LookAndFeel::monoFont (9.5f));
+                    g.setColour (juce::Colour (0xff8a9097));
+                    g.drawText (juce::String (nn[t % 12]) + juce::String (t / 12 - 1), juce::Rectangle<float> (getLocalBounds().toFloat().getX() + 8.0f, y - 7.0f, 34.0f, 14.0f), juce::Justification::centredLeft, false);
+                }
+            }
+            for (int b = 0; b <= 4; ++b)
+            {
+                g.setColour (juce::Colours::white.withAlpha (b == 0 || b == 4 ? 0.0f : 0.06f));
+                g.drawVerticalLine ((int) (a.getX() + a.getWidth() * b / 4.0f), a.getY(), a.getBottom());
+            }
+            // the path, in segments (the finger can lift)
+            juce::Path p;
+            bool down = false;
+            for (int i = 0; i < prog::linePoints; ++i)
+            {
+                const float v = processor.motionLine[(size_t) i].load();
+                if (v < 0.0f) { down = false; continue; }
+                const juce::Point<float> pt (a.getX() + a.getWidth() * (i + 0.5f) / prog::linePoints, a.getBottom() - v * a.getHeight());
+                if (! down) { p.startNewSubPath (pt); down = true; } else p.lineTo (pt);
+            }
+            g.setColour (th().accent.withAlpha (on ? 0.25f : 0.1f));
+            g.strokePath (p, juce::PathStrokeType (7.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.setColour (th().accent.withAlpha (on ? 1.0f : 0.45f));
+            g.strokePath (p, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            if (playing >= 1000 && on)
+            {
+                const int i = juce::jlimit (0, prog::linePoints - 1, playing - 1000);
+                const float x = a.getX() + a.getWidth() * (i + 0.5f) / prog::linePoints;
+                g.setColour (juce::Colours::white.withAlpha (0.25f));
+                g.drawVerticalLine ((int) x, a.getY(), a.getBottom());
+                const float v = processor.motionLine[(size_t) i].load();
+                if (v >= 0.0f)
+                {
+                    g.setColour (juce::Colours::white);
+                    g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ x, a.getBottom() - v * a.getHeight() }));
+                }
+            }
+        }
+        // RHYTHM: the strum patterns as strokes; a step's arrow length = how many strings it crosses
+        juce::String rhythm() const { return processor.patternString (juce::roundToInt (plain (processor.apvts, "strumPattern"))); }
+        juce::Rectangle<float> rhythmStep (int i) const
+        {
+            auto a = gridArea();
+            const float w = a.getWidth() / 16.0f;
+            return { a.getX() + i * w + 2.0f, a.getY(), w - 4.0f, a.getHeight() };
+        }
+        void paintRhythm (juce::Graphics& g, bool on, int playing)
+        {
+            const auto steps = rhythm();
+            const int pat = juce::roundToInt (plain (processor.apvts, "strumPattern"));
+            g.setFont (LookAndFeel::monoFont (10.0f));
+            g.setColour (juce::Colour (0xff8a9097));
+            g.drawText (Hamamatsu108Processor::strumPatternNames()[pat].toUpperCase(), juce::Rectangle<float> (getLocalBounds().toFloat().getX() + 8.0f, gridArea().getY(), 40.0f, 40.0f), juce::Justification::topLeft, true);
+            for (int i = 0; i < 16; ++i)
+            {
+                auto c = rhythmStep (i);
+                const bool inLen = i < steps.length();
+                g.setColour (i % 4 == 0 ? juce::Colour (0xff23262a) : juce::Colour (0xff1b1d20));
+                g.fillRoundedRectangle (c, 4.0f);
+                if (! inLen) continue;
+                const auto ch = (char) steps[i];
+                if (ch == '.') continue;
+                const bool up = ch == 'U' || ch == 'u' || ch == 'H';
+                // how much of the height the stroke covers: full stroke, half stroke, bass / high only, a tap
+                float from = 0.0f, to = 1.0f;
+                switch (ch)
+                {
+                    case 'd': to = 0.6f; break;
+                    case 'U': from = 0.3f; break;
+                    case 'u': from = 0.6f; break;
+                    case 'B': to = 0.25f; break;
+                    case 'H': from = 0.75f; break;
+                    case 'T': from = 0.45f; to = 0.55f; break;
+                    case 'x': from = 0.48f; to = 0.52f; break;
+                    default: break;
+                }
+                auto bar = c.reduced (c.getWidth() * 0.28f, 6.0f);
+                const float y0 = bar.getBottom() - bar.getHeight() * from, y1 = bar.getBottom() - bar.getHeight() * to;
+                const float a = (on ? 1.0f : 0.45f) * (ch == 'x' ? 0.4f : 1.0f);
+                juce::Path arrow;
+                const float cx = bar.getCentreX();
+                arrow.addArrow (up ? juce::Line<float> (cx, y0, cx, y1) : juce::Line<float> (cx, y1, cx, y0), ch == 'S' ? 5.0f : 3.0f, 11.0f, 9.0f);
+                if (i == playing && on) { g.setColour (th().accent.withAlpha (0.25f)); g.fillRoundedRectangle (c, 4.0f); }
+                g.setColour (th().accent.withAlpha (a));
+                if (ch == 'T' || ch == 'x') g.fillEllipse (juce::Rectangle<float> (ch == 'T' ? 10.0f : 6.0f, ch == 'T' ? 10.0f : 6.0f).withCentre (bar.getCentre()));   // a tap
+                else g.fillPath (arrow);
+            }
+        }
+        void rhythmClick (juce::Point<float> p)
+        {
+            for (int i = 0; i < 16; ++i)
+                if (rhythmStep (i).contains (p))
+                {
+                    // editing makes it your own (CUSTOM): copy the pattern you start from
+                    auto steps = rhythm();
+                    while (steps.length() < 16) steps += ".";
+                    static const juce::String cycle (".DUduBH");
+                    const int k = cycle.indexOfChar (steps[i]);
+                    const auto next = cycle[(k + 1) % cycle.length()];
+                    for (int j = 0; j < 16; ++j) processor.customSteps[(size_t) j].store (j == i ? (int) next : (int) steps[j]);
+                    processor.customLen.store (16);
+                    setParam (processor.apvts, "strumPattern", 13.0f);
+                    repaint();
+                    return;
+                }
+        }
+        float rowY (int row) const { auto a = gridArea(); return a.getBottom() - a.getHeight() * (float) row / (prog::gridRows - 1); }
+
+        void drawLine (juce::Point<float> p, bool erase)
+        {
+            auto a = gridArea();
+            const int i = juce::jlimit (0, prog::linePoints - 1, (int) ((p.x - a.getX()) / a.getWidth() * prog::linePoints));
+            const float v = erase ? -1.0f : juce::jlimit (0.0f, 1.0f, (a.getBottom() - p.y) / a.getHeight());
+            // fill the gap to the last point so a fast stroke stays one line
+            if (lastLineIndex >= 0 && std::abs (i - lastLineIndex) > 1)
+            {
+                const int d = i > lastLineIndex ? 1 : -1;
+                const float v0 = processor.motionLine[(size_t) lastLineIndex].load();
+                for (int k = lastLineIndex + d; k != i; k += d)
+                    processor.motionLine[(size_t) k].store (erase || v0 < 0.0f ? v : v0 + (v - v0) * (float) (k - lastLineIndex) / (float) (i - lastLineIndex));
+            }
+            processor.motionLine[(size_t) i].store (v);
+            lastLineIndex = i;
+            repaint();
+        }
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            for (int t = 0; t < 3; ++t)
+                if (typeTab (t).contains (e.position)) { setParam (processor.apvts, "motionType", (float) t); drawValue = -1; repaint(); return; }
+            if (juce::roundToInt (plain (processor.apvts, "motionType")) == 2) { rhythmClick (e.position); drawValue = -1; return; }
+            if (juce::roundToInt (plain (processor.apvts, "motionType")) == 1)
+            {
+                lastLineIndex = -1;
+                lineErase = e.mods.isPopupMenu();
+                if (gridArea().contains (e.position)) drawLine (e.position, lineErase);
+                drawValue = 2;
+                return;
+            }
+            int row, st;
+            if (! hit (e.position, row, st)) { drawValue = -1; return; }
+            drawValue = ((processor.gridCells[(size_t) st].load() >> row) & 1) ? 0 : 1;
+            set (row, st);
+        }
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            if (drawValue == 2) { if (gridArea().expanded (0.0f, 6.0f).contains (e.position)) drawLine (e.position.withY (juce::jlimit (gridArea().getY(), gridArea().getBottom(), e.position.y)), lineErase); return; }
+            int row, st;
+            if (drawValue >= 0 && hit (e.position, row, st)) set (row, st);
+        }
+
+    private:
+        int lastLineIndex = -1;
+        bool lineErase = false;
+        bool hit (juce::Point<float> p, int& row, int& st) const
+        {
+            auto g = gridArea();
+            if (! g.contains (p)) return false;
+            st = juce::jlimit (0, prog::gridSteps - 1, (int) ((p.x - g.getX()) / (g.getWidth() / prog::gridSteps)));
+            row = juce::jlimit (0, prog::gridRows - 1, prog::gridRows - 1 - (int) ((p.y - g.getY()) / (g.getHeight() / prog::gridRows)));
+            return true;
+        }
+        void set (int row, int st)
+        {
+            auto& c = processor.gridCells[(size_t) st];
+            const int v = drawValue ? (c.load() | (1 << row)) : (c.load() & ~(1 << row));
+            if (v != c.load()) { c.store (v); if (drawValue) processor.pluckString (juce::jlimit (0, 15, row * 2)); repaint(); }
+        }
+
+        Hamamatsu108Processor& processor;
+        juce::String last;
+        int drawValue = -1;
+    };
+
+    //==========================================================================
+    // the MOTION controls in the column right of the chord buttons
+    class MotionControls : public juce::Component
+    {
+    public:
+        explicit MotionControls (Hamamatsu108Processor& p) : processor (p) {}
+        std::function<void (const juce::String&, const juce::String&)> onStatus;
+
+        juce::Rectangle<float> btn (int col, int row) const { return { 8.0f + col * 56.0f, 6.0f + row * 30.0f, 52.0f, 26.0f }; }
+
+        void update()
+        {
+            juce::String sig;
+            sig << (plain (processor.apvts, "gridOn") > 0.5f ? 1 : 0) << (processor.gridPlay.load() ? 1 : 0) << plain (processor.apvts, "gridRate") << plain (processor.apvts, "gridLen");
+            if (sig != last) { last = sig; repaint(); }
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            drawHardButton (g, btn (0, 0), "PLAY", processor.gridPlay.load(), true, true);
+            drawHardButton (g, btn (1, 0), "MOTION", plain (processor.apvts, "gridOn") > 0.5f, true, true);
+            const int rate = juce::roundToInt (plain (processor.apvts, "gridRate"));
+            drawHardButton (g, btn (0, 1), Hamamatsu108Processor::strumRateNames()[rate] + juce::String::fromUTF8 (" \xe2\x96\xbe"), false, true, false);
+            drawHardButton (g, btn (1, 1), juce::String (juce::roundToInt (plain (processor.apvts, "gridLen"))) + juce::String::fromUTF8 (" st \xe2\x96\xbe"), false, true, false);
+            drawHardButton (g, btn (0, 2), juce::String::fromUTF8 ("IDEAS \xe2\x96\xbe"), false, true, false);
+            drawHardButton (g, btn (1, 2), "CLEAR", false, true, false);
+            drawHardButton (g, btn (0, 3).withWidth (108.0f), {}, false, true, false);
+            auto d = btn (0, 3).withWidth (108.0f).withTrimmedBottom (4.0f);
+            g.setFont (LookAndFeel::uiFont (11.0f, true));
+            g.setColour (th().accent);
+            g.drawText (juce::String::fromUTF8 ("DRAG MIDI \xe2\x86\x92"), d, juce::Justification::centred, false);
+        }
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            const auto p = e.position;
+            dragFrom = btn (0, 3).withWidth (108.0f).contains (p);
+            if (btn (0, 0).contains (p))
+            {
+                processor.gridPlay.store (! processor.gridPlay.load());
+                status ("PLAY", processor.gridPlay.load() ? "the chord loops (pick chords with the buttons or keys)" : "stopped");
+            }
+            if (btn (1, 0).contains (p))
+            {
+                const bool on = plain (processor.apvts, "gridOn") > 0.5f;
+                setParam (processor.apvts, "gridOn", on ? 0.0f : 1.0f);
+                status ("MOTION", on ? "off: chords sound once, keys play as set" : "on: held chords play the grid");
+            }
+            if (btn (0, 1).contains (p))
+            {
+                juce::PopupMenu m;
+                const int cur = juce::roundToInt (plain (processor.apvts, "gridRate"));
+                for (int i : { 1, 2, 3, 4, 5, 6 }) m.addItem (100 + i, "Step " + Hamamatsu108Processor::strumRateNames()[i], true, cur == i);
+                menu (m, btn (0, 1), [this] (int r) { setParam (processor.apvts, "gridRate", (float) (r - 100)); });
+            }
+            if (btn (1, 1).contains (p))
+            {
+                juce::PopupMenu m;
+                const int cur = juce::roundToInt (plain (processor.apvts, "gridLen"));
+                for (int i : { 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }) m.addItem (100 + i, juce::String (i) + " steps", true, cur == i);
+                menu (m, btn (1, 1), [this] (int r) { setParam (processor.apvts, "gridLen", (float) (r - 100)); });
+            }
+            if (btn (0, 2).contains (p))
+            {
+                juce::PopupMenu m;
+                for (int i = 0; i < (int) prog::gridPresets().size(); ++i) m.addItem (100 + i, prog::gridPresets()[(size_t) i].name);
+                m.addSeparator();
+                {
+                    juce::PopupMenu rh;
+                    for (int i = 0; i < Hamamatsu108Processor::strumPatternNames().size(); ++i) rh.addItem (400 + i, Hamamatsu108Processor::strumPatternNames()[i]);
+                    m.addSubMenu ("RHYTHM patterns (3-3-2, half-time ...)", rh);
+                }
+                m.addSectionHeader ("LINES");
+                m.addItem (300, "Wave");
+                m.addItem (301, "Zig-zag");
+                m.addItem (302, "Climb and fall");
+                m.addItem (303, "Two gestures");
+                m.addItem (304, "Erase the line");
+                m.addSeparator();
+                m.addItem (200, "Surprise me (random)");
+                m.addItem (201, "Shift right");
+                m.addItem (202, "Shift left");
+                m.addItem (203, "Flip (low <-> high)");
+                menu (m, btn (0, 2), [this] (int r)
+                {
+                    auto& c = processor.gridCells;
+                    if (r >= 400) { setParam (processor.apvts, "strumPattern", (float) (r - 400)); setParam (processor.apvts, "motionType", 2.0f); return; }
+                    if (r >= 300)
+                    {
+                        auto& ln = processor.motionLine;
+                        for (int i = 0; i < prog::linePoints; ++i)
+                        {
+                            const float x = i / (float) prog::linePoints;
+                            float v = -1.0f;
+                            switch (r)
+                            {
+                                case 300: v = 0.5f + 0.45f * std::sin (x * juce::MathConstants<float>::twoPi * 2.0f); break;
+                                case 301: v = std::abs (std::fmod (x * 8.0f, 2.0f) - 1.0f); break;
+                                case 302: v = x < 0.5f ? x * 2.0f : 2.0f - x * 2.0f; break;
+                                case 303: v = (x < 0.2f) ? x * 5.0f : (x > 0.5f && x < 0.7f) ? 1.0f - (x - 0.5f) * 5.0f : -1.0f; break;
+                                default: break;
+                            }
+                            ln[(size_t) i].store (v < 0.0f ? -1.0f : juce::jlimit (0.0f, 1.0f, v));
+                        }
+                        setParam (processor.apvts, "motionType", 1.0f);
+                        return;
+                    }
+                    if (r < 200) { setParam (processor.apvts, "motionType", 0.0f); processor.setGridPreset (r - 100); status ("MOTION", prog::gridPresets()[(size_t) (r - 100)].name); return; }
+                    if (r == 200)
+                    {
+                        auto& rnd = juce::Random::getSystemRandom();
+                        int prev = rnd.nextInt (8);
+                        for (int i = 0; i < prog::gridSteps; ++i)
+                        {
+                            int v = 0;
+                            if (rnd.nextFloat() < (i % 4 == 0 ? 0.95f : i % 2 == 0 ? 0.6f : 0.35f))
+                            {
+                                prev = juce::jlimit (0, 7, prev + rnd.nextInt (5) - 2);   // moves like a melody, not noise
+                                v |= 1 << prev;
+                                if (i % 8 == 0) v |= 1 << juce::jmax (0, prev - 4);
+                            }
+                            c[(size_t) i].store (v);
+                        }
+                        status ("MOTION", "a new idea");
+                    }
+                    std::array<int, prog::gridSteps> cp {};
+                    for (int i = 0; i < prog::gridSteps; ++i) cp[(size_t) i] = c[(size_t) i].load();
+                    if (r == 201) for (int i = 0; i < prog::gridSteps; ++i) c[(size_t) i].store (cp[(size_t) ((i + prog::gridSteps - 1) % prog::gridSteps)]);
+                    if (r == 202) for (int i = 0; i < prog::gridSteps; ++i) c[(size_t) i].store (cp[(size_t) ((i + 1) % prog::gridSteps)]);
+                    if (r == 203)
+                        for (int i = 0; i < prog::gridSteps; ++i)
+                        {
+                            int v = 0;
+                            for (int b = 0; b < 8; ++b) if (cp[(size_t) i] & (1 << b)) v |= 1 << (7 - b);
+                            c[(size_t) i].store (v);
+                        }
+                });
+            }
+            if (btn (1, 2).contains (p)) { for (auto& c : processor.gridCells) c.store (0); status ("MOTION", "cleared: click cells to draw"); }
+            repaint();
+        }
+
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            if (! dragFrom || dragging || e.getDistanceFromDragStart() < 5) return;
+            const auto file = writeClip();
+            if (! file.existsAsFile()) { status ("DRAG", "light some cells first"); return; }
+            dragging = true;
+            juce::Component::SafePointer<MotionControls> safe (this);
+            juce::DragAndDropContainer::performExternalDragDropOfFiles ({ file.getFullPathName() }, false, this, [safe] { if (safe != nullptr) safe->dragging = false; });
+        }
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            if (dragFrom && ! dragging && e.getDistanceFromDragStart() < 5)
+                status ("DRAG MIDI", "hold and drag into the piano roll: 4 bars of the grid on the chord that is on (or the key chord)");
+            dragFrom = false;
+        }
+
+    private:
+        void status (const juce::String& a, const juce::String& b) { if (onStatus) onStatus (a, b); }
+        void menu (juce::PopupMenu& m, juce::Rectangle<float> r, std::function<void (int)> f)
+        {
+            juce::Component::SafePointer<MotionControls> safe (this);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (r.toNearestInt())), [safe, f] (int res) { if (safe != nullptr && res > 0) { f (res); safe->repaint(); } });
+        }
+
+        juce::File writeClip()
+        {
+            auto st = processor.progSettings();
+            st.mode = st.motionType == 2 ? prog::strum : prog::grid;
+            int chord = processor.activeChord.load();
+            if (chord < 0) chord = chords::index (juce::roundToInt (plain (processor.apvts, "keyRoot")), plain (processor.apvts, "keyMode") > 0.5f ? 1 : 0);
+            std::vector<prog::Note> notes;
+            for (int b = 0; b < 4; ++b)
+            {
+                const size_t s0 = notes.size();
+                prog::bar (chord, b, chord, st, notes);
+                for (size_t i = s0; i < notes.size(); ++i) notes[i].beat += 4.0 * b;
+            }
+            if (notes.empty()) return {};
+            const int ppqTicks = 960;
+            juce::MidiMessageSequence seq;
+            seq.addEvent (juce::MidiMessage::tempoMetaEvent (juce::roundToInt (60000000.0 / st.bpm)), 0.0);
+            for (auto& n : notes)
+            {
+                const int pitch = juce::jlimit (0, 127, n.pitch + 12 * st.octave);
+                const double on = n.beat * ppqTicks;
+                seq.addEvent (juce::MidiMessage::noteOn (1, pitch, juce::jlimit (0.05f, 1.0f, n.velocity)), on);
+                seq.addEvent (juce::MidiMessage::noteOff (1, pitch), juce::jmax (on + 10.0, (n.beat + n.length) * ppqTicks));
+            }
+            seq.addEvent (juce::MidiMessage::endOfTrack(), 16.0 * ppqTicks);
+            seq.updateMatchedPairs();
+            juce::MidiFile mf;
+            mf.setTicksPerQuarterNote (ppqTicks);
+            mf.addTrack (seq);
+            auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Hamamatsu motion " + chords::shortName (chord) + ".mid");
+            f.deleteFile();
+            juce::FileOutputStream os (f);
+            if (! os.openedOk()) return {};
+            mf.writeTo (os);
+            os.flush();
+            return f;
+        }
+
+        Hamamatsu108Processor& processor;
+        juce::String last;
+        bool dragFrom = false, dragging = false;
+    };
+
+    //==========================================================================
     InstrumentView::InstrumentView (Hamamatsu108Processor& p) : processor (p)
     {
         backdrop = std::make_unique<Backdrop>();
@@ -2091,6 +2597,8 @@ namespace hama
         rail = std::make_unique<MemoryRail> (p);
         perform = std::make_unique<PerformPanel> (p);
         progression = std::make_unique<ProgressionStrip> (p);
+        motion = std::make_unique<MotionGrid> (p);
+        motionControls = std::make_unique<MotionControls> (p);
         patternChoice = std::make_unique<RearChoice> (p, "strumPattern", "PATTERN", "How the hand strums (LIVE)");
         keysChoice = std::make_unique<RearChoice> (p, "keysPlay", "YOUR KEYS", "What your keyboard / piano-roll notes do");
         modelDisplay = std::make_unique<ModelDisplay> (p);
@@ -2104,7 +2612,10 @@ namespace hama
         addAndMakeVisible (*capture);
         addChildComponent (*rail);   // chord memory is not on the PLAY page any more
         addAndMakeVisible (*perform);
-        addAndMakeVisible (*progression);
+        addChildComponent (*progression);   // retired: the MOTION grid replaces it
+        addAndMakeVisible (*motion);
+        addAndMakeVisible (*motionControls);
+        motionControls->onStatus = [this] (const juce::String& a, const juce::String& b) { if (onStatus) onStatus (a, b); };
         progression->onStatus = [this] (const juce::String& a, const juce::String& b) { if (onStatus) onStatus (a, b); };
         addAndMakeVisible (*patternChoice);
         addAndMakeVisible (*keysChoice);
@@ -2168,14 +2679,17 @@ namespace hama
     {
         backdrop->setBounds (getLocalBounds());
         pad->setBounds (geo::padArea().withHeight (126));
-        progression->setBounds (geo::padArea().getX() + 14, geo::padArea().getY() + 128, geo::padArea().getWidth() - 28, 42);
-        perform->setBounds (geo::padArea().withTrimmedTop (172).reduced (4, 4));
+        progression->setVisible (false);
+        perform->setVisible (false);   // ARP and GATE live in EDIT > ARP & GATE
+        // MOTION grid under the chord buttons, across the old plate column; its controls sit right of the chord buttons
+        motion->setBounds (geo::padArea().getX(), geo::midY + 134, geo::plateArea().getRight() - geo::padArea().getX(), geo::midH - 134);
+        motionControls->setBounds (geo::plateArea().getX(), geo::midY, geo::plateArea().getWidth(), 128);
         patternChoice->setVisible (false);   // LIVE strum retired
         keysChoice->setVisible (false);      // keys always play Split (Settings)
         modelDisplay->setVisible (false);    // character lives in EDIT > FILTER; the preset bar sits up here now
         chordSel->setVisible (false);
         bassSel->setVisible (false);
-        plate->setBounds (geo::plateArea());
+        plate->setVisible (false);   // MOTION replaces the plate (strums: black keys, wheels, PC keys)
         module->setBounds (geo::moduleArea());
         capture->setBounds (MidiCapture::area());
         rail->setBounds (MemoryRail::area());
@@ -2265,6 +2779,8 @@ namespace hama
         rail->update();
         perform->update();
         progression->update();
+        motion->update();
+        motionControls->update();
         patternChoice->update();
         keysChoice->update();
         modelDisplay->update();

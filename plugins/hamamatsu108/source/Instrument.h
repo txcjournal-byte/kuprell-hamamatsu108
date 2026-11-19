@@ -52,6 +52,8 @@ namespace hama
     class ModelDisplay;
     class PerformPanel;
     class ProgressionStrip;
+    class MotionGrid;
+    class MotionControls;
     class DeckSlider;
     class RearChoice;
 
@@ -84,6 +86,8 @@ namespace hama
         std::unique_ptr<ModelDisplay> modelDisplay;
         std::unique_ptr<PerformPanel> perform;
         std::unique_ptr<ProgressionStrip> progression;
+        std::unique_ptr<MotionGrid> motion;
+        std::unique_ptr<MotionControls> motionControls;
         std::unique_ptr<RearChoice> patternChoice, keysChoice;
         std::array<kuprell::Knob*, 3> fxKnobs {};
         juce::OwnedArray<kuprell::Knob> deckKnobs;
