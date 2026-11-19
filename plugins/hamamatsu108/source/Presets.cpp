@@ -227,6 +227,16 @@ namespace presets
                     if (c == 4) b.set ("bAttack", b.range (0.15f, 0.8f));
                     b.set ("morph", c == 4 ? b.range (0.45f, 0.7f) : b.range (0.25f, 0.5f));
                 }
+                // stereo image per type: plucks and keys focused, pads, hybrids and cinematic wide
+                {
+                    static const float spreadLo[] = { 0.45f, 0.35f, 0.5f, 0.35f, 0.6f, 0.5f, 0.6f, 0.65f };
+                    static const float widthLo[]  = { 1.0f, 0.95f, 1.05f, 1.0f, 1.15f, 1.05f, 1.15f, 1.2f };
+                    if (c >= 4 || i >= 24 || c == 2)
+                    {
+                        b.set ("spread", b.range (spreadLo[c], spreadLo[c] + 0.25f));
+                        b.set ("width", b.range (widthLo[c], widthLo[c] + 0.2f));
+                    }
+                }
                 // modern colour on top of the era sound
                 if (p.model == 0 || p.model == 4)   // Warm and Lo-fi are narrow by nature: open them up (mono-safe)
                 {

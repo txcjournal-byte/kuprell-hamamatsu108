@@ -143,6 +143,8 @@ public:
     static const juce::StringArray& strumModeNames();
     static const juce::StringArray& strumPatternNames();
     static const juce::StringArray& keysPlayNames();
+    static const juce::StringArray& strumZoneNames();
+    static const juce::StringArray& strumGestureNames();
     static const char* strumPatternSteps (int index);   // one bar, 1/16 per step (see stroke())
     static const juce::StringArray& strumRateNames();
     static const juce::StringArray& arpPatternNames();
@@ -241,7 +243,7 @@ private:
     std::array<PendingRelease, 64> releases {};
     int numReleases = 0;
     void startVoice (int note, float velocity);
-    void startHarp (const harp::Settings&, int note, float velocity);
+    void startHarp (const harp::Settings&, int note, float velocity, bool layerB = false);
     void scheduleArpStep (int offset);
     void updateChordLayer (int chord, int transpose);
     void bassBeat (int offset, int beatIndex);
@@ -347,6 +349,11 @@ private:
     mod::Random randomSrc;
     std::array<float, 32> modOffset {};
     std::array<bool, 32> modRouted {};
+    int motionKeysHeld = 0, motionOneShot = 0, tremoloLeft = 0;
+    bool motionRestart = false, tremoloHeld = false, tremoloUp = true, dampNow = false;
+    float tremoloVel = 0.8f;
+    float widthNow = 1.0f, widthTarget = 1.0f, sideLow = 0.0f, sideLowCoef = 0.02f;
+    float polishNow = 0.4f, compEnv = 0.0f, compAtt = 0.01f, compRel = 0.001f, airLpL = 0.0f, airLpR = 0.0f, airCoef = 0.5f;
     // harp bus modulation (filter / volume / pan / pitch), smoothed per sample
     float busCut = 1.0f, busVol = 1.0f, busPan = 0.0f, busPitch = 0.0f;
     float busIc1L = 0, busIc2L = 0, busIc1R = 0, busIc2R = 0;

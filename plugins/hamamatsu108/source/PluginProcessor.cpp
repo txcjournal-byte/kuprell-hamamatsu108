@@ -66,6 +66,20 @@ const juce::StringArray& Hamamatsu108Processor::keysPlayNames()
     return n;
 }
 
+const juce::StringArray& Hamamatsu108Processor::strumZoneNames()
+{
+    static const juce::StringArray n { "C0 (piano roll)", "C1", "C2", "C3", "Off" };
+    return n;
+}
+
+const juce::StringArray& Hamamatsu108Processor::strumGestureNames()
+{
+    static const juce::StringArray n { "From the bottom", "From the bottom, slow", "From the top", "From the top, slow", "From the middle out",
+                                       "Short, low strings", "Short, high strings", "MOTION while held", "MOTION, one bar", "Tremolo while held",
+                                       "Glissando up and down", "Damp (stop the strings)" };
+    return n;
+}
+
 const juce::StringArray& Hamamatsu108Processor::modelNames()
 {
     static const juce::StringArray n { "Warm", "Classic", "Bright", "Clean", "Lo-fi", "Hi-fi" };
@@ -464,6 +478,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     fl ("filterCutoff", "Filter Cutoff", 60.0f, 20000.0f, 20000.0f, [] (float v, int) { return v >= 1000.0f ? String (v / 1000.0f, 1) + " kHz" : String (juce::roundToInt (v)) + " Hz"; }, 1200.0f);
     fl ("filterReso", "Filter Resonance", 0.0f, 1.0f, 0.1f, pct);
     fl ("drive", "Saturation", 0.0f, 1.0f, 0.0f, pct);
+    fl ("polish", "Polish", 0.0f, 1.0f, 0.4f, pct);
+    fl ("width", "Stereo Width", 0.0f, 2.0f, 1.0f, pct);
+    fl ("spread", "Stereo Spread", 0.0f, 1.0f, 0.5f, pct);
     fl ("master", "Master Volume", -60.0f, 6.0f, 0.0f, [] (float v, int) { return String (v, 1) + " dB"; });
 
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "harpVoice", 1 }, "Harp Voice", harp::voiceNames(), 0));
@@ -565,6 +582,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "keysPlay", 1 }, "Keys Play", keysPlayNames(), 6));
 
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "hold", 1 }, "Hold", true));
+    // STRUM KEYS: one octave of the keyboard plays hand gestures (any keyboard size: pick the octave you can reach)
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumZone", 1 }, "Strum Keys", strumZoneNames(), 0));
 
     // step 3: arpeggio, dual, chord layer, bass, memory
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "arpPattern", 1 }, "Arp Pattern", arpPatternNames(), 0));
@@ -702,17 +721,31 @@ int Hamamatsu108Processor::chordFromMask (int mask, int lowest)
 
 void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePos)
 {
-    // STRUM NOTES (lowest octave, FL names C0..F0): write strokes in the piano roll like drums, the harp strums the chord that is on.
-    // C0 = down, D0 = up, C#0 = slow down, D#0 = slow up, E0 = low strings, F0 = high strings. Velocity = force.
-    if ((m.isNoteOn() || m.isNoteOff()) && keyswitches.load() && m.getNoteNumber() < 12)
+    // STRUM KEYS (one octave, default C0 = the piano roll's lowest): every key is a hand gesture on the chord that is on,
+    // like drums in the piano roll. Velocity = force. See strumGestureNames() for the 12 keys.
+    const int zone = juce::roundToInt (param (apvts, "strumZone"));
+    const int zoneBase = zone * 12;
+    if ((m.isNoteOn() || m.isNoteOff()) && keyswitches.load() && zone < 4 && m.getNoteNumber() >= zoneBase && m.getNoteNumber() < zoneBase + 12)
     {
-        const int n = m.getNoteNumber();
-        if (m.isNoteOn() && n <= 5 && numSplitHits < (int) splitHits.size())
+        const int n = m.getNoteNumber() - zoneBase;
+        const float vel = m.getFloatVelocity();
+        if (m.isNoteOn())
         {
-            static const int dir[] = { 1, 1, -1, -1, 1, -1 }, kind[] = { 0, 1, 0, 1, 2, 3 };   // kind: 0 full, 1 slow, 2 low half, 3 high half
-            splitHits[(size_t) numSplitHits++] = { samplePos, kind[n], m.getFloatVelocity(), dir[n] };
+            static const int dir[] = { 1, 1, -1, -1, 1, 1, -1 }, kind[] = { 0, 1, 0, 1, 4, 2, 3 };   // kind: 0 full, 1 slow, 2 low half, 3 high half, 4 middle out, 5 gliss
+            if (n <= 6 && numSplitHits < (int) splitHits.size()) splitHits[(size_t) numSplitHits++] = { samplePos, kind[n], vel, dir[n] };
+            else if (n == 7) { ++motionKeysHeld; motionRestart = true; }
+            else if (n == 8) { motionOneShot = (int) (4.0 * 60.0 / bpm * getSampleRate()); motionRestart = true; }
+            else if (n == 9) { tremoloHeld = true; tremoloVel = vel; tremoloLeft = 0; tremoloUp = true; }
+            else if (n == 10 && numSplitHits + 1 < (int) splitHits.size()) splitHits[(size_t) numSplitHits++] = { samplePos, 5, vel, 1 };
+            else if (n == 11) dampNow = true;
+            lastVelocity = vel;
         }
-        return;   // the lowest octave never sounds as notes
+        else
+        {
+            if (n == 7) motionKeysHeld = juce::jmax (0, motionKeysHeld - 1);
+            if (n == 9) tremoloHeld = false;
+        }
+        return;   // the strum octave never sounds as notes
     }
     if (m.isPitchWheel())
     {
@@ -1153,10 +1186,10 @@ void Hamamatsu108Processor::startVoice (int note, float velocity)
     const float m = juce::jlimit (0.0f, 1.0f, morphNow);
     const float gA = std::cos (m * juce::MathConstants<float>::halfPi), gB = std::sin (m * juce::MathConstants<float>::halfPi);
     if (gA > 0.05f) startHarp (voiceSettings, note, velocity * gA);
-    if (gB > 0.05f) startHarp (voiceSettings2, note, velocity * gB);
+    if (gB > 0.05f) startHarp (voiceSettings2, note, velocity * gB, true);
 }
 
-void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note, float velocity)
+void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note, float velocity, bool layerB)
 {
     harp::Voice* target = nullptr;
 
@@ -1182,7 +1215,11 @@ void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note,
     // spread around the centre of what is playing, so the harp never leans to one ear
     float centre = 72.0f;
     if (tones.size() > 1) centre = 0.5f * (float) (tones.front() + tones.back());
-    const float pan = juce::jlimit (-0.45f, 0.45f, ((float) note - centre) / 30.0f);
+    // SPREAD: how far the strings fan out across the stereo field; layer B mirrors layer A, so the two engines interleave
+    const float spread = param (apvts, "spread");
+    const float panLimit = 0.15f + 0.75f * spread;
+    float pan = juce::jlimit (-panLimit, panLimit, ((float) note - centre) / 30.0f * (0.4f + 1.4f * spread));
+    if (layerB) pan = juce::jlimit (-panLimit, panLimit, -pan * 1.15f);
     target->start (note, velocity, pan, settings, rng, noteHz (note));
 }
 
@@ -1523,6 +1560,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     voiceSettings.attack = param (apvts, "harpAttack");
     voiceSettings.sustain = param (apvts, "harpSustain");
     voiceSettings.shape = mp ("harpShape");
+    voiceSettings.stereo = juce::jmin (1.5f, 2.0f * param (apvts, "spread"));
     // long ringing strings pile up under dense strum patterns: trim the harp bus a little for long decays
     const float decayComp = 1.0f / (1.0f + 0.09f * juce::jmax (0.0f, voiceSettings.decay - 2.0f));
     const int range = juce::roundToInt (param (apvts, "harpRange"));
@@ -1791,7 +1829,23 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
         else
         {
-            // whole stroke (black keys, strum notes); h.string = kind: 0 full, 1 slow, 2 low strings, 3 high strings
+            // whole stroke (black keys, strum keys); h.string = kind: 0 full, 1 slow, 2 low strings, 3 high strings, 4 middle out, 5 gliss
+            if (h.string == 4)
+            {
+                const int mid = nt / 2;
+                const float vv = juce::jlimit (0.2f, 1.0f, 0.35f + 0.65f * v), sp = 1.5f - 0.9f * v;
+                sweep (h.pos, true, mid, nt - mid, vv, sp);
+                sweep (h.pos, false, mid - 1, mid, vv * 0.9f, sp);
+                continue;
+            }
+            if (h.string == 5)
+            {
+                const float vv = juce::jlimit (0.2f, 1.0f, 0.35f + 0.65f * v);
+                const float stepMs = mp ("strumSpeed") * 0.6f;
+                sweep (h.pos, true, 0, nt, vv, 0.6f);
+                sweep (h.pos + (int) ((float) nt * stepMs * 0.001f * (float) sr), false, nt - 2, nt - 1, vv * 0.85f, 0.6f);
+                continue;
+            }
             const int lo = h.string == 3 ? nt / 2 : 0, hi = h.string == 2 ? juce::jmax (1, nt / 2) : nt;
             const float speed = (h.string == 1 ? 3.2f : 1.0f) * (1.5f - 0.9f * v);
             sweep (h.pos, h.strum > 0, h.strum > 0 ? lo : hi - 1, hi - lo, juce::jlimit (0.2f, 1.0f, 0.35f + 0.65f * v), speed);
@@ -1799,14 +1853,33 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     }
     numSplitHits = 0;
 
+    // TREMOLO key: fast up / down strokes while the key is held (1/32 at the song tempo)
+    if (tremoloHeld && ! tones.empty())
+    {
+        const int every = juce::jmax (64, (int) (60.0 / bpm / 8.0 * sr));
+        const int nt = (int) tones.size();
+        while (tremoloLeft < numSamples)
+        {
+            const float v = juce::jlimit (0.2f, 1.0f, 0.3f + 0.55f * tremoloVel);
+            sweep (juce::jmax (0, tremoloLeft), tremoloUp, tremoloUp ? 0 : nt - 1, nt, v, 0.35f);
+            tremoloUp = ! tremoloUp;
+            tremoloLeft += every;
+        }
+        tremoloLeft -= numSamples;
+    }
+    // DAMP key: the hand lies on the strings
+    if (dampNow) { dampNow = false; for (auto& v : voices) if (v.isActive()) v.release (0.06f); }
+
     // MOTION: the grid plays the chord that is on (keys, chord buttons, PLAY), in time with the song
     {
         // MOTION plays only when asked: PLAY is on, or keys are held (MIDI keyboard / piano roll).
         // Picking a preset or clicking a chord button only lets you hear the sound (one stroke), it never starts the loop.
-        const bool keysHeld = splitHeld > 0 || rootHeldMask != 0 || numTypesHeld > 0
+        if (motionRestart) { motionRestart = false; if (! hostPlaying) gridOwnPpq = 0.0; gridBarCached = -1000; }
+        const bool keysHeld = splitHeld > 0 || rootHeldMask != 0 || numTypesHeld > 0 || motionKeysHeld > 0 || motionOneShot > 0
                               || (heldMelodicCount > 0 && juce::roundToInt (param (apvts, "keysPlay")) != 0);   // Notes mode = a melody, not a chord to move
         const int motionChord = (previewing || ! (gridPlay.load() || keysHeld)) ? -1 : (chord >= 0 ? chord : -1);
-        if (motionOn && motionChord >= 0 && ! tones.empty())
+        const bool motionByKey = (motionKeysHeld > 0 || motionOneShot > 0) && juce::roundToInt (param (apvts, "motionType")) != 4;   // the strum keys play the window even with MOTION off
+        if ((motionOn || motionByKey) && motionChord >= 0 && ! tones.empty())
         {
             const double bps = bpm / 60.0 / getSampleRate();
             if (gridLastChord < 0 && ! hostPlaying) gridOwnPpq = 0.0;   // a new chord without the song: start at step 1
@@ -1837,6 +1910,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
         else gridStepGui.store (-1);
         gridLastChord = motionOn ? motionChord : -1;
+        if (motionOneShot > 0) motionOneShot = juce::jmax (0, motionOneShot - numSamples);
     }
 
     // ARP over held MIDI notes (piano roll melody / chords) when no chord button is active
@@ -2403,6 +2477,12 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     PROBE (12, left);
     // master + soft limit + meters
     masterGain.setTargetValue (juce::Decibels::decibelsToGain (mp ("master")));
+    widthTarget = param (apvts, "width");
+    polishNow = param (apvts, "polish");
+    compAtt = 1.0f - std::exp (-1.0f / (0.012f * (float) sr));
+    compRel = 1.0f - std::exp (-1.0f / (0.2f * (float) sr));
+    airCoef = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * 9000.0f / (float) sr);
+    sideLowCoef = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * 150.0f / (float) sr);
     float pl = 0.0f, pr = 0.0f;
     // clean peak limiter (ceiling -1 dB): no clipping, no crackle
     const float ceiling = 0.89f;
@@ -2413,6 +2493,32 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     {
         const float g = masterGain.getNextValue();
         float l = left[i] * g, r = right[i] * g;
+        // POLISH: gentle glue compression and a little air on top, like a mix bus
+        if (polishNow > 0.001f)
+        {
+            const float lev = juce::jmax (std::abs (l), std::abs (r));
+            compEnv += (lev - compEnv) * (lev > compEnv ? compAtt : compRel);
+            const float thr = 0.18f;                             // about -15 dBFS
+            float gr = 1.0f;
+            if (compEnv > thr)
+            {
+                const float ratio = 1.0f + 2.0f * polishNow;
+                gr = std::pow (compEnv / thr, 1.0f / ratio - 1.0f);
+            }
+            const float mk = 1.0f + 0.12f * polishNow;           // about +1 dB make-up
+            l *= gr * mk; r *= gr * mk;
+            airLpL += (l - airLpL) * airCoef; airLpR += (r - airLpR) * airCoef;
+            const float air = 0.16f * polishNow;                 // up to about +1.3 dB above 9 kHz (no hiss boost)
+            l += (l - airLpL) * air; r += (r - airLpR) * air;
+        }
+        // stereo width (mid/side): the bass stays mono when widening, so the low end keeps its punch
+        {
+            widthNow += (widthTarget - widthNow) * 0.002f;
+            const float m = 0.5f * (l + r), sd = 0.5f * (l - r);
+            sideLow += (sd - sideLow) * sideLowCoef;
+            const float s2 = widthNow <= 1.0f ? sd * widthNow : sideLow + (sd - sideLow) * widthNow;
+            l = m + s2; r = m - s2;
+        }
         const float hl = l - dcInL + dcCoef * dcOutL; dcInL = l; dcOutL = hl; l = hl;
         const float hr = r - dcInR + dcCoef * dcOutR; dcInR = r; dcOutR = hr; r = hr;
         // look-ahead: remember the gain each sample needs, play the audio limLook samples later

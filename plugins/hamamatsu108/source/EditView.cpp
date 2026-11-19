@@ -115,15 +115,20 @@ namespace hama
             const char* bNames[] = { "Tone", "Shape", "Detune", "Attack", "Decay", "Level" };
             for (int i = 0; i < 6; ++i) knobAt (bIds[i], bNames[i], 42, b.getX() + i * 78, b.getY() + 64, 76);
 
-            auto env = panel ("LAYER A ENVELOPE", 0, 262, 560, 268);
-            knobAt ("harpAttack", "Attack", 48, env.getX(), env.getY() + 20, 128);
-            knobAt ("harpDecay", "Decay", 48, env.getX() + 132, env.getY() + 20, 128);
-            knobAt ("harpSustain", "Sustain", 48, env.getX() + 264, env.getY() + 20, 128);
-            knobAt ("harpRelease", "Release", 48, env.getX() + 396, env.getY() + 20, 128);
+            auto env = panel ("LAYER A ENVELOPE", 0, 262, 380, 268);
+            knobAt ("harpAttack", "Attack", 46, env.getX() - 6, env.getY() + 20, 90);
+            knobAt ("harpDecay", "Decay", 46, env.getX() + 82, env.getY() + 20, 90);
+            knobAt ("harpSustain", "Sustain", 46, env.getX() + 170, env.getY() + 20, 90);
+            knobAt ("harpRelease", "Release", 46, env.getX() + 258, env.getY() + 20, 90);
 
-            auto v = panel ("VIBRATO", 572, 262, 232, 268);
-            knobAt ("vibRate", "Rate", 44, v.getX() - 4, v.getY() + 20, 100);
-            knobAt ("vibDepth", "Depth", 44, v.getX() + 100, v.getY() + 20, 100);
+            auto st = panel (juce::String::fromUTF8 ("STEREO  \xc2\xb7  POLISH"), 392, 262, 212, 268);
+            knobAt ("spread", "Spread", 40, st.getX() - 10, st.getY() + 20, 66);
+            knobAt ("width", "Width", 40, st.getX() + 56, st.getY() + 20, 66);
+            knobAt ("polish", "Polish", 40, st.getX() + 122, st.getY() + 20, 66);
+
+            auto v = panel ("VIBRATO", 616, 262, 188, 268);
+            knobAt ("vibRate", "Rate", 40, v.getX() - 8, v.getY() + 20, 80);
+            knobAt ("vibDepth", "Depth", 40, v.getX() + 72, v.getY() + 20, 80);
 
             auto mt = panel ("MORPH TARGETS", 816, 262, 416, 268);
             for (int i = 0; i < mod::morphSlots; ++i)
@@ -172,6 +177,7 @@ namespace hama
         {
             text (g, engineText (shownA < 0 ? juce::roundToInt (plain (processor.apvts, "harpVoice")) : shownA), { 16, 204, 438, 34 }, 10.5f);
             text (g, engineText (shownB < 0 ? juce::roundToInt (plain (processor.apvts, "harpVoice2")) : shownB), { 742, 204, 474, 34 }, 10.5f);
+            text (g, "SPREAD fans the strings across the stereo field, layer B mirrors layer A. WIDTH opens the mix, the bass stays mono. POLISH: bus glue and air.", { 408, 420, 182, 90 }, 10.5f);
             // morph amounts as text
             g.setFont (LookAndFeel::monoFont (11.0f));
             for (auto& r : amountRows)
@@ -1792,11 +1798,12 @@ namespace hama
         juce::Path pp;
         pp.addRoundedRectangle (plate.getX(), plate.getY(), plate.getWidth(), plate.getHeight(), 26.0f, 26.0f, false, false, true, true);
         const auto& sk = skins::get (skins::currentIndex());
-        juce::ColourGradient metal (sk.panelTop.getPerceivedBrightness() > 0.6f ? juce::Colour (0xff555b63) : sk.panelTop.brighter (0.15f), 0.0f, plate.getY(),
-                                    sk.panelTop.getPerceivedBrightness() > 0.6f ? juce::Colour (0xff2c3036) : sk.panelBottom, 0.0f, plate.getBottom(), false);
+        const bool lightPanel = sk.panelMid.getPerceivedBrightness() > 0.6f;
+        juce::ColourGradient metal (lightPanel ? juce::Colour (0xff555b63) : sk.panelTop, 0.0f, plate.getY(),
+                                    lightPanel ? juce::Colour (0xff2c3036) : sk.panelBottom, 0.0f, plate.getBottom(), false);
         g.setGradientFill (metal);
         g.fillPath (pp);
-        g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.13f), plate.getX(), plate.getY(), juce::Colours::transparentWhite, plate.getX() + 400.0f, plate.getBottom(), false));
+        g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (lightPanel ? 0.13f : 0.04f), plate.getX(), plate.getY(), juce::Colours::transparentWhite, plate.getX() + 400.0f, plate.getBottom(), false));
         g.fillPath (pp);
 
         if (logo != nullptr)

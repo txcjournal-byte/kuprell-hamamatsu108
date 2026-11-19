@@ -5,7 +5,7 @@ Elektronická drnkací harfa pro dnešní produkci: 144 akordů, okno MOTION (GR
 - Rozhodnutí o funkcích a designu: dokument `claude/hamamatsu81-rozhodnuti.md` v projektu „Kuprell pluginy“
 - Návrh GUI: https://claude.ai/artifact/GJQum85YRG9byQS1JKGmAa
 
-## Stav: verze 0.2.57 – moderní strum harfa
+## Stav: verze 0.2.62 – hybridní strum harfa
 
 ### Hlavní stránka (PLAY)
 - **Horní lišta je v desce:** presety (šipky, seznam, Save, A | B, kostka), Undo/Redo, nápověda, nastavení, EDIT.
@@ -16,7 +16,7 @@ Elektronická drnkací harfa pro dnešní produkci: 144 akordů, okno MOTION (GR
   - **RHYTHM:** šipky úderů, patterny (3-3-2, Half-Time …), klik na krok = vlastní rytmus.
   - **STRINGS:** každá struna vlastní puls (rychlost, začátek, síla) – polyrytmy.
   - Vedle: **PLAY** (akord hraje dokola bez kláves), **MOTION** (zap/vyp), rychlost kroku, počet kroků, **IDEAS ▾** (hotové vzory, náhoda, posun, převrácení), **CLEAR**, **DRAG MIDI →** (4 takty do piano rollu).
-- **VOICE:** displej (klik nahoře = barva zvuku, dole = co dělají klávesy: Split, Notes, Flourish nahoru/dolů …), knoby VOICE, MORPH, RATE, FEEL, SPEED, tlačítka DUAL a HOLD.
+- **VOICE:** displej (klik nahoře = barva zvuku, dole = co dělají klávesy: Split, Notes, Flourish nahoru/dolů …), knoby VOICE, MORPH, RATE, FEEL, SPEED, tlačítka DUAL, HOLD a **FLOURISH** (jedna klávesa = celý melodický běh; pravý klik = nahoru / dolů).
 - **MIDI CAPTURE:** nahrává, co zahraješ; přetáhni do piano rollu (menu Detail / Smooth / Reset).
 - **KEY / TRANSPOSE**, výstupní metr.
 - **Spodní lišta:** HARP (Tone, Range), ENVELOPE (A D S R), FILTER (Cutoff, Reso, Saturation), FX (3 sloty), MACROS (Age, Dream, Wobble), MASTER.
@@ -24,13 +24,16 @@ Elektronická drnkací harfa pro dnešní produkci: 144 akordů, okno MOTION (GR
 ### Klávesy (názvy jako ve FL: střední C = C5)
 - **Split** (výchozí): pod C5 levá ruka = akord (jedna klávesa = akord tóniny na daném stupni), od C5 bílé = struny, černé = celý strum.
 - **Notes:** přesná výška (melodie z piano rollu). **Flourish:** jedna klávesa = celý běh akordu.
+- **STRUM KLÁVESY** (jedna oktáva, výchozí C0 = nejníž v piano rollu, v menu KEYS lze dát C1, C2, C3 podle klávesnice). Každá klávesa je gesto ruky na akordu, který hraje:
+  C zespodu · C# zespodu pomalu · D shora · D# shora pomalu · E od středu ven · F krátce dole · F# krátce nahoře · **G = MOTION, dokud držíš** (hraje vzor z okna: kostičky, čáry, rytmus, struny) · G# = MOTION jeden takt · A = tremolo, dokud držíš · A# = glissando nahoru a dolů · B = ztlumit struny. Síla úhozu = síla.
+- Myš na PLATE = ruka přes struny.
 - Pitch wheel i mod wheel = prst po strunách. PC klávesnice: Q/A/Z řady akordy, čísla struny, `-` `=` strum.
 
 ### EDIT (5 záložek)
-SOUND (vrstvy A/B, klávesy, oktáva, vibrato, obálka, cíle Morphu) · ARP & GATE (arpeggio + kroky, gate + kroky) · FILTER (filtr, saturace, makra, charakter Warm/Classic/Bright/Clean/Lo-fi/Hi-fi) · MOD (2 LFO, Function, Random, matice; pravý klik na knob = Modulate with) · FX (8 slotů, 20 efektů vč. PRISM, DISPERSE, SHAPE, WIDE).
+LAYERS (vrstva A + vrstva B, 14 enginů: 10 harfových + Analog, Wavetable, Digital FM, Air; SHAPE, MORPH, Level, Detune, Octave; STEREO: Spread, Width, Polish; vibrato, obálka, cíle Morphu) · ARP & GATE (arpeggio + kroky, gate + kroky) · FILTER (filtr, saturace, makra, charakter Warm/Classic/Bright/Clean/Lo-fi/Hi-fi) · MOD (2 LFO, Function, Random, matice; pravý klik na knob = Modulate with) · FX (8 slotů, 20 efektů vč. PRISM, DISPERSE, SHAPE, WIDE).
 
 ### PRESETS
-144 továrních podle typu (Harp, Pluck, Bell, Keys, Pad, Texture) vč. String Harp a Epic Harp; klik = hned zazní. Vlastní presety v `Dokumenty/Kuprell/Hamamatsu 144/Presets`.
+320 továrních v 8 typech (Harp, Pluck, Bell, Keys, Pad, Texture, Hybrid, Cinematic) vč. String Harp a Epic Harp; klik = hned zazní. Vlastní presety v `Dokumenty/Kuprell/Hamamatsu 144/Presets`.
 
 ## Instalace (Windows)
 

@@ -719,8 +719,9 @@ namespace hama
         juce::OwnedArray<Knob> knobs;
 
         // button areas (module coordinates)
-        juce::Rectangle<float> dualArea() const  { return { 12.0f, 130.0f, 93.0f, 30.0f }; }
-        juce::Rectangle<float> holdArea() const  { return { 111.0f, 130.0f, 93.0f, 30.0f }; }
+        juce::Rectangle<float> dualArea() const  { return { 12.0f, 130.0f, 58.0f, 30.0f }; }
+        juce::Rectangle<float> holdArea() const  { return { 74.0f, 130.0f, 58.0f, 30.0f }; }
+        juce::Rectangle<float> flourArea() const { return { 136.0f, 130.0f, 68.0f, 30.0f }; }   // FLOURISH: one key = a whole melodic run
         juce::Rectangle<float> modeArea (int i) const { return { 12.0f + i * 65.0f, 166.0f, 61.0f, 34.0f }; }
         static int modeOf (int button) { return button == 2 ? 3 : button; }   // LIVE, ARP, OFF
         juce::Rectangle<float> keyArea() const   { return { 100.0f, 220.0f, 104.0f, 24.0f }; }
@@ -808,6 +809,7 @@ namespace hama
 
             drawHardButton (g, dualArea(), "DUAL", dual, true, false);
             drawHardButton (g, holdArea(), "HOLD", hold, true, false);
+            drawHardButton (g, flourArea(), "FLOURISH", keysPlay == 4 || keysPlay == 5, true, false);
 
             g.setFont (spaced (9.0f, true, 0.2f));
             g.setColour (juce::Colour (0xff9aa0a7));
@@ -861,6 +863,15 @@ namespace hama
             const auto p = e.position;
             if (juce::Rectangle<float> (12.0f, 12.0f, 192.0f, 21.0f).contains (p)) { showPresetMenu(); return; }
             if (juce::Rectangle<float> (12.0f, 33.0f, 192.0f, 21.0f).contains (p)) { showKeysMenu(); return; }
+            if (flourArea().contains (p))
+            {
+                const bool on = keysPlay == 4 || keysPlay == 5;
+                if (e.mods.isPopupMenu()) { showFlourishMenu(); return; }
+                if (on) setParam (s, "keysPlay", (float) (keysBeforeFlourish >= 0 && keysBeforeFlourish != 4 && keysBeforeFlourish != 5 ? keysBeforeFlourish : 6));
+                else { keysBeforeFlourish = keysPlay; setParam (s, "keysPlay", 4.0f); }
+                message (on ? juce::String ("Flourish off") : juce::String ("Flourish: one key = a whole run of a chord (key = root, octave = chord type). Right-click: up / down"));
+                return;
+            }
             if (holdArea().contains (p))       setParam (s, "hold", hold ? 0.0f : 1.0f);
             else if (dualArea().contains (p))  showDualMenu();
             else if (trDown().contains (p))    setParam (s, "transpose", (float) juce::jmax (-12, transpose - 1));
@@ -940,13 +951,48 @@ namespace hama
                                              "Flourish down: the same run falling",
                                              "Split: left hand (below C5 = middle C) = chord, right hand = strings, black keys = strum" };
             for (int i = 0; i < 7; ++i) m.addItem (100 + i, keyText[i], true, keysPlay == i);
+            // STRUM KEYS: which octave plays the hand gestures, and what each key does
+            {
+                juce::PopupMenu z;
+                const int zone = juce::roundToInt (plain (processor.apvts, "strumZone"));
+                for (int i = 0; i < Hamamatsu108Processor::strumZoneNames().size(); ++i)
+                    z.addItem (300 + i, Hamamatsu108Processor::strumZoneNames()[i], true, zone == i);
+                z.addSeparator();
+                z.addSectionHeader ("In that octave:");
+                static const char* keyNames[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+                for (int k = 0; k < 12; ++k)
+                    z.addItem (400 + k, juce::String (keyNames[k]) + "   " + Hamamatsu108Processor::strumGestureNames()[k], false, false);
+                m.addSeparator();
+                m.addSubMenu ("STRUM KEYS (one octave = 12 hand gestures)", z);
+            }
             popup (m, { 12.0f, 33.0f, 192.0f, 21.0f }, [this] (int r)
             {
+                if (r >= 300 && r < 400)
+                {
+                    setParam (processor.apvts, "strumZone", (float) (r - 300));
+                    message ("Strum keys: " + Hamamatsu108Processor::strumZoneNames()[r - 300]);
+                    return;
+                }
                 setParam (processor.apvts, "keysPlay", (float) (r - 100));
                 static const char* names[] = { "Notes", "Strum", "Pattern", "Plate only", "Flourish up", "Flourish down", "Split" };
                 message (juce::String ("Your keys: ") + names[r - 100]);
             });
         }
+
+        void showFlourishMenu()
+        {
+            juce::PopupMenu m;
+            m.addSectionHeader ("FLOURISH: one key = a whole run (key = root, octave = chord type)");
+            m.addItem (1, "Flourish up", true, keysPlay == 4);
+            m.addItem (2, "Flourish down", true, keysPlay == 5);
+            m.addItem (3, "Off", true, keysPlay != 4 && keysPlay != 5);
+            popup (m, flourArea(), [this] (int r)
+            {
+                if (r == 3) setParam (processor.apvts, "keysPlay", (float) (keysBeforeFlourish >= 0 && keysBeforeFlourish < 4 ? keysBeforeFlourish : 6));
+                else { if (keysPlay != 4 && keysPlay != 5) keysBeforeFlourish = keysPlay; setParam (processor.apvts, "keysPlay", r == 1 ? 4.0f : 5.0f); }
+            });
+        }
+        int keysBeforeFlourish = 6;
 
         void showDualMenu()
         {
@@ -2146,11 +2192,11 @@ namespace hama
             g.setFont (spaced (8.5f, true, 0.18f));
             g.setColour (juce::Colour (0xff9aa0a7));
             const int type = juce::roundToInt (plain (processor.apvts, "motionType"));
-            g.drawText (type == 0 ? "CLICK / DRAG = LIGHT CELLS  /  HOLD A CHORD TO PLAY"
+            g.drawText (type == 0 ? "CLICK / DRAG = LIGHT CELLS  /  HOLD A CHORD OR KEY G0 TO PLAY"
                         : type == 1 ? "DRAW A LINE = A FINGER OVER THE STRINGS  /  RIGHT-DRAG = ERASE"
                         : type == 2 ? "CLICK A STEP = CHANGE THE STROKE  /  IDEAS = 3-3-2, HALF-TIME ..."
                         : type == 3 ? "EVERY STRING ITS OWN PULSE: CLICK THE RATE, CLICK THE STRING = START, DRAG = LEVEL"
-                                    : "THE STRUM PLATE: DRAG ACROSS THE STRINGS (OR PLAY C0 / D0 STROKES IN THE PIANO ROLL)",
+                                    : "THE PLATE: DRAG = YOUR HAND  /  STRUM KEYS C0..B0: BOTTOM, TOP, MIDDLE, SHORT, TREMOLO ...",
                         r.reduced (14.0f, 6.0f).withHeight (12.0f).withTrimmedLeft (346.0f), juce::Justification::centredLeft, false);
             for (int t = 0; t < 5; ++t)
             {

@@ -65,6 +65,7 @@ namespace harp
         float shape = 0.4f;      // 0..1: engine character (analog detune, wavetable position, FM ratio, air breath)
         float pitchMul = 1.0f;   // layer octave / detune
         float level = 1.0f;      // layer level
+        float stereo = 1.0f;     // 0 = mono voice, 1 = the engine's own stereo image
     };
 
     // 2-pole resonator: one mode of a vibrating body
@@ -206,14 +207,22 @@ namespace harp
             float peak = 0.0f;
             for (int n = 0; n < numSamples; ++n)
             {
-                float s = next (pitchMul[n], rng);
+                side = 0.0f;
+                // analog drift: every voice wanders by a few cents, slowly, like real oscillators and strings
+                driftPhase += driftInc;
+                if (driftPhase >= 1.0f) driftPhase -= 1.0f;
+                const float drift = 1.0f + driftDepth * sine() (driftPhase);
+                float s = next (pitchMul[n] * drift, rng);
                 if (attack < 1.0f) attack = juce::jmin (1.0f, attack + attackInc);
                 env *= envMul;
-                s *= attack * env * attackGain;
+                const float amp = attack * env * attackGain;
+                s *= amp;
+                float d = side * amp * stereo;
 
                 if (fadeOutLeft > 0)
                 {
                     s *= (float) fadeOutLeft / (float) fadeOut;
+                    d *= (float) fadeOutLeft / (float) fadeOut;
                     if (--fadeOutLeft == 0)
                     {
                         if (pending) { pending = false; begin (pendingArgs, rng); continue; }
@@ -232,8 +241,9 @@ namespace harp
                                 note, (int) model, (long long) age, n, fadeOutLeft, (int) pending, attack, env, d2, out, exciteLeft);
                 }
                #endif
-                left[n]  += out * panL;
-                right[n] += out * panR;
+                const float dd = d * gain;
+                left[n]  += (out + dd) * panL;
+                right[n] += (out - dd) * panR;
                 peak = juce::jmax (peak, std::abs (out));
             }
             level = peak;
@@ -333,7 +343,7 @@ namespace harp
                         for (int i = 0; i < len; ++i)
                             str.excite (i, 0.7f * (burst[(size_t) i] - (i >= pick ? burst[(size_t) (i - pick)] : 0.0f)));
                     }
-                    bodyLp = 0.0f; pluckLp = pluckLp2 = 0.0f;
+                    bodyLp = 0.0f; pluckLp = pluckLp2 = 0.0f; sideLp = 0.0f;
                     {
                         const float fc = juce::jmin (0.42f * sr, (1800.0f + 5000.0f * bright) * (1.0f + freq / 1500.0f));
                         pluckCoef = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * fc / sr);
@@ -368,7 +378,7 @@ namespace harp
                     filterEnv = 1.0f;
                     filterEnvMul = std::exp (-1.0f / ((0.07f + 0.22f * t60) * sr));
                     envMul = std::exp (-6.9078f / (t60 * 1.6f * sr));
-                    svf[0].reset(); svf[1].reset();
+                    svf[0].reset(); svf[1].reset(); svf[2].reset();
                     gain = 0.24f * velGain;
                     break;
 
@@ -381,6 +391,7 @@ namespace harp
                     filterEnvMul = std::exp (-1.0f / ((0.12f + 0.3f * t60) * sr));
                     envMul = std::exp (-6.9078f / (t60 * 1.6f * sr));
                     bright_ = bright;
+                    for (int h = 0; h < maxHarm; ++h) wtOffset[(size_t) h] = h == 0 ? 0.0f : 0.08f + 0.17f * rng.nextFloat();   // fixed per note
                     updateTable();
                     gain = 0.18f * velGain;
                     break;
@@ -405,11 +416,12 @@ namespace harp
                     shape = juce::jlimit (0.0f, 1.0f, a.s.shape);
                     attackInc = juce::jmin (attackInc, 1.0f / (0.03f * sr));
                     envMul = std::exp (-6.9078f / (t60 * 2.0f * sr));
-                    airQ = 6.0f + 70.0f * (1.0f - shape);              // low shape = clear tone, high = breath
+                    airQ = 14.0f + 70.0f * (1.0f - shape);             // low shape = clear tone, high = soft breath (never hiss)
                     for (int i = 0; i < 3; ++i)
                     {
                         const float f = juce::jmin (freq * (float) (i + 1), 0.42f * sr);
                         svf[(size_t) i].reset(); svf[(size_t) i].set (f, airQ, sr);
+                        svf[(size_t) i + 3].reset(); svf[(size_t) i + 3].set (f, airQ, sr);
                         airNorm[(size_t) i] = std::sqrt (sr / (airQ * f));   // equal loudness at any pitch and breath
                     }
                     airLp = 0.0f;
@@ -422,12 +434,19 @@ namespace harp
                     attackInc = juce::jmin (attackInc, 1.0f / (0.07f * sr));
                     envMul = std::exp (-6.9078f / (t60 * 2.2f * sr));
                     svf[0].reset(); svf[1].reset();
+                    svf[2].reset();
                     svf[0].set (600.0f + freq * 2.0f + 5000.0f * bright, 0.7f, sr);
                     svf[1].set (600.0f + freq * 2.0f + 5000.0f * bright, 0.7f, sr);
+                    svf[2].set (600.0f + freq * 2.0f + 5000.0f * bright, 0.7f, sr);
                     gain = 0.3f * velGain;
                     break;
             }
             gain *= a.s.level;
+            driftPhase = rng.nextFloat();
+            driftInc = (0.12f + 0.3f * rng.nextFloat()) / sr;
+            // synths and the chime drift more, struck bars hardly (they are tuned metal)
+            driftDepth = (isSynthEngine ((int) model) || model == Model::chime || model == Model::strings ? 0.0018f : 0.0005f) * (0.6f + 0.8f * rng.nextFloat());
+            stereo = juce::jlimit (0.0f, 1.5f, a.s.stereo);
         }
 
         inline float next (float pm, juce::Random& rng) noexcept
@@ -453,11 +472,14 @@ namespace harp
                         const float tri = 1.0f - 4.0f * std::abs (p - 0.5f);
                         p = wrap (p + dt);
                         float bp;
-                        out += svf[(size_t) o].lp (0.55f * pulse + 0.45f * tri, bp);
+                        const float y = svf[(size_t) o].lp (0.55f * pulse + 0.45f * tri, bp);
+                        out += y;
+                        side += (o == 0 ? 0.22f : -0.22f) * y;   // the two detuned oscillators sit slightly apart
                     }
                     filterEnv *= filterEnvMul;
                     const float bell = sn (phase[2]) * 0.18f * filterEnv;   // octave sparkle on the attack
                     phase[2] = wrap (phase[2] + 2.0f * freq * pm / sr);
+                    side *= 0.5f;
                     return out * 0.5f + bell;
                 }
                 case Model::celesta: case Model::vibes: case Model::glass: case Model::marimba: case Model::steel:
@@ -487,9 +509,12 @@ namespace harp
                 }
                 case Model::pluck:
                 {
-                    const float y = strings[0].process() + strings[1].process();
+                    const float s0 = strings[0].process(), s1 = strings[1].process();
+                    const float y = s0 + s1;
                     pluckLp += (y - pluckLp) * pluckCoef;           // 2-pole body low-pass: warm, no fizz
                     pluckLp2 += (pluckLp - pluckLp2) * pluckCoef;
+                    sideLp += ((s0 - s1) - sideLp) * pluckCoef;       // the two strings sit apart
+                    side = 0.3f * sideLp;
                     return pluckLp2;
                 }
                 case Model::epiano:
@@ -524,30 +549,39 @@ namespace harp
                         svf[0].set (cutoff, 0.75f, sr);
                         svf[1].set (cutoff, 0.95f, sr);
                     }
-                    float saw = 0.0f;
+                    float saw = 0.0f, diff = 0.0f;
                     for (int v = 0; v < 3; ++v)
                     {
                         const float dt = freq * pm * (1.0f + (float) (v - 1) * detune) / sr;
                         float& p = phase[(size_t) v];
-                        saw += 2.0f * p - 1.0f - polyBlep (p, dt);
+                        const float x = 2.0f * p - 1.0f - polyBlep (p, dt);
+                        saw += x;
+                        diff += v == 0 ? x : (v == 2 ? -x : 0.0f);   // outer saws left and right: a real stereo unison
                         p = wrap (p + dt);
                     }
                     const float sub = sn (phase[3]) * (0.35f - 0.25f * shape);
                     phase[3] = wrap (phase[3] + 0.5f * freq * pm / sr);
                     filterEnv *= filterEnvMul;
                     float bp;
+                    if (filterCounter == 16) svf[2].set (filterBase + filterSweep * filterEnv, 0.75f, sr);
+                    side = svf[2].lp (diff * 0.36f * (0.4f + 0.6f * shape), bp);
                     return svf[1].lp (svf[0].lp (saw * 0.36f + sub, bp), bp);
                 }
                 case Model::wavetable:
                 {
                     if (filterCounter-- <= 0) { filterCounter = 32; updateTable(); }
                     filterEnv *= filterEnvMul;
-                    float y = 0.0f;
+                    float y = 0.0f, yR = 0.0f;
                     const float p = phase[0];
                     for (int h = 0; h < numHarm; ++h)
-                        y += wtAmp[(size_t) h] * sn (wrap (p * (float) (h + 1)));
+                    {
+                        const float ph = p * (float) (h + 1);
+                        y  += wtAmp[(size_t) h] * sn (wrap (ph));
+                        yR += wtAmp[(size_t) h] * sn (wrap (ph + wtOffset[(size_t) h]));   // same spectrum, other phases: wide, mono-safe fundamental
+                    }
                     phase[0] = wrap (p + freq * pm / sr);
-                    return y;
+                    side = 0.5f * (y - yR);
+                    return 0.5f * (y + yR);
                 }
                 case Model::fm:
                 {
@@ -560,6 +594,7 @@ namespace harp
                     phase[1] = wrap (phase[1] + dt * fmRatio);
                     phase[2] = wrap (phase[2] + dt * 1.0035f);
                     fmIndex *= fmIndexMul;
+                    side = 0.25f * (c1 - c2);
                     return 0.6f * c1 + 0.4f * c2;
                 }
                 case Model::air:
@@ -567,28 +602,37 @@ namespace harp
                     if (filterCounter-- <= 0)
                     {
                         filterCounter = 16;
-                        for (int i = 0; i < 3; ++i) svf[(size_t) i].set (juce::jmin (freq * pm * (float) (i + 1), 0.42f * sr), airQ, sr);
+                        for (int i = 0; i < 3; ++i) { svf[(size_t) i].set (juce::jmin (freq * pm * (float) (i + 1), 0.42f * sr), airQ, sr); svf[(size_t) i + 3] = svf[(size_t) i]; }
                     }
-                    const float n = rng.nextFloat() * 2.0f - 1.0f;
-                    float y = 0.0f, bp;
+                    const float n = rng.nextFloat() * 2.0f - 1.0f, n2 = rng.nextFloat() * 2.0f - 1.0f;
+                    float y = 0.0f, y2 = 0.0f, bp;
                     static const float partial[] = { 1.0f, 0.45f, 0.22f };
-                    for (int i = 0; i < 3; ++i) { svf[(size_t) i].lp (n, bp); y += bp * partial[i] * airNorm[(size_t) i]; }
+                    for (int i = 0; i < 3; ++i)
+                    {
+                        svf[(size_t) i].lp (n, bp); y += bp * partial[i] * airNorm[(size_t) i];
+                        svf[(size_t) i + 3].lp (n2, bp); y2 += bp * partial[i] * airNorm[(size_t) i];   // own noise per side: a wide breath
+                    }
+                    side = 0.5f * (y - y2);
+                    y = 0.5f * (y + y2) * 1.41f;
                     airLp += (n - airLp) * 0.05f;
                     const float tone = sn (phase[0]) * 0.05f * (1.0f - shape);
                     phase[0] = wrap (phase[0] + freq * pm / sr);
-                    return y + airLp * 0.06f * shape + tone;
+                    return y + airLp * 0.02f * shape + tone;
                 }
                 case Model::strings:
                 {
-                    float saw = 0.0f;
+                    float saw = 0.0f, diff = 0.0f;
                     for (int v = 0; v < 3; ++v)
                     {
                         const float dt = freq * pm * (1.0f + (v - 1) * 0.0045f) / sr;
                         float& p = phase[(size_t) v];
-                        saw += 2.0f * p - 1.0f - polyBlep (p, dt);
+                        const float x = 2.0f * p - 1.0f - polyBlep (p, dt);
+                        saw += x;
+                        diff += v == 0 ? x : (v == 2 ? -x : 0.0f);   // ensemble spread left and right
                         p = wrap (p + dt);
                     }
                     float bp;
+                    side = svf[2].lp (diff * 0.2f, bp);
                     return svf[1].lp (svf[0].lp (saw * 0.33f, bp), bp);
                 }
             }
@@ -607,7 +651,7 @@ namespace harp
         std::array<float, 4> phase {};
 
         float detune = 1.0f, filterBase = 1000.0f, filterSweep = 0.0f, filterEnv = 0.0f, filterEnvMul = 1.0f;
-        std::array<Svf, 3> svf;
+        std::array<Svf, 6> svf;
         std::array<Mode, 8> modes;
         int numModes = 0, exciteLeft = 0, exciteLen = 1;
         float malletNoise = 0.0f, tremolo = 0.0f, malletLp = 0.0f, tineInc = 0.0f, pluckLp = 0.0f, pluckLp2 = 0.0f, pluckCoef = 0.5f;
@@ -620,7 +664,8 @@ namespace harp
         float fmIndex = 0, fmIndexMul = 1, tineEnv = 0, tineMul = 1;
         // synthesis engines
         static constexpr int maxHarm = 24;
-        std::array<float, maxHarm> wtAmp {};
+        std::array<float, maxHarm> wtAmp {}, wtOffset {};
+        float side = 0.0f, sideLp = 0.0f, stereo = 1.0f, driftPhase = 0.0f, driftInc = 0.0f, driftDepth = 0.0f;
         int numHarm = 1;
         float shape = 0.4f, wtSweep = 0.0f, bright_ = 0.5f, fmRatio = 1.0f, fmFloor = 0.0f, airQ = 20.0f, airLp = 0.0f;
         std::array<float, 3> airNorm {};

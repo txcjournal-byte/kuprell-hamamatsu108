@@ -107,11 +107,12 @@ namespace hama
             float read (float d) const
             {
                 const int size = (int) buf.size();
-                float r = (float) w - d;
-                while (r < 0) r += (float) size;
-                const int i0 = (int) r, i1 = (i0 + 1) % size;
-                const float f = r - (float) i0;
-                return buf[(size_t) i0] + f * (buf[(size_t) i1] - buf[(size_t) i0]);
+                d = juce::jlimit (1.0f, (float) (size - 2), d);
+                const int whole = (int) d;
+                const float frac = d - (float) whole;
+                int i1 = w - whole; while (i1 < 0) i1 += size;   // integer wrap: never reads past the buffer
+                int i0 = i1 - 1; if (i0 < 0) i0 += size;
+                return buf[(size_t) i0] + (1.0f - frac) * (buf[(size_t) i1] - buf[(size_t) i0]);
             }
         };
 

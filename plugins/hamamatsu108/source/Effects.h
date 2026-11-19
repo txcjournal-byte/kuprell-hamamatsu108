@@ -75,11 +75,14 @@ namespace fx
         {
             const int size = (int) buf.size();
             d = juce::jlimit (1.0f, (float) (size - 2), d);
-            float rp = (float) w - d;
-            while (rp < 0) rp += (float) size;
-            const int i0 = (int) rp;
-            const int i1 = (i0 + 1) % size;
-            const float f = rp - (float) i0;
+            // integer and fractional parts kept apart: a float wrap could land exactly on 'size' and read past the buffer (a one-sample click)
+            const int whole = (int) d;
+            const float frac = d - (float) whole;
+            int i1 = w - whole;          // the newer sample
+            while (i1 < 0) i1 += size;
+            int i0 = i1 - 1;             // one sample older
+            if (i0 < 0) i0 += size;
+            const float f = 1.0f - frac;
             return buf[(size_t) i0] + f * (buf[(size_t) i1] - buf[(size_t) i0]);
         }
     };
@@ -154,8 +157,8 @@ namespace fx
 
         void process (int type, float a, float b, float mix, float* L, float* R, int n, double bpm)
         {
-            if (type != lastType) { reset(); lastType = type; }
-            if (type == 0 || mix <= 0.0001f) return;
+            if (type != lastType) { reset(); lastType = type; mixNow = -1.0f; }
+            if (type == 0 || (mix <= 0.0001f && mixNow <= 0.0001f)) { mixNow = type == 0 ? -1.0f : mix; return; }
             if ((int) wetL.size() < n) { wetL.resize ((size_t) n); wetR.resize ((size_t) n); shimmerFbL.resize ((size_t) n, 0.0f); shimmerFbR.resize ((size_t) n, 0.0f); }
 
             float* wl = wetL.data();
@@ -465,17 +468,23 @@ namespace fx
                 }
             }
 
+            // MIX glides across the block (automation and modulation never step at block edges)
+            if (mixNow < 0.0f) mixNow = mix;
+            const float mixStep = (mix - mixNow) / (float) juce::jmax (1, n);
             for (int i = 0; i < n; ++i)
             {
-                L[i] += (wl[i] - L[i]) * mix;
-                R[i] += (wr[i] - R[i]) * mix;
+                mixNow += mixStep;
+                L[i] += (wl[i] - L[i]) * mixNow;
+                R[i] += (wr[i] - R[i]) * mixNow;
             }
+            mixNow = mix;
         }
 
     private:
         struct Ap { float z = 0; };
         double sr = 44100.0;
         int lastType = -1;
+        float mixNow = -1.0f;
         DelayLine dl, dr, ml, mr;
         hama::FdnReverb reverb;
         juce::dsp::Compressor<float> comp;
