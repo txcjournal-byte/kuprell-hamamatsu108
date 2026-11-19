@@ -101,6 +101,11 @@ public:
     void previewPreset() { previewRequest.store (true); }                            // short demo strum after a preset click
     void pluckString (int visualIndex) { pendingPlucks.fetch_or (1u << (unsigned) visualIndex); }
     void strumNow (bool down) { pendingStrum.store (down ? 1 : -1); }   // PC keyboard: a whole stroke
+    // MOTION is on and plays a pattern (GRID / LINES / RHYTHM / STRINGS, not PLATE)
+    bool motionActive() const { return *apvts.getRawParameterValue ("gridOn") > 0.5f && juce::roundToInt (apvts.getRawParameterValue ("motionType")->load()) != 4; }
+    // hear the chord once: one bar of the MOTION pattern if MOTION is on, otherwise one stroke
+    void audition() { if (motionActive()) { auditionBar.store (true); } else pendingStrum.store (1); }
+    std::atomic<bool> auditionBar { false };
 
     //== audio -> GUI state
     std::atomic<int> activeChord { -1 };
@@ -213,6 +218,8 @@ public:
     std::array<std::atomic<float>, prog::linePoints> motionLine;   // LINES: the drawn path (-1 = lifted)
     std::array<std::atomic<int>, prog::gridRows> strRate, strOffset;   // STRINGS: each string its own pulse
     std::array<std::atomic<float>, prog::gridRows> strLevel;
+    std::array<std::atomic<int>, prog::gridRows> strOct, strChance, strRatchet;   // STRINGS: octave, chance %, quick repeats
+    std::array<std::atomic<bool>, prog::gridRows> strMute;
     std::atomic<int> gridStepGui { -1 };
     void setGridPreset (int i) { const auto& g = prog::gridPresets()[(size_t) juce::jlimit (0, (int) prog::gridPresets().size() - 1, i)]; for (int k = 0; k < prog::gridSteps; ++k) gridCells[(size_t) k].store (g.cells[(size_t) k]); }
 private:

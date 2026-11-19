@@ -44,7 +44,7 @@ void StatusBar::paint (juce::Graphics& g)
     g.setColour (colours::textFaint);
     g.drawText ("Zoom " + juce::String (zoom) + " %", r.removeFromRight (80), juce::Justification::centredRight, false);
     g.drawText ("Voices " + juce::String (voices) + " / " + juce::String (Hamamatsu108Processor::numVoices), r.removeFromRight (110), juce::Justification::centredRight, false);
-    g.drawText (juce::String::fromUTF8 ("Keys: left hand = chord \xc2\xb7 from C5 white = strings, black = strum"),
+    g.drawText (juce::String::fromUTF8 ("Keys: left hand = chord \xc2\xb7 from C5 = single notes, C0..B0 = strum keys"),
                 r.removeFromRight (340), juce::Justification::centredRight, false);
 }
 

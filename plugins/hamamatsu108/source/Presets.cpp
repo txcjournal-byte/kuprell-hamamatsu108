@@ -63,16 +63,16 @@ namespace presets
                 b.set ("model", (float) p.model);
 
                 // musical defaults shared by every preset: clean chorus, a real room, gentle vibrato
-                b.set ("fx1Mix", b.range (0.2f, 0.35f));    // chorus
-                b.set ("fx1A", b.range (0.2f, 0.35f));
-                b.set ("fx1B", b.range (0.3f, 0.5f));
+                b.set ("fx1Mix", b.range (0.15f, 0.28f));   // chorus: width, not wobble
+                b.set ("fx1A", b.range (0.15f, 0.3f));
+                b.set ("fx1B", b.range (0.15f, 0.3f));
                 b.set ("fx2Mix", b.range (0.08f, 0.18f));   // delay
                 b.set ("fx2A", (float) b.pick ({ 2, 3, 3, 5 }) / 6.0f + 0.01f);
                 b.set ("fx2B", b.range (0.25f, 0.4f));
                 b.set ("fx3Mix", b.range (0.25f, 0.4f));    // reverb
                 b.set ("fx3A", b.range (0.55f, 0.75f));
                 b.set ("fx3B", b.range (0.35f, 0.55f));
-                b.set ("vibDepth", b.range (0.03f, 0.1f));
+                b.set ("vibDepth", b.chance (0.25f) ? b.range (0.01f, 0.03f) : 0.0f);   // clean pitch: vibrato only now and then, and tiny
                 b.set ("vibRate", b.range (4.5f, 5.8f));
 
                 switch (c)
@@ -160,7 +160,7 @@ namespace presets
                         b.set ("bTone", b.range (0.4f, 0.7f));
                         b.set ("bDecay", b.range (1.5f, 4.0f));
                         b.set ("bOctave", (float) b.pick ({ 0, 0, 0, -1, 1 }));
-                        b.set ("bDetune", b.range (-12.0f, 12.0f));
+                        b.set ("bDetune", b.range (-3.0f, 3.0f));
                         if (b.chance (0.35f)) b.set ("bAttack", b.range (0.05f, 0.4f));
                         b.set ("morph", b.range (0.3f, 0.6f));
                         b.set ("strumRate", (float) b.pick ({ 2, 1, 4 }));
@@ -223,7 +223,7 @@ namespace presets
                     b.set ("bTone", b.range (0.4f, 0.7f));
                     b.set ("bDecay", c == 1 ? b.range (0.6f, 1.4f) : b.range (1.8f, 4.5f));
                     b.set ("bOctave", (float) b.pick ({ 0, 0, -1, 1 }));
-                    b.set ("bDetune", b.range (-10.0f, 10.0f));
+                    b.set ("bDetune", b.range (-3.0f, 3.0f));
                     if (c == 4) b.set ("bAttack", b.range (0.15f, 0.8f));
                     b.set ("morph", c == 4 ? b.range (0.45f, 0.7f) : b.range (0.25f, 0.5f));
                 }

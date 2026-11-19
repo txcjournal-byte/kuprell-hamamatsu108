@@ -1,4 +1,5 @@
 #include "Instrument.h"
+#include "KuprellMidiClip.h"
 #include "Look.h"
 #include "Skins.h"
 #include "KuprellLookAndFeel.h"
@@ -522,7 +523,7 @@ namespace hama
                         else
                         {
                             processor.latchChord (pressed);   // stays on until clicked again or another chord is chosen
-                            if (! processor.gridPlay.load()) processor.strumNow (true);   // hear it once (MOTION loops only with PLAY or held keys)
+                            if (! processor.gridPlay.load()) processor.audition();   // hear it once: one bar of the pattern (MOTION) or one stroke
                             if (const int ed = processor.progEdit.load(); ed >= 0)
                             {
                                 processor.progSlots[(size_t) ed].store (pressed);   // PROGRESSION: fill the slot, go to the next
@@ -1177,7 +1178,7 @@ namespace hama
             drawLed (g, juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ r.getX() + 14.0f, r.getY() + 14.0f }), live);
             auto text = r.reduced (26.0f, 5.0f).withTrimmedLeft (-2.0f);
             g.setFont (LookAndFeel::monoFont (11.0f));
-            static const char* modeNames[] = { "DETAIL", "SMOOTH", "SMOOTH" };
+            static const char* modeNames[] = { "EXACT", "CLEAN", "CLEAN" };
             auto top = text.removeFromTop (17.0f);
             glowText (g, "MIDI CAPTURE", top, juce::Justification::centredLeft, 0.7f);
             glowText (g, modeNames[juce::jlimit (0, 2, processor.captureMode.load())], top, juce::Justification::centredRight, 0.5f);
@@ -1214,8 +1215,8 @@ namespace hama
             const int mode = processor.captureMode.load();
             juce::PopupMenu m;
             m.addSectionHeader ("Drag the take as...");
-            m.addItem (1, "Detail: every plucked note, exactly as played", true, mode == 0);
-            m.addItem (2, "Smooth: the same, without the tiny notes (longer notes, same sound)", true, mode != 0);
+            m.addItem (2, "Clean: every stroke = one tidy chord on the grid (easy to edit)", true, mode != 0);
+            m.addItem (1, "Exact: the timing as played (humanized strums)", true, mode == 0);
             m.addSeparator();
             m.addItem (20, "Reset (clear the take)", ! notes.empty());
             juce::Component::SafePointer<MidiCapture> safe (this);
@@ -1246,81 +1247,19 @@ namespace hama
         juce::File writeMidiFile() const
         {
             const double bpm = processor.hostBpm.load();
-            const int ppq = 960;
             const double t0 = notes.front().seconds;
-            auto toTicks = [&] (double sec) { return (sec - t0) * bpm / 60.0 * ppq; };
-            const int mode = processor.captureMode.load();
-            static const double gridQ[] = { 0.0, 0.25, 0.5, 1.0, 4.0 };
-            const double grid = gridQ[juce::jlimit (0, 4, processor.captureQuant.load())] * ppq;
-            auto snap = [grid] (double t) { return grid > 0.0 ? std::round (t / grid) * grid : t; };
-
-            // tracks: harp / chord layer / bass (FL Studio puts each on its own channel)
-            const bool smooth = mode != 0;
-            juce::MidiFile mf;
-            mf.setTicksPerQuarterNote (ppq);
-            const double endTicks = toTicks (notes.back().seconds) + ppq;
-            juce::ignoreUnused (snap);
-            for (int layer = 0; layer < 3; ++layer)
+            std::vector<kuprell::midiclip::Note> clip;
+            for (size_t i = 0; i < notes.size(); ++i)
             {
-                juce::MidiMessageSequence seq;
-                if (layer == 0) seq.addEvent (juce::MidiMessage::tempoMetaEvent (juce::roundToInt (60000000.0 / bpm)), 0.0);
-                static const char* trackNames[] = { "Hamamatsu harp", "Hamamatsu chord layer", "Hamamatsu bass" };
-                seq.addEvent (juce::MidiMessage::textMetaEvent (3, trackNames[layer]), 0.0);
-                int count = 0;
-                for (size_t i = 0; i < notes.size(); ++i)
-                {
-                    const auto& n = notes[i];
-                    if (n.layer != layer || ! n.on) continue;
-                    double on = toTicks (n.seconds);
-                    float vel = n.velocity;
-                    double nextSame = -1.0;
-                    for (size_t j = i + 1; j < notes.size(); ++j)
-                        if (notes[j].layer == layer && notes[j].note == n.note && (layer != 0 || notes[j].on)) { nextSame = toTicks (notes[j].seconds); break; }
-                    if (layer == 0 && smooth)
-                    {
-                        // SMOOTH: a string plucked again within a 1/32 merges with the next pluck (no tiny notes);
-                        // every note lasts until the same string sounds again (at least a 1/16, at most 2 beats)
-                        bool merged = false;
-                        for (size_t j = i + 1; j < notes.size(); ++j)
-                            if (notes[j].layer == 0 && notes[j].on && notes[j].note == n.note)
-                            {
-                                if (toTicks (notes[j].seconds) - on < ppq / 8.0) merged = true;
-                                break;
-                            }
-                        if (merged) continue;
-                        // pick up the loudest velocity of the plucks merged into this one (looking back)
-                        for (size_t j = i; j-- > 0;)
-                            if (notes[j].layer == 0 && notes[j].on && notes[j].note == n.note)
-                            {
-                                if (on - toTicks (notes[j].seconds) < ppq / 8.0) vel = juce::jmax (vel, notes[j].velocity);
-                                break;
-                            }
-                    }
-                    double off;
-                    if (layer == 0)
-                    {
-                        if (smooth) off = juce::jlimit (on + ppq / 4.0, on + 2.0 * ppq, nextSame > 0.0 ? nextSame - 1.0 : on + 2.0 * ppq);
-                        else off = nextSame > 0.0 ? juce::jmin (on + ppq / 2.0, nextSame - 1.0) : on + ppq / 2.0;
-                    }
-                    else off = nextSame > 0.0 ? nextSame - 1.0 : endTicks;
-                    const auto v = (juce::uint8) juce::jlimit (1, 127, juce::roundToInt (vel * 127.0f));
-                    seq.addEvent (juce::MidiMessage::noteOn (1 + layer, n.note, v), on);
-                    seq.addEvent (juce::MidiMessage::noteOff (1 + layer, n.note), juce::jmax (on + 1.0, off));
-                    ++count;
-                }
-                seq.updateMatchedPairs();
-                seq.sort();
-                if (count > 0 || layer == 0) mf.addTrack (seq);
+                const auto& n = notes[i];
+                if (n.layer != 0 || ! n.on) continue;
+                const double beat = (n.seconds - t0) * bpm / 60.0;
+                double next = beat + 2.0;   // rings until the same string sounds again (at most 2 beats)
+                for (size_t j = i + 1; j < notes.size(); ++j)
+                    if (notes[j].layer == 0 && notes[j].on && notes[j].note == n.note) { next = (notes[j].seconds - t0) * bpm / 60.0; break; }
+                clip.push_back ({ beat, n.note, n.velocity, juce::jmin (2.0, next - beat) });
             }
-
-            auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Kuprell Hamamatsu 144");
-            dir.createDirectory();
-            auto file = dir.getChildFile ("Hamamatsu 144 take " + juce::Time::getCurrentTime().formatted ("%H%M%S") + ".mid");
-            file.deleteFile();
-            juce::FileOutputStream out (file);
-            if (out.openedOk())
-                mf.writeTo (out);
-            return file;
+            return kuprell::midiclip::write (clip, "Hamamatsu 144 take " + juce::Time::getCurrentTime().formatted ("%H%M%S"), processor.captureMode.load() != 0);
         }
 
         Hamamatsu108Processor& processor;
@@ -2195,7 +2134,7 @@ namespace hama
             g.drawText (type == 0 ? "CLICK / DRAG = LIGHT CELLS  /  HOLD A CHORD OR KEY G0 TO PLAY"
                         : type == 1 ? "DRAW A LINE = A FINGER OVER THE STRINGS  /  RIGHT-DRAG = ERASE"
                         : type == 2 ? "CLICK A STEP = CHANGE THE STROKE  /  IDEAS = 3-3-2, HALF-TIME ..."
-                        : type == 3 ? "EVERY STRING ITS OWN PULSE: CLICK THE RATE, CLICK THE STRING = START, DRAG = LEVEL"
+                        : type == 3 ? "CLICK = START, DRAG = LEVEL  /  RIGHT-CLICK = OCTAVE, CHANCE, REPEATS"
                                     : "THE PLATE: DRAG = YOUR HAND  /  STRUM KEYS C0..B0: BOTTOM, TOP, MIDDLE, SHORT, TREMOLO ...",
                         r.reduced (14.0f, 6.0f).withHeight (12.0f).withTrimmedLeft (346.0f), juce::Justification::centredLeft, false);
             for (int t = 0; t < 5; ++t)
@@ -2303,22 +2242,45 @@ namespace hama
                 g.setFont (LookAndFeel::monoFont (9.5f));
                 g.setColour (rate > 0 ? th().accent : juce::Colour (0xff6e737a));
                 g.drawText (prog::stringRateNames()[rate], chip, juce::Justification::centred, false);
-                // the string: thicker = louder; it lights up just after a hit
-                bool ringing = false;
-                if (period > 0.0 && pos >= 0.0)
+                // the string: steady, thicker = louder; a hit only breathes a soft glow over it (alive, never flashing)
+                const bool muted = processor.strMute[(size_t) row].load();
+                float glow = 0.0f;
+                if (period > 0.0 && pos >= 0.0 && on && ! muted)
                 {
                     const double since = std::fmod (pos - t0 + 64.0 * period, period);
-                    ringing = since < juce::jmin (0.2, period * 0.5);
+                    glow = (float) std::exp (-since / 0.35) * 0.14f;   // slow, faint
                 }
-                g.setColour (rate == 0 ? juce::Colour (0xff2a2d32) : th().accent.withAlpha ((on ? 0.35f + 0.4f * lvl : 0.2f) * (ringing ? 1.6f : 1.0f)));
-                g.fillRoundedRectangle (lane.getX(), y - (0.6f + 1.6f * lvl) * (ringing ? 1.6f : 1.0f), lane.getWidth(), (1.2f + 3.2f * lvl) * (ringing ? 1.6f : 1.0f), 2.0f);
-                if (period > 0.0)
+                const float thick = 1.2f + 3.2f * lvl;
+                g.setColour (rate == 0 || muted ? juce::Colour (0xff2a2d32) : th().accent.withAlpha (on ? 0.32f + 0.3f * lvl : 0.2f));
+                g.fillRoundedRectangle (lane.getX(), y - thick * 0.5f, lane.getWidth(), thick, 2.0f);
+                if (glow > 0.005f)
+                {
+                    g.setColour (th().accent.withAlpha (glow));
+                    g.fillRoundedRectangle (lane.getX(), y - thick * 0.5f - 3.0f, lane.getWidth(), thick + 6.0f, 4.0f);
+                }
+                if (period > 0.0 && ! muted)
                     for (double t = t0; t < 4.0 - 1.0e-9; t += period)
                     {
                         const float x = lane.getX() + lane.getWidth() * (float) (t / 4.0);
-                        g.setColour (th().accent.withAlpha (on ? 0.95f : 0.45f));
-                        g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ x, y }));
+                        g.setColour (th().accent.withAlpha (on ? 0.85f : 0.4f));
+                        g.fillEllipse (juce::Rectangle<float> (6.0f, 6.0f).withCentre ({ x, y }));
+                        for (int q = 1; q < processor.strRatchet[(size_t) row].load(); ++q)   // repeats: small dots after the hit
+                            g.fillEllipse (juce::Rectangle<float> (3.5f, 3.5f).withCentre ({ x + 6.0f * (float) q, y }));
                     }
+                {   // what else is set on this string (octave, chance, repeats)
+                    juce::StringArray tags;
+                    const int oc = processor.strOct[(size_t) row].load(), ch = processor.strChance[(size_t) row].load();
+                    if (muted) tags.add ("MUTE");
+                    if (oc != 0) tags.add (oc > 0 ? "+1 OCT" : "-1 OCT");
+                    if (ch < 100) tags.add (juce::String (ch) + " %");
+                    if (processor.strRatchet[(size_t) row].load() > 1) tags.add ("x" + juce::String (processor.strRatchet[(size_t) row].load()));
+                    if (! tags.isEmpty())
+                    {
+                        g.setFont (LookAndFeel::monoFont (8.5f));
+                        g.setColour (juce::Colour (0xff9aa0a7));
+                        g.drawText (tags.joinIntoString ("  "), juce::Rectangle<float> (lane.getRight() - 150.0f, y - 13.0f, 150.0f, 10.0f), juce::Justification::centredRight, false);
+                    }
+                }
             }
             if (pos >= 0.0 && on)
             {
@@ -2352,6 +2314,7 @@ namespace hama
                 return;
             }
             auto lane = stringLane();
+            if (e.mods.isPopupMenu() && lane.expanded (0.0f, 14.0f).contains (e.position)) { stringMenu (r); return; }
             if (lane.expanded (0.0f, 14.0f).contains (e.position))
             {
                 // click on the string = it starts there (snapped to 16ths); then drag up / down for the level
@@ -2362,6 +2325,48 @@ namespace hama
             }
         }
         int levelRow = -1; float levelStart = 0.0f, levelY = 0.0f;
+
+        // right-click a string: everything about it
+        void stringMenu (int r)
+        {
+            juce::PopupMenu m, rate, oct, chance, rep;
+            const size_t i = (size_t) r;
+            m.addSectionHeader ("STRING " + juce::String (r + 1));
+            for (int k = 0; k < prog::stringRateNames().size(); ++k) rate.addItem (100 + k, prog::stringRateNames()[k], true, processor.strRate[i].load() == k);
+            m.addSubMenu ("How often (rate)", rate);
+            const int oc = processor.strOct[i].load();
+            oct.addItem (201, "+1 octave", true, oc == 1); oct.addItem (200, "As the chord", true, oc == 0); oct.addItem (199, "-1 octave", true, oc == -1);
+            m.addSubMenu ("Octave", oct);
+            for (int c : { 100, 85, 70, 50, 30, 15 }) chance.addItem (300 + c, juce::String (c) + " %", true, processor.strChance[i].load() == c);
+            m.addSubMenu ("Chance (every hit)", chance);
+            rep.addItem (501, "Single hit", true, processor.strRatchet[i].load() <= 1);
+            rep.addItem (502, "Double (flam)", true, processor.strRatchet[i].load() == 2);
+            rep.addItem (503, "Triple (roll)", true, processor.strRatchet[i].load() == 3);
+            m.addSubMenu ("Repeats", rep);
+            m.addItem (600, "Mute", true, processor.strMute[i].load());
+            m.addSeparator();
+            m.addItem (700, "Copy this string to all strings");
+            m.addItem (701, "Reset this string");
+            juce::Component::SafePointer<MotionGrid> safe (this);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (rateChip (r).toNearestInt())), [safe, i] (int res)
+            {
+                if (safe == nullptr || res <= 0) return;
+                auto& pr = safe->processor;
+                if (res >= 100 && res < 199) pr.strRate[i].store (res - 100);
+                else if (res >= 199 && res <= 201) pr.strOct[i].store (res - 200);
+                else if (res >= 300 && res <= 400) pr.strChance[i].store (res - 300);
+                else if (res >= 501 && res <= 503) pr.strRatchet[i].store (res - 500);
+                else if (res == 600) pr.strMute[i].store (! pr.strMute[i].load());
+                else if (res == 700)
+                    for (size_t k = 0; k < (size_t) prog::gridRows; ++k)
+                    {
+                        pr.strRate[k].store (pr.strRate[i].load()); pr.strOffset[k].store (pr.strOffset[i].load()); pr.strLevel[k].store (pr.strLevel[i].load());
+                        pr.strOct[k].store (pr.strOct[i].load()); pr.strChance[k].store (pr.strChance[i].load()); pr.strRatchet[k].store (pr.strRatchet[i].load());
+                    }
+                else if (res == 701) { pr.strOct[i].store (0); pr.strChance[i].store (100); pr.strRatchet[i].store (1); pr.strMute[i].store (false); pr.strLevel[i].store (0.75f); }
+                safe->repaint();
+            });
+        }
 
         // PLATE: the classic strum plate, lying down: drag up or down across the strings
         std::array<float, Hamamatsu108Processor::numStrings> glow {};
@@ -2676,7 +2681,16 @@ namespace hama
                 juce::PopupMenu m;
                 const int cur = juce::roundToInt (plain (processor.apvts, "gridRate"));
                 for (int i : { 1, 2, 3, 4, 5, 6 }) m.addItem (100 + i, "Step " + Hamamatsu108Processor::strumRateNames()[i], true, cur == i);
-                menu (m, btn (0, 1), [this] (int r) { setParam (processor.apvts, "gridRate", (float) (r - 100)); });
+                m.addSeparator();
+                m.addSectionHeader ("NOTES: how long every string rings");
+                const int gate = juce::roundToInt (plain (processor.apvts, "motionGate"));
+                static const char* gn[] = { "Ring (the harp decays by itself)", "Long", "Medium (clear pattern)", "Tight (punchy, staccato)" };
+                for (int i = 0; i < 4; ++i) m.addItem (150 + i, gn[i], true, gate == i);
+                menu (m, btn (0, 1), [this] (int r)
+                {
+                    if (r >= 150) { setParam (processor.apvts, "motionGate", (float) (r - 150)); return; }
+                    setParam (processor.apvts, "gridRate", (float) (r - 100));
+                });
             }
             if (btn (1, 1).contains (p))
             {
@@ -2795,7 +2809,7 @@ namespace hama
         void mouseUp (const juce::MouseEvent& e) override
         {
             if (dragFrom && ! dragging && e.getDistanceFromDragStart() < 5)
-                status ("DRAG MIDI", "hold and drag into the piano roll: 4 bars of the grid on the chord that is on (or the key chord)");
+                status ("DRAG MIDI", "drag into the piano roll (hold SHIFT while dropping: FL skips its import window)");
             dragFrom = false;
         }
 
@@ -2821,28 +2835,13 @@ namespace hama
                 for (size_t i = s0; i < notes.size(); ++i) notes[i].beat += 4.0 * b;
             }
             if (notes.empty()) return {};
-            const int ppqTicks = 960;
-            juce::MidiMessageSequence seq;
-            seq.addEvent (juce::MidiMessage::tempoMetaEvent (juce::roundToInt (60000000.0 / st.bpm)), 0.0);
-            for (auto& n : notes)
-            {
-                const int pitch = juce::jlimit (0, 127, n.pitch + 12 * st.octave);
-                const double on = n.beat * ppqTicks;
-                seq.addEvent (juce::MidiMessage::noteOn (1, pitch, juce::jlimit (0.05f, 1.0f, n.velocity)), on);
-                seq.addEvent (juce::MidiMessage::noteOff (1, pitch), juce::jmax (on + 10.0, (n.beat + n.length) * ppqTicks));
-            }
-            seq.addEvent (juce::MidiMessage::endOfTrack(), 16.0 * ppqTicks);
-            seq.updateMatchedPairs();
-            juce::MidiFile mf;
-            mf.setTicksPerQuarterNote (ppqTicks);
-            mf.addTrack (seq);
-            auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Hamamatsu motion " + chords::shortName (chord) + ".mid");
-            f.deleteFile();
-            juce::FileOutputStream os (f);
-            if (! os.openedOk()) return {};
-            mf.writeTo (os);
-            os.flush();
-            return f;
+            std::vector<kuprell::midiclip::Note> clip;
+            for (auto& n : notes) clip.push_back ({ n.beat, juce::jlimit (0, 127, n.pitch + 12 * st.octave), n.velocity, n.length });
+            // with a gate (Long / Medium / Tight) the clip shows what you hear
+            static const double gateOf[] = { 1.0, 1.0, 0.6, 0.3 };
+            const double g = gateOf[juce::jlimit (0, 3, juce::roundToInt (plain (processor.apvts, "motionGate")))];
+            if (st.motionType != 2) for (auto& n : clip) n.length *= g;
+            return kuprell::midiclip::write (clip, "Hamamatsu motion " + chords::shortName (chord), processor.captureMode.load() != 0, 16, 16.0);
         }
 
         Hamamatsu108Processor& processor;

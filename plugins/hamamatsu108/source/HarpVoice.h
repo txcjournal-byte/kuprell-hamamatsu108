@@ -287,7 +287,7 @@ namespace harp
             switch (model)
             {
                 case Model::chime:
-                    detune = 1.0024f;
+                    detune = 1.0012f;   // two oscillators 2 cents apart: alive, still in tune
                     filterBase = 250.0f + freq * 1.5f;
                     filterSweep = (1500.0f + 9000.0f * bright) * (0.6f + 0.4f * vel);
                     filterEnv = 1.0f;
@@ -372,7 +372,7 @@ namespace harp
 
                 case Model::analog:
                     shape = juce::jlimit (0.0f, 1.0f, a.s.shape);
-                    detune = 0.0015f + 0.011f * shape;
+                    detune = 0.001f + 0.007f * shape;
                     filterBase = 180.0f + freq * 1.3f + 2500.0f * bright * bright;
                     filterSweep = (900.0f + 7000.0f * bright) * (0.45f + 0.55f * vel);
                     filterEnv = 1.0f;
@@ -445,7 +445,8 @@ namespace harp
             driftPhase = rng.nextFloat();
             driftInc = (0.12f + 0.3f * rng.nextFloat()) / sr;
             // synths and the chime drift more, struck bars hardly (they are tuned metal)
-            driftDepth = (isSynthEngine ((int) model) || model == Model::chime || model == Model::strings ? 0.0018f : 0.0005f) * (0.6f + 0.8f * rng.nextFloat());
+            // under a cent: alive, never out of tune (struck bars do not drift at all)
+            driftDepth = (isSynthEngine ((int) model) || model == Model::chime || model == Model::strings ? 0.0004f : 0.0f) * (0.6f + 0.8f * rng.nextFloat());
             stereo = juce::jlimit (0.0f, 1.5f, a.s.stereo);
         }
 

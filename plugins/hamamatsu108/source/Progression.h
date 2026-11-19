@@ -60,6 +60,10 @@ namespace prog
         std::array<int, 8> strRate {};       // STRINGS: every string its own pulse (index into stringRates, 0 = silent)
         std::array<int, 8> strOffset {};     //          where it starts, in 16ths
         std::array<float, 8> strLevel {};    //          how strong
+        std::array<int, 8> strOct {};        //          octave shift (-1, 0, +1)
+        std::array<int, 8> strChance {};     //          chance of every hit in %, 0 = 100
+        std::array<int, 8> strRatchet {};    //          1 = single hit, 2 / 3 = quick repeats (a flam / roll)
+        std::array<bool, 8> strMute {};
         double bpm = 120.0;
     };
 
@@ -192,15 +196,25 @@ namespace prog
             for (int r = 0; r < gridRows; ++r)
             {
                 const double period = stringRates()[(size_t) juce::jlimit (0, 9, s.strRate[(size_t) r])];
-                if (period <= 0.0) continue;
+                if (period <= 0.0 || s.strMute[(size_t) r]) continue;
                 const double t0 = 0.25 * s.strOffset[(size_t) r];
                 const int idx = juce::roundToInt ((float) r * (float) (n - 1) / (float) (gridRows - 1));
+                const int pitch = juce::jlimit (12, 115, tones[(size_t) idx] + 12 * juce::jlimit (-1, 1, s.strOct[(size_t) r]));
+                const int chance = s.strChance[(size_t) r] <= 0 ? 100 : s.strChance[(size_t) r];
+                const int ratchet = juce::jlimit (1, 3, s.strRatchet[(size_t) r] <= 0 ? 1 : s.strRatchet[(size_t) r]);
                 // the first hit at or after the bar start (the pulse runs from song position 0)
                 double k = std::ceil ((barStart - t0) / period - 1.0e-9);
                 for (double t = t0 + k * period; t < barStart + 4.0 - 1.0e-9; t += period)
                     if (t >= barStart - 1.0e-9)
-                        out.push_back ({ t - barStart, tones[(size_t) idx], juce::jlimit (0.05f, 1.0f, s.strLevel[(size_t) r] * ((std::fmod (t, 1.0) < 1.0e-6) ? 1.0f : 0.85f)),
-                                         juce::jlimit (0.25, 2.0, period) });
+                    {
+                        // CHANCE: the same bar always gives the same choice (seeded by the time and the string)
+                        juce::Random cr ((juce::int64) (s.seed * 7919 + r * 104729 + (int) std::round (t * 96.0)));
+                        if (cr.nextInt (100) >= chance) continue;
+                        const float v = juce::jlimit (0.05f, 1.0f, s.strLevel[(size_t) r] * ((std::fmod (t, 1.0) < 1.0e-6) ? 1.0f : 0.85f));
+                        const double gap = juce::jmin (period, 0.25) / (double) ratchet;
+                        for (int q = 0; q < ratchet; ++q)
+                            out.push_back ({ t - barStart + q * gap, pitch, v * (q == 0 ? 1.0f : 0.7f - 0.1f * (float) q), juce::jlimit (0.125, 2.0, q + 1 < ratchet ? gap : period) });
+                    }
             }
         }
         else if (s.mode == grid && s.motionType == 1)
@@ -225,7 +239,13 @@ namespace prog
                 }
                 prev = row;
             }
-            for (size_t i = first; i < out.size(); ++i) out[i].length = juce::jlimit (0.25, 2.0, 4.0 - out[i].beat);
+            // every string rings until the finger crosses it again (or the bar ends)
+            for (size_t i = first; i < out.size(); ++i)
+            {
+                double next = 4.0;
+                for (size_t j = i + 1; j < out.size(); ++j) if (out[j].pitch == out[i].pitch) { next = out[j].beat; break; }
+                out[i].length = juce::jlimit (0.0625, 2.0, next - out[i].beat);
+            }
         }
         else if (s.mode == grid)
         {
@@ -238,7 +258,10 @@ namespace prog
             {
                 const int mask = s.gridCells[(size_t) (i % len)];
                 if (mask == 0) continue;
-                const float accent = (i * s.gridStepBeats == std::floor (i * s.gridStepBeats)) ? 0.95f : 0.78f;
+                // strong contrast: the beat hits hard, the off-steps sit back, so a changed pattern is clearly heard
+                const double beatPos = i * s.gridStepBeats;
+                const float accent = beatPos == std::floor (beatPos) ? (std::fmod (beatPos, 2.0) == 0.0 ? 1.0f : 0.9f)
+                                   : (std::fmod (beatPos * 2.0, 1.0) == 0.0 ? 0.68f : 0.52f);
                 int k = 0;
                 for (int r = 0; r < gridRows; ++r)
                     if (mask & (1 << r))
