@@ -227,7 +227,7 @@ namespace hama
                 g.setGradientFill (juce::ColourGradient (sk.frontTop, 0.0f, r.getY(), sk.frontBottom, 0.0f, r.getBottom(), false));
                 g.fillRect (r);
             }
-            g.setColour (juce::Colour (0xffc9ced4));
+            g.setColour (sk.frontTop.getPerceivedBrightness() < 0.3f ? juce::Colour (0xff3a3d42) : juce::Colour (0xffc9ced4));
             g.fillRect (r.withHeight (2.0f));
         }
 
@@ -327,7 +327,7 @@ namespace hama
             sheen.addColour (0.58, juce::Colours::white.withAlpha (0.18f));
             g.setGradientFill (sheen);
             g.fillRect (r);
-            g.setColour (juce::Colours::white.withAlpha (0.9f));
+            g.setColour (juce::Colours::white.withAlpha (matte ? 0.12f : 0.9f));   // edge light: subtle on dark decks
             g.drawHorizontalLine ((int) r.getY() + 1, r.getX() + 12.0f, r.getRight() - 12.0f);
             g.setColour (juce::Colours::black.withAlpha (0.25f));
             g.fillRect (r.withTop (r.getBottom() - 2.0f));

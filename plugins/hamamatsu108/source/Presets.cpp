@@ -25,6 +25,17 @@ namespace presets
               "Dusty Attic", "Robot Lullaby", "Circuit Bent", "Arcade Rain", "Bitcrushed Chimes", "Static Bloom", "Analog Fog", "Haunted Music Box",
               "Warped Vinyl", "Signal Lost", "Pixel Snow", "Rewind", "Old Film", "Shortwave", "Crackle Harp", "Memory Leak" } };
 
+        // added names: 16 more per classic type, 40 for Hybrid and Cinematic
+        const std::vector<std::vector<const char*>> extraNames = {
+            { "Open Strings", "Wide Strum", "Bright Plate", "Soft Sweep", "Night Strum", "Gold Plate", "Low Sun Strum", "Tape Strum", "Warm Sweep", "Air Harp", "Glass Strum", "Long Exposure", "Full Hand", "Easy Sweep", "Summer Plate", "Last Train Strum" },
+            { "Short Story", "Dry Pick", "Hollow Pick", "Tight Pluck", "Pocket Pluck", "Felt Pick", "Nylon Tick", "Quick Step", "Rain Gutter", "Snap Pluck", "Paper Pluck", "Clean Pick", "Muted Pick", "Synth Pluck Air", "FM Pluck", "Analog Pluck" },
+            { "Clear Bell", "Wide Bell", "FM Bell Hall", "Digital Chapel", "Ice Bell", "Long Bell", "Bell Air", "Soft Mallet Bell", "Bright Tower", "Copper Bell", "Mint Bell", "Cold Glass", "Bell Pad", "Distant Bell", "Broken Bell", "Tuned Bowl" },
+            { "Digital Keys", "FM Rhodes", "Analog Keys", "Wide Keys", "Soft Keys", "Late Keys", "Keys Air", "Dusty Tines", "Polished Keys", "Warm Board", "Studio Keys", "Mono Keys", "Tape Keys", "Night Keys", "Velvet Board", "Glass Keys" },
+            { "Analog Pad", "Wavetable Pad", "Air Pad", "Wide Pad", "Slow Pad", "Soft Pad", "Deep Pad", "Bright Pad", "Breath Pad", "Warm Pad", "Glass Pad", "Choir Air", "Long Pad", "Cold Pad", "Gold Pad", "Dark Pad" },
+            { "Grain Fog", "Air Noise", "Old Tape Air", "Dust Pad", "Crackle Air", "Bent Bell", "Lo-Fi Keys", "Radio Pad", "Worn Cassette", "Hiss Harp", "Detuned Box", "Faded Strum", "Slow Tape", "Wobble Keys", "Noise Garden", "Static Pad" },
+            { "Harp Analog", "Harp Wavetable", "Harp FM", "Harp Air", "Glass Analog", "Celesta Wave", "Pluck FM", "Steel Air", "Chime Saw", "Bell Wave", "Vibes Air", "Marimba FM", "Hybrid Strum", "Hybrid Pluck", "Hybrid Bell", "Hybrid Keys", "Morph Strum", "Morph Bell", "Morph Pluck", "Morph Keys", "Wave Harp", "Saw Harp", "Breath Harp", "Digital Harp", "Analog Chime", "FM Chime", "Air Chime", "Wave Chime", "Split Harp", "Dual Harp", "Layer Strum", "Two Engines", "Octave Harp", "Sub Harp", "High Harp", "Detune Harp", "Wide Hybrid", "Soft Hybrid", "Bright Hybrid", "Dark Hybrid" },
+            { "Opening Titles", "Epic Rise", "Slow Reveal", "Trailer Harp", "Score Bed", "Main Theme", "Wide Shot", "Night Scene", "Credits", "Big Sky", "Long Road", "Last Light", "Distant Shore", "Snow Scene", "Final Act", "Prologue", "Wonder", "Discovery", "Low Strings Rise", "Hero Harp", "Tension Bed", "Shimmer Harp", "Ambient Score", "Dream Sequence", "Flashback", "Aerial", "Horizon Line", "Deep Space", "Arrival", "Departure", "Memory Lane", "Silent Film", "Dark Forest", "Rising Tide", "Glacier", "Cathedral", "Ocean Scene", "Desert Wind", "Starfield", "Epilogue" } };
+
         struct Builder
         {
             std::vector<std::pair<juce::String, float>> v;
@@ -39,13 +50,14 @@ namespace presets
     std::vector<Preset> makeFactory()
     {
         std::vector<Preset> out;
-        for (int c = 0; c < 6; ++c)
-            for (int i = 0; i < 24; ++i)
+        for (int c = 0; c < 8; ++c)
+            for (int i = 0; i < 40; ++i)
             {
+                const bool extra = c >= 6 || i >= 24;
                 Builder b;
                 b.r.setSeed ((juce::int64) (1081 + c * 977 + i * 31));
                 Preset p;
-                p.name = names[c][i];
+                p.name = extra ? juce::String (extraNames[(size_t) c][(size_t) (c >= 6 ? i : i - 24)]) : juce::String (names[c][i]);
                 p.category = categories()[c];
                 p.model = c == 5 ? 4 : 1;   // presets are not tied to a character: Classic for all, Lo-fi for textures
                 b.set ("model", (float) p.model);
@@ -137,6 +149,54 @@ namespace presets
                         b.set ("fx3A", 0.85f);
                         if (b.chance (0.5f)) { b.set ("dual", 1.0f); b.set ("harpVoice2", (float) b.pick ({ 9, 5 })); b.set ("morph", b.range (0.35f, 0.55f)); }
                         break;
+                    case 6: // Hybrid: a harp engine on A, a synth engine on B, MORPH between them
+                        b.set ("harpVoice", (float) b.pick ({ 0, 0, 1, 3, 4, 7, 2, 6 }));
+                        b.set ("harpTone", b.range (0.5f, 0.75f));
+                        b.set ("harpDecay", b.range (1.6f, 3.5f));
+                        b.set ("harpRange", 3.0f);
+                        b.set ("dual", 1.0f);
+                        b.set ("harpVoice2", (float) (10 + i % 4));
+                        b.set ("bShape", b.range (0.1f, 0.9f));
+                        b.set ("bTone", b.range (0.4f, 0.7f));
+                        b.set ("bDecay", b.range (1.5f, 4.0f));
+                        b.set ("bOctave", (float) b.pick ({ 0, 0, 0, -1, 1 }));
+                        b.set ("bDetune", b.range (-12.0f, 12.0f));
+                        if (b.chance (0.35f)) b.set ("bAttack", b.range (0.05f, 0.4f));
+                        b.set ("morph", b.range (0.3f, 0.6f));
+                        b.set ("strumRate", (float) b.pick ({ 2, 1, 4 }));
+                        b.set ("strumFeel", b.range (0.4f, 0.6f));
+                        b.set ("strumSpeed", b.range (14.0f, 32.0f));
+                        if (b.chance (0.5f))   // the layer mix breathes
+                        { b.set ("lfo1QDst", (float) mod::targetIds().indexOf ("morph")); b.set ("lfo1QAmt", b.range (0.15f, 0.3f)); b.set ("lfo1Rate", b.range (0.05f, 0.2f)); }
+                        else
+                        { b.set ("lfo1QDst", (float) mod::targetIds().indexOf ("bShape")); b.set ("lfo1QAmt", b.range (0.15f, 0.35f)); b.set ("lfo1Rate", b.range (0.08f, 0.3f)); }
+                        break;
+                    case 7: // Cinematic: slow, wide, a low layer and a shimmering tail
+                        b.set ("harpVoice", (float) b.pick ({ 0, 3, 1, 9, 7, 4 }));
+                        b.set ("harpTone", b.range (0.45f, 0.7f));
+                        b.set ("harpDecay", b.range (3.5f, 6.5f));
+                        b.set ("harpSustain", b.range (0.1f, 0.35f));
+                        b.set ("harpRange", (float) b.pick ({ 3, 4 }));
+                        if (b.chance (0.35f)) b.set ("harpAttack", b.range (0.1f, 0.6f));
+                        b.set ("dual", 1.0f);
+                        b.set ("harpVoice2", (float) b.pick ({ 10, 11, 13, 9, 11 }));
+                        b.set ("bOctave", (float) b.pick ({ -1, -1, 0, 1 }));
+                        b.set ("bAttack", b.range (0.15f, 0.7f));
+                        b.set ("bLevel", b.range (-7.0f, -4.0f));
+                        b.set ("bDecay", b.range (3.0f, 5.0f));
+                        b.set ("bShape", b.range (0.2f, 0.8f));
+                        b.set ("bTone", b.range (0.35f, 0.6f));
+                        b.set ("morph", b.range (0.35f, 0.55f));
+                        b.set ("strumRate", (float) b.pick ({ 0, 1, 1 }));
+                        b.set ("strumFeel", b.range (0.3f, 0.5f));
+                        b.set ("strumSpeed", b.range (35.0f, 70.0f));
+                        b.set ("fx3Type", 15.0f); b.set ("fx3On", 1.0f); b.set ("fx3A", b.range (0.75f, 0.9f)); b.set ("fx3B", b.range (0.45f, 0.6f)); b.set ("fx3Mix", b.range (0.25f, 0.36f));
+                        b.set ("fx5Type", 20.0f); b.set ("fx5On", 1.0f); b.set ("fx5A", b.range (0.6f, 0.8f)); b.set ("fx5B", 0.55f); b.set ("fx5Mix", 1.0f);
+                        b.set ("drive", b.range (0.0f, 0.12f));
+                        b.set ("macroDream", b.range (0.1f, 0.25f));
+                        b.set ("harpTone", b.range (0.4f, 0.6f));
+                        b.set ("lfo2QDst", (float) mod::targetIds().indexOf ("filterCutoff")); b.set ("lfo2QAmt", b.range (0.08f, 0.18f)); b.set ("lfo2Rate", b.range (0.04f, 0.12f));
+                        break;
                     default: // Texture: well-loved tape, gentle movement
                         b.set ("harpVoice", (float) b.pick ({ 0, 1, 2, 3, 8, 4 }));
                         b.set ("harpTone", b.range (0.45f, 0.7f));
@@ -152,6 +212,20 @@ namespace presets
                         b.set ("mod1Src", 1.0f); b.set ("mod1Dst", 1.0f); b.set ("mod1Amt", b.range (0.1f, 0.2f));
                         b.set ("lfo1Rate", b.range (0.15f, 0.6f));
                         break;
+                }
+                // the added presets of the classic types get a synth layer under the harp
+                if (c < 6 && i >= 24)
+                {
+                    static const int engines[6][4] = { { 13, 11, 10, 12 }, { 12, 10, 11, 13 }, { 12, 11, 13, 12 }, { 10, 12, 11, 10 }, { 10, 11, 13, 10 }, { 13, 11, 10, 12 } };
+                    b.set ("dual", 1.0f);
+                    b.set ("harpVoice2", (float) engines[c][i % 4]);
+                    b.set ("bShape", b.range (0.15f, 0.85f));
+                    b.set ("bTone", b.range (0.4f, 0.7f));
+                    b.set ("bDecay", c == 1 ? b.range (0.6f, 1.4f) : b.range (1.8f, 4.5f));
+                    b.set ("bOctave", (float) b.pick ({ 0, 0, -1, 1 }));
+                    b.set ("bDetune", b.range (-10.0f, 10.0f));
+                    if (c == 4) b.set ("bAttack", b.range (0.15f, 0.8f));
+                    b.set ("morph", c == 4 ? b.range (0.45f, 0.7f) : b.range (0.25f, 0.5f));
                 }
                 // modern colour on top of the era sound
                 if (p.model == 0 || p.model == 4)   // Warm and Lo-fi are narrow by nature: open them up (mono-safe)
@@ -184,7 +258,7 @@ namespace presets
                     b.set ("harpRelease", b.range (0.8f, 1.6f)); b.set ("drive", b.range (0.2f, 0.4f)); b.set ("filterCutoff", b.range (6000.0f, 12000.0f));
                     b.set ("fx5Type", 20.0f); b.set ("fx5On", 1.0f); b.set ("fx5A", 0.65f); b.set ("fx5B", 0.5f); b.set ("fx5Mix", 1.0f);
                 }
-                if (c == 1 && i >= 20)
+                if (c == 1 && i >= 20 && i < 24)
                 {
                     // EPIC HARP: big modern cinematic harp, wide, glowing on the chord, shimmering tail
                     static const char* en[] = { "Epic Harp", "Epic Harp Rise", "Cinematic Harp", "Epic Harp Low" };

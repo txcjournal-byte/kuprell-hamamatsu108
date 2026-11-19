@@ -25,7 +25,7 @@ namespace mod
     {
         static const juce::StringArray n { "", "harpTone", "harpDecay", "vibRate", "vibDepth", "chordLevel", "chordFilter", "bassLevel", "bassTone",
                                            "strumFeel", "strumSpeed", "arpChance", "fx1A", "fx1Mix", "fx2A", "fx2Mix", "fx3A", "fx3Mix", "fx4A", "fx4Mix", "master",
-                                           "@filter", "@volume", "@pan", "@pitch", "filterCutoff", "filterReso", "drive", "morph" };
+                                           "@filter", "@volume", "@pan", "@pitch", "filterCutoff", "filterReso", "drive", "morph", "harpShape", "bShape", "bTone" };
         return n;
     }
 
@@ -33,7 +33,7 @@ namespace mod
     {
         static const juce::StringArray n { "None", "Harp Tone", "Harp Decay", "Vibrato Rate", "Vibrato Depth", "Chord Level", "Chord Filter", "Bass Level", "Bass Tone",
                                            "Strum Feel", "Strum Speed", "Arp Chance", "FX 1 A", "FX 1 Mix", "FX 2 A", "FX 2 Mix", "FX 3 A", "FX 3 Mix", "FX 4 A", "FX 4 Mix", "Master",
-                                           "Harp Filter", "Harp Volume", "Harp Pan", "Harp Pitch", "Filter Cutoff", "Filter Resonance", "Saturation", "Morph" };
+                                           "Harp Filter", "Harp Volume", "Harp Pan", "Harp Pitch", "Filter Cutoff", "Filter Resonance", "Saturation", "Morph", "Layer A Shape", "Layer B Shape", "Layer B Tone" };
         return n;
     }
 

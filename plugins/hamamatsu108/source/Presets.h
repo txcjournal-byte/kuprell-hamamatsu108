@@ -5,10 +5,10 @@
 #include <set>
 #include <atomic>
 
-// Factory presets (144, built in), user presets (files) and favourites.
+// Factory presets (320, built in), user presets (files) and favourites.
 namespace presets
 {
-    inline const juce::StringArray& categories() { static const juce::StringArray c { "Harp", "Pluck", "Bell", "Keys", "Pad", "Texture" }; return c; }
+    inline const juce::StringArray& categories() { static const juce::StringArray c { "Harp", "Pluck", "Bell", "Keys", "Pad", "Texture", "Hybrid", "Cinematic" }; return c; }
 
     struct Preset
     {

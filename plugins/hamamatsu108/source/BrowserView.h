@@ -39,7 +39,7 @@ namespace hama
         juce::ListBox list;
         juce::TextEditor search;
         std::vector<int> shown;
-        int category = 0;   // 0 all, 1..6 categories, 7 favourites, 8 user
+        int category = 0;   // 0 all, 1..8 categories, 9 favourites, 10 user
         juce::String bankFilter, lastBank;   // "My presets": one of the user's banks (empty = all)
         void showBankMenu();
         void showRowMenu (int idx);

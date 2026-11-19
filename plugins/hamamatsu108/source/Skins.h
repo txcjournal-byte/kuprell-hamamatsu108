@@ -21,6 +21,7 @@ namespace skins
     #define ACC_DEEP 0xff0bb8b3   // the same teal, only dimmer
    #endif
     inline Accent amber()     { return { juce::Colour (0xffffa53c), juce::Colour (0xffffd59a), juce::Colour (0xffd9781e) }; }   // 80s amber display light
+    inline Accent studioAmber() { return { juce::Colour (0xffe2a35a), juce::Colour (0xfff2d2a6), juce::Colour (0xffa9733a) }; }   // calm amber, not neon
     inline Accent mint()      { return { juce::Colour (ACC_MAIN), juce::Colour (ACC_SOFT), juce::Colour (ACC_DEEP) }; }   // bright backlight
 
     struct Skin
@@ -43,7 +44,7 @@ namespace skins
         bool lcd = false;                     // Graphite: light LCD displays
     };
 
-    constexpr int numSkins = 12;
+    constexpr int numSkins = 13;
     inline const std::array<Skin, numSkins>& all()
     {
         using C = juce::Colour;
@@ -85,7 +86,11 @@ namespace skins
             // Ivory 84: an 80s home instrument: warm ivory plastic, walnut cheeks, brown print, amber display light
             { "Ivory 84", C (0xffefe6d2), C (0xffe2d6bc), C (0xffcfc0a0), Cheek::walnut, C (0xff6b4024), C (0xff3a2212), Pattern::none, Grille::holes,
               C (0xff5a4232), C (0xff3a2a20), C (0xfff3ecdc), C (0xffe3d7bd), C (0xffcdbf9f), C (0xff4a3426), C (0xff2a1c12), C (0xcc4a3424),
-              "", C (0x00000000), C (0x00000000), "ELECTRONIC STRUM HARP", amber() }
+              "", C (0x00000000), C (0x00000000), "ELECTRONIC STRUM HARP", amber() },
+            // Studio (default): matte graphite, anodised cheeks, one restrained amber light. Calm, professional, the sound in front.
+            { "Studio", C (0xff2e3034), C (0xff26282b), C (0xff1f2124), Cheek::flat, C (0xff18191b), C (0xff0f1011), Pattern::none, Grille::holes,
+              C (0xff2a2c30), C (0xff1c1d20), C (0xff2c2e32), C (0xff26282c), C (0xff202226), C (0xff1b1c1f), C (0xff111214), C (0xff8e939b),
+              "", C (0x00000000), C (0x00000000), "ELECTRONIC STRUM HARP", studioAmber() }
         }};
         return s;
     }

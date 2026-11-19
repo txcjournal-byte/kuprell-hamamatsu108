@@ -7,7 +7,8 @@ namespace hama
 {
     namespace
     {
-        const char* const catLabels[] = { "All presets", "Harp", "Pluck", "Bell", "Keys", "Pad", "Texture", "\xe2\x99\xa5  Favourites", "My presets" };
+        const char* const catLabels[] = { "All presets", "Harp", "Pluck", "Bell", "Keys", "Pad", "Texture", "Hybrid", "Cinematic", "\xe2\x99\xa5  Favourites", "My presets" };
+        constexpr int NC = 8, FAV = 9, USER = 10, ROWS = 11;
         const char* const buttons[] = { "Save", "Save As...", "Delete", "Show folder", "Back to PLAY" };
     }
 
@@ -19,6 +20,7 @@ namespace hama
         list.setColour (juce::ListBox::outlineColourId, juce::Colours::black);
         list.setOutlineThickness (1);
         addAndMakeVisible (list);
+        list.getVerticalScrollBar().setColour (juce::ScrollBar::thumbColourId, juce::Colour (0xff4a4e55));
 
         search.setTextToShowWhenEmpty ("Search presets...", juce::Colour (0xff6e737a));
         search.setFont (LookAndFeel::uiFont (14.0f));
@@ -51,10 +53,10 @@ namespace hama
         for (int i = 0; i < (int) pm.all().size(); ++i)
         {
             const auto& pr = pm.all()[(size_t) i];
-            if (category >= 1 && category <= 6 && pr.category != presets::categories()[category - 1]) continue;
-            if (category == 7 && ! pm.isFavourite (i)) continue;
-            if (category == 8 && pr.factory) continue;
-            if (category == 8 && bankFilter.isNotEmpty() && pr.bank != bankFilter) continue;
+            if (category >= 1 && category <= NC && pr.category != presets::categories()[category - 1]) continue;
+            if (category == FAV && ! pm.isFavourite (i)) continue;
+            if (category == USER && pr.factory) continue;
+            if (category == USER && bankFilter.isNotEmpty() && pr.bank != bankFilter) continue;
             // presets are sorted by type only (character is a filter on the sound, not a preset group)
             if (text.isNotEmpty() && ! pr.name.toLowerCase().contains (text) && ! pr.category.toLowerCase().contains (text) && ! pr.bank.toLowerCase().contains (text)) continue;
             shown.push_back (i);
@@ -70,7 +72,7 @@ namespace hama
         if (cur != lastCurrent) { lastCurrent = cur; list.repaint(); repaint(); }
     }
 
-    juce::Rectangle<int> BrowserView::categoryRow (int i) const { return { 40, 70 + i * 34 + (i >= 7 ? 14 : 0), 210, 30 }; }
+    juce::Rectangle<int> BrowserView::categoryRow (int i) const { return { 40, 66 + i * 32 + (i >= FAV ? 14 : 0), 210, 30 }; }
     juce::Rectangle<int> BrowserView::modelRow (int i) const    { return { 40, 420 + i * 30, 210, 26 }; }
     juce::Rectangle<int> BrowserView::button (int i) const      { return { 1036, 330 + i * 46, 204, 36 }; }
 
@@ -91,7 +93,7 @@ namespace hama
         g.drawText ("TYPE", 40, 34, 200, 24, juce::Justification::centredLeft, false);
 
         auto& pm = *processor.presetManager;
-        for (int i = 0; i < 9; ++i)
+        for (int i = 0; i < ROWS; ++i)
         {
             auto r = categoryRow (i).toFloat();
             const bool on = i == category;
@@ -99,14 +101,14 @@ namespace hama
             g.setFont (LookAndFeel::uiFont (13.0f, on));
             g.setColour (on ? th().soft : juce::Colour (0xffc9ccd1));
             juce::String label (juce::String::fromUTF8 (catLabels[i]));
-            if (i == 8) label << (bankFilter.isNotEmpty() ? juce::String::fromUTF8 (" \xc2\xb7 ") + bankFilter : juce::String::fromUTF8 ("  \xe2\x96\xbe"));
+            if (i == USER) label << (bankFilter.isNotEmpty() ? juce::String::fromUTF8 (" \xc2\xb7 ") + bankFilter : juce::String::fromUTF8 ("  \xe2\x96\xbe"));
             g.drawText (label, r.reduced (12.0f, 0.0f), juce::Justification::centredLeft, false);
             int count = 0;
             for (int k = 0; k < (int) pm.all().size(); ++k)
             {
                 const auto& pr = pm.all()[(size_t) k];
-                if (i == 0 || (i <= 6 && pr.category == presets::categories()[i - 1]) || (i == 7 && pm.isFavourite (k))
-                    || (i == 8 && ! pr.factory && (bankFilter.isEmpty() || pr.bank == bankFilter))) ++count;
+                if (i == 0 || (i <= NC && pr.category == presets::categories()[i - 1]) || (i == FAV && pm.isFavourite (k))
+                    || (i == USER && ! pr.factory && (bankFilter.isEmpty() || pr.bank == bankFilter))) ++count;
             }
             g.setColour (juce::Colour (0xff6e737a));
             g.setFont (LookAndFeel::monoFont (11.0f));
@@ -144,12 +146,12 @@ namespace hama
     void BrowserView::mouseDown (const juce::MouseEvent& e)
     {
         const auto p = e.getPosition();
-        for (int i = 0; i < 9; ++i)
+        for (int i = 0; i < ROWS; ++i)
             if (categoryRow (i).contains (p))
             {
-                if (i == 8 && (category == 8 || e.mods.isPopupMenu())) { category = 8; showBankMenu(); return; }
+                if (i == USER && (category == USER || e.mods.isPopupMenu())) { category = USER; showBankMenu(); return; }
                 category = i;
-                if (i != 8) bankFilter.clear();
+                if (i != USER) bankFilter.clear();
                 refresh();
                 return;
             }
@@ -219,7 +221,7 @@ namespace hama
             const bool ok = m.saveUser (name, cat, juce::roundToInt (plain (safe->processor.apvts, "model")), bank);
             safe->lastBank = bank;
             if (safe->onStatus) safe->onStatus (ok ? "Saved" : "Could not save", bank.isNotEmpty() ? bank + " / " + name : name);
-            safe->category = 8;
+            safe->category = USER;
             safe->bankFilter = bank;
             safe->refresh();
         }), true);
@@ -337,7 +339,7 @@ namespace hama
         const int idx = shown[(size_t) row];
         auto& pm = *processor.presetManager;
         if (e.mods.isPopupMenu()) { showRowMenu (idx); return; }
-        if (e.x < 40) { pm.toggleFavourite (idx); if (category == 7) refresh(); list.repaint(); return; }
+        if (e.x < 40) { pm.toggleFavourite (idx); if (category == FAV) refresh(); list.repaint(); return; }
         pm.load (idx);
         processor.previewPreset();   // let it be heard right away
         if (onStatus) onStatus ("Preset", pm.currentName());

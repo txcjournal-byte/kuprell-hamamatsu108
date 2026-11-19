@@ -14,12 +14,16 @@
 // Every voice is click-free: soft attacks, and a stolen voice fades out for 3 ms before the new note starts.
 namespace harp
 {
-    enum class Model { chime, celesta, vibes, glass, pluck, flute, marimba, steel, epiano, strings };
+    enum class Model { chime, celesta, vibes, glass, pluck, flute, marimba, steel, epiano, strings,
+                       analog, wavetable, fm, air };   // synthesis engines (layer B and modern presets)
+    constexpr int numModels = 14;
+    inline bool isSynthEngine (int m) { return m >= 10; }
 
     inline const juce::StringArray& voiceNames()
     {
         static const juce::StringArray names { "Classic Chime", "Celesta", "Vibes", "Glass", "Pluck",
-                                               "Flute", "Marimba", "Steel", "E-Piano", "Strings" };
+                                               "Flute", "Marimba", "Steel", "E-Piano", "Strings",
+                                               "Analog", "Wavetable", "Digital FM", "Air" };
         return names;
     }
 
@@ -58,6 +62,9 @@ namespace harp
         float decay = 1.8f;    // seconds
         float attack = 0.0015f;  // seconds: fade-in of every note (long = soft swell)
         float sustain = 0.0f;    // 0..1: how much longer the string holds on (up to 6x the decay)
+        float shape = 0.4f;      // 0..1: engine character (analog detune, wavetable position, FM ratio, air breath)
+        float pitchMul = 1.0f;   // layer octave / detune
+        float level = 1.0f;      // layer level
     };
 
     // 2-pole resonator: one mode of a vibrating body
@@ -245,7 +252,7 @@ namespace harp
             active = true;
             age = 0;
             fadeOutLeft = 0;
-            freq = a.hz;
+            freq = a.hz * a.s.pitchMul;
             vel = a.velocity;
             const float tone = juce::jlimit (0.0f, 1.0f, a.s.tone);
             const float bright = juce::jlimit (0.0f, 1.0f, tone * (0.55f + 0.45f * vel));
@@ -353,6 +360,64 @@ namespace harp
                     gain = 0.26f * velGain;
                     break;
 
+                case Model::analog:
+                    shape = juce::jlimit (0.0f, 1.0f, a.s.shape);
+                    detune = 0.0015f + 0.011f * shape;
+                    filterBase = 180.0f + freq * 1.3f + 2500.0f * bright * bright;
+                    filterSweep = (900.0f + 7000.0f * bright) * (0.45f + 0.55f * vel);
+                    filterEnv = 1.0f;
+                    filterEnvMul = std::exp (-1.0f / ((0.07f + 0.22f * t60) * sr));
+                    envMul = std::exp (-6.9078f / (t60 * 1.6f * sr));
+                    svf[0].reset(); svf[1].reset();
+                    gain = 0.24f * velGain;
+                    break;
+
+                case Model::wavetable:
+                {
+                    shape = juce::jlimit (0.0f, 1.0f, a.s.shape);
+                    numHarm = juce::jlimit (1, maxHarm, (int) (0.45f * sr / juce::jmax (20.0f, freq)));
+                    wtSweep = 0.22f * (0.3f + bright) * (0.5f + 0.5f * vel);   // the table opens on the attack and settles
+                    filterEnv = 1.0f;
+                    filterEnvMul = std::exp (-1.0f / ((0.12f + 0.3f * t60) * sr));
+                    envMul = std::exp (-6.9078f / (t60 * 1.6f * sr));
+                    bright_ = bright;
+                    updateTable();
+                    gain = 0.18f * velGain;
+                    break;
+                }
+
+                case Model::fm:
+                {
+                    shape = juce::jlimit (0.0f, 1.0f, a.s.shape);
+                    static const float ratios[] = { 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 3.5f, 4.0f, 5.0f, 7.0f, 9.0f };
+                    fmRatio = ratios[juce::jlimit (0, 9, (int) (shape * 9.99f))];
+                    const float limit = juce::jlimit (0.08f, 1.0f, 2600.0f / (freq * fmRatio));   // no fold-over up high
+                    fmIndex = (0.6f + 4.5f * bright * (0.4f + 0.6f * vel)) * limit;
+                    fmFloor = 0.25f * bright * limit;
+                    fmIndexMul = std::exp (-1.0f / ((0.08f + 0.18f * t60) * sr));
+                    envMul = std::exp (-6.9078f / (t60 * 1.3f * sr));
+                    gain = 0.22f * velGain;
+                    break;
+                }
+
+                case Model::air:
+                {
+                    shape = juce::jlimit (0.0f, 1.0f, a.s.shape);
+                    attackInc = juce::jmin (attackInc, 1.0f / (0.03f * sr));
+                    envMul = std::exp (-6.9078f / (t60 * 2.0f * sr));
+                    airQ = 6.0f + 70.0f * (1.0f - shape);              // low shape = clear tone, high = breath
+                    for (int i = 0; i < 3; ++i)
+                    {
+                        const float f = juce::jmin (freq * (float) (i + 1), 0.42f * sr);
+                        svf[(size_t) i].reset(); svf[(size_t) i].set (f, airQ, sr);
+                        airNorm[(size_t) i] = std::sqrt (sr / (airQ * f));   // equal loudness at any pitch and breath
+                    }
+                    airLp = 0.0f;
+                    filterCounter = 0;
+                    gain = 0.09f * velGain;
+                    break;
+                }
+
                 case Model::strings:
                     attackInc = juce::jmin (attackInc, 1.0f / (0.07f * sr));
                     envMul = std::exp (-6.9078f / (t60 * 2.2f * sr));
@@ -362,6 +427,7 @@ namespace harp
                     gain = 0.3f * velGain;
                     break;
             }
+            gain *= a.s.level;
         }
 
         inline float next (float pm, juce::Random& rng) noexcept
@@ -449,6 +515,69 @@ namespace harp
                     svf[0].lp (rng.nextFloat() * 2.0f - 1.0f, bp);
                     return tone * 0.8f + bp * (0.2f * (1.0f - attack) + 0.025f);
                 }
+                case Model::analog:
+                {
+                    if (filterCounter-- <= 0)
+                    {
+                        filterCounter = 16;
+                        const float cutoff = filterBase + filterSweep * filterEnv;
+                        svf[0].set (cutoff, 0.75f, sr);
+                        svf[1].set (cutoff, 0.95f, sr);
+                    }
+                    float saw = 0.0f;
+                    for (int v = 0; v < 3; ++v)
+                    {
+                        const float dt = freq * pm * (1.0f + (float) (v - 1) * detune) / sr;
+                        float& p = phase[(size_t) v];
+                        saw += 2.0f * p - 1.0f - polyBlep (p, dt);
+                        p = wrap (p + dt);
+                    }
+                    const float sub = sn (phase[3]) * (0.35f - 0.25f * shape);
+                    phase[3] = wrap (phase[3] + 0.5f * freq * pm / sr);
+                    filterEnv *= filterEnvMul;
+                    float bp;
+                    return svf[1].lp (svf[0].lp (saw * 0.36f + sub, bp), bp);
+                }
+                case Model::wavetable:
+                {
+                    if (filterCounter-- <= 0) { filterCounter = 32; updateTable(); }
+                    filterEnv *= filterEnvMul;
+                    float y = 0.0f;
+                    const float p = phase[0];
+                    for (int h = 0; h < numHarm; ++h)
+                        y += wtAmp[(size_t) h] * sn (wrap (p * (float) (h + 1)));
+                    phase[0] = wrap (p + freq * pm / sr);
+                    return y;
+                }
+                case Model::fm:
+                {
+                    const float dt = freq * pm / sr;
+                    const float idx = fmFloor + fmIndex;
+                    const float m = sn (phase[1]);
+                    const float c1 = sn (wrap (phase[0] + m * idx * 0.159f));
+                    const float c2 = sn (wrap (phase[2] + m * idx * 0.11f));
+                    phase[0] = wrap (phase[0] + dt);
+                    phase[1] = wrap (phase[1] + dt * fmRatio);
+                    phase[2] = wrap (phase[2] + dt * 1.0035f);
+                    fmIndex *= fmIndexMul;
+                    return 0.6f * c1 + 0.4f * c2;
+                }
+                case Model::air:
+                {
+                    if (filterCounter-- <= 0)
+                    {
+                        filterCounter = 16;
+                        for (int i = 0; i < 3; ++i) svf[(size_t) i].set (juce::jmin (freq * pm * (float) (i + 1), 0.42f * sr), airQ, sr);
+                    }
+                    const float n = rng.nextFloat() * 2.0f - 1.0f;
+                    float y = 0.0f, bp;
+                    static const float partial[] = { 1.0f, 0.45f, 0.22f };
+                    for (int i = 0; i < 3; ++i) { svf[(size_t) i].lp (n, bp); y += bp * partial[i] * airNorm[(size_t) i]; }
+                    airLp += (n - airLp) * 0.05f;
+                    const float tone = sn (phase[0]) * 0.05f * (1.0f - shape);
+                    phase[0] = wrap (phase[0] + freq * pm / sr);
+                    return y + airLp * 0.06f * shape + tone;
+                }
                 case Model::strings:
                 {
                     float saw = 0.0f;
@@ -478,7 +607,7 @@ namespace harp
         std::array<float, 4> phase {};
 
         float detune = 1.0f, filterBase = 1000.0f, filterSweep = 0.0f, filterEnv = 0.0f, filterEnvMul = 1.0f;
-        std::array<Svf, 2> svf;
+        std::array<Svf, 3> svf;
         std::array<Mode, 8> modes;
         int numModes = 0, exciteLeft = 0, exciteLen = 1;
         float malletNoise = 0.0f, tremolo = 0.0f, malletLp = 0.0f, tineInc = 0.0f, pluckLp = 0.0f, pluckLp2 = 0.0f, pluckCoef = 0.5f;
@@ -489,5 +618,46 @@ namespace harp
         float pr1 = 0, pr2 = 0, prEnv = 1e-6f;
        #endif
         float fmIndex = 0, fmIndexMul = 1, tineEnv = 0, tineMul = 1;
+        // synthesis engines
+        static constexpr int maxHarm = 24;
+        std::array<float, maxHarm> wtAmp {};
+        int numHarm = 1;
+        float shape = 0.4f, wtSweep = 0.0f, bright_ = 0.5f, fmRatio = 1.0f, fmFloor = 0.0f, airQ = 20.0f, airLp = 0.0f;
+        std::array<float, 3> airNorm {};
+
+        // wavetable: five spectra (sine, warm, saw, hollow square, vocal formant), scanned by SHAPE
+        void updateTable() noexcept
+        {
+            const float pos = juce::jlimit (0.0f, 1.0f, shape + wtSweep * filterEnv) * 4.0f;
+            const int f0 = juce::jmin (3, (int) pos);
+            const float fr = pos - (float) f0;
+            auto amp = [this] (int frame, int h) -> float   // h = 1..
+            {
+                const float hf = (float) h;
+                switch (frame)
+                {
+                    case 0: return h == 1 ? 1.0f : (h == 2 ? 0.12f : 0.0f);
+                    case 1: return 1.0f / (hf * hf);
+                    case 2: return 1.0f / hf;
+                    case 3: return (h % 2) == 1 ? 1.0f / hf : 0.06f / hf;
+                    default:
+                    {
+                        const float f1 = std::exp (-0.5f * (hf - 3.0f) * (hf - 3.0f)), f2 = 0.6f * std::exp (-0.3f * (hf - 9.0f) * (hf - 9.0f));
+                        return (0.5f / hf + f1 + f2);
+                    }
+                }
+            };
+            float sum = 0.0f;
+            const float tilt = 0.55f + 0.9f * bright_;
+            for (int h = 1; h <= numHarm; ++h)
+            {
+                float a = (1.0f - fr) * amp (f0, h) + fr * amp (f0 + 1, h);
+                a *= std::pow (tilt, std::log2 ((float) h) * 0.6f);
+                wtAmp[(size_t) h - 1] = a;
+                sum += a * a;
+            }
+            const float norm = 0.75f / std::sqrt (juce::jmax (1.0e-6f, sum));
+            for (int h = 0; h < numHarm; ++h) wtAmp[(size_t) h] *= norm;
+        }
     };
 }

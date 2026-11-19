@@ -1,4 +1,5 @@
 #include "EditView.h"
+#include "Skins.h"
 #include "KuprellBrandAssets.h"
 
 using namespace kuprell;
@@ -94,27 +95,35 @@ namespace hama
     public:
         EnginePage (Hamamatsu108Processor& p, EditView& o) : EditPage (p, o)
         {
-            auto a = panel ("LAYER A  \xc2\xb7  HARP", 0, 0, 400, 250);
-            choice ("harpVoice", "VOICE", a.removeFromTop (44).withWidth (200));
-            knobAt ("harpTone", "Tone", 44, a.getX(), a.getY() + 20, 100);
-            knobAt ("harpRange", "Range", 44, a.getX() + 240, a.getY() + 20, 100);
-            choice ("keysPlay", "YOUR KEYS / PIANO ROLL", { a.getX(), a.getY() + 130, 240, 44 });
-            choice ("harpOctave", "OCTAVE", { a.getX() + 260, a.getY() + 130, 110, 44 });
+            // LAYER A: the harp (or any engine), LAYER B: a second engine, MORPH between them (like a hybrid instrument)
+            auto a = panel ("LAYER A  \xc2\xb7  ENGINE", 0, 0, 470, 250);
+            choice ("harpVoice", "ENGINE", { a.getX(), a.getY(), 200, 44 });
+            choice ("keysPlay", "YOUR KEYS / PIANO ROLL", { a.getX() + 214, a.getY(), 224, 44 });
+            knobAt ("harpTone", "Tone", 46, a.getX(), a.getY() + 64, 96);
+            knobAt ("harpShape", "Shape", 46, a.getX() + 108, a.getY() + 64, 96);
+            knobAt ("harpRange", "Range", 46, a.getX() + 216, a.getY() + 64, 96);
+            choice ("harpOctave", "OCTAVE", { a.getX() + 326, a.getY() + 74, 112, 44 });
 
-            auto b = panel (juce::String::fromUTF8 ("LAYER B  \xc2\xb7  DUAL"), 412, 0, 400, 250);
-            toggle ("dual", "DUAL", { b.getX(), b.getY() + 14, 110, 30 });
-            choice ("harpVoice2", "VOICE B", { b.getX() + 130, b.getY(), 200, 44 });
-            knobAt ("morph", "MORPH  A / B", 60, b.getX() + 120, b.getY() + 60, 130);
+            auto m = panel ("MORPH", 482, 0, 232, 250);
+            knobAt ("morph", "A  /  B", 92, m.getX() + 6, m.getY() + 8, 188);
+            toggle ("dual", "LAYER B ON", { m.getX() + 34, m.getY() + 160, 132, 30 });
 
-            auto v = panel ("VIBRATO", 824, 0, 408, 250);
-            knobAt ("vibRate", "Rate", 44, v.getX() + 40, v.getY() + 20, 140);
-            knobAt ("vibDepth", "Depth", 44, v.getX() + 200, v.getY() + 20, 140);
+            auto b = panel ("LAYER B  \xc2\xb7  ENGINE", 726, 0, 506, 250);
+            choice ("harpVoice2", "ENGINE", { b.getX(), b.getY(), 200, 44 });
+            choice ("bOctave", "OCTAVE", { b.getX() + 214, b.getY(), 112, 44 });
+            const char* bIds[] = { "bTone", "bShape", "bDetune", "bAttack", "bDecay", "bLevel" };
+            const char* bNames[] = { "Tone", "Shape", "Detune", "Attack", "Decay", "Level" };
+            for (int i = 0; i < 6; ++i) knobAt (bIds[i], bNames[i], 42, b.getX() + i * 78, b.getY() + 64, 76);
 
-            auto env = panel ("ENVELOPE  \xc2\xb7  HOW EVERY STRING STARTS AND ENDS", 0, 262, 804, 268);
-            knobAt ("harpAttack", "Attack", 48, env.getX(), env.getY() + 20, 190);
-            knobAt ("harpDecay", "Decay", 48, env.getX() + 196, env.getY() + 20, 190);
-            knobAt ("harpSustain", "Sustain", 48, env.getX() + 392, env.getY() + 20, 190);
-            knobAt ("harpRelease", "Release", 48, env.getX() + 588, env.getY() + 20, 190);
+            auto env = panel ("LAYER A ENVELOPE", 0, 262, 560, 268);
+            knobAt ("harpAttack", "Attack", 48, env.getX(), env.getY() + 20, 128);
+            knobAt ("harpDecay", "Decay", 48, env.getX() + 132, env.getY() + 20, 128);
+            knobAt ("harpSustain", "Sustain", 48, env.getX() + 264, env.getY() + 20, 128);
+            knobAt ("harpRelease", "Release", 48, env.getX() + 396, env.getY() + 20, 128);
+
+            auto v = panel ("VIBRATO", 572, 262, 232, 268);
+            knobAt ("vibRate", "Rate", 44, v.getX() - 4, v.getY() + 20, 100);
+            knobAt ("vibDepth", "Depth", 44, v.getX() + 100, v.getY() + 20, 100);
 
             auto mt = panel ("MORPH TARGETS", 816, 262, 416, 268);
             for (int i = 0; i < mod::morphSlots; ++i)
@@ -131,11 +140,38 @@ namespace hama
             }
         }
 
-        void tick() override { repaint (amountArea()); }
+        void tick() override
+        {
+            repaint (amountArea());
+            const int a = juce::roundToInt (plain (processor.apvts, "harpVoice")), b = juce::roundToInt (plain (processor.apvts, "harpVoice2"));
+            if (a != shownA || b != shownB) { shownA = a; shownB = b; repaint(); }
+        }
         juce::Rectangle<int> amountArea() const { return { 816 + 316, 262 + 40, 100, 220 }; }
+
+        static juce::String engineText (int m)
+        {
+            static const char* t[] = {
+                "Classic chime: two detuned pulse/triangle oscillators, envelope-swept filter. SHAPE: no effect.",
+                "Celesta: struck metal bars (modal). Soft, music-box like.",
+                "Vibes: metal bars with motor tremolo.",
+                "Glass: glass partials, long and pure.",
+                "Pluck: physical string model, two strings, pick position.",
+                "Flute: breath and tone, soft attack.",
+                "Marimba: wooden bars, short and warm.",
+                "Steel: steel pan, bright overtones.",
+                "E-Piano: FM tine model, bell on hard velocity.",
+                "Strings: three detuned saws, ensemble.",
+                "Analog: three saws + sub, 24 dB low-pass with envelope. SHAPE: detune / width.",
+                "Wavetable: scans sine > warm > saw > hollow > vocal. SHAPE: table position.",
+                "Digital FM: 80s digital bell and keys. SHAPE: modulator ratio (0.5 .. 9).",
+                "Air: tuned noise resonators, breathy and glassy. SHAPE: clear tone > breath." };
+            return t[juce::jlimit (0, harp::numModels - 1, m)];
+        }
 
         void paintExtras (juce::Graphics& g) override
         {
+            text (g, engineText (shownA < 0 ? juce::roundToInt (plain (processor.apvts, "harpVoice")) : shownA), { 16, 204, 438, 34 }, 10.5f);
+            text (g, engineText (shownB < 0 ? juce::roundToInt (plain (processor.apvts, "harpVoice2")) : shownB), { 742, 204, 474, 34 }, 10.5f);
             // morph amounts as text
             g.setFont (LookAndFeel::monoFont (11.0f));
             for (auto& r : amountRows)
@@ -155,6 +191,7 @@ namespace hama
         std::vector<AmountRow> amountRows;
         ChoiceBox* modelBox = nullptr;
         juce::Rectangle<int> modelText;
+        int shownA = -1, shownB = -1;
     };
 
     //==========================================================================
@@ -1686,7 +1723,7 @@ namespace hama
     //==========================================================================
     const juce::StringArray& EditView::tabNames()
     {
-        static const juce::StringArray n { "SOUND", "ARP & GATE", "FILTER", "MOD", "FX" };
+        static const juce::StringArray n { "LAYERS", "ARP & GATE", "FILTER", "MOD", "FX" };
         return n;
     }
 
@@ -1754,7 +1791,9 @@ namespace hama
         g.fillRoundedRectangle (plate.translated (0.0f, 8.0f), 26.0f);
         juce::Path pp;
         pp.addRoundedRectangle (plate.getX(), plate.getY(), plate.getWidth(), plate.getHeight(), 26.0f, 26.0f, false, false, true, true);
-        juce::ColourGradient metal (juce::Colour (0xff555b63), 0.0f, plate.getY(), juce::Colour (0xff2c3036), 0.0f, plate.getBottom(), false);
+        const auto& sk = skins::get (skins::currentIndex());
+        juce::ColourGradient metal (sk.panelTop.getPerceivedBrightness() > 0.6f ? juce::Colour (0xff555b63) : sk.panelTop.brighter (0.15f), 0.0f, plate.getY(),
+                                    sk.panelTop.getPerceivedBrightness() > 0.6f ? juce::Colour (0xff2c3036) : sk.panelBottom, 0.0f, plate.getBottom(), false);
         g.setGradientFill (metal);
         g.fillPath (pp);
         g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.13f), plate.getX(), plate.getY(), juce::Colours::transparentWhite, plate.getX() + 400.0f, plate.getBottom(), false));
@@ -1771,7 +1810,7 @@ namespace hama
         {
             auto t = tabArea (i).toFloat();
             const bool on = i == tab;
-            g.setColour (on ? juce::Colour (0xff1c2a2e) : juce::Colour (0xff17191c));
+            g.setColour (on ? juce::Colour (0xff22252a) : juce::Colour (0xff17191c));
             g.fillRoundedRectangle (t, 7.0f);
             g.setColour (on ? th().accent : juce::Colour (0xff2c2f34));
             g.drawRoundedRectangle (t.reduced (0.5f), 7.0f, on ? 1.5f : 1.0f);

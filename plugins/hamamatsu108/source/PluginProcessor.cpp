@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include <algorithm>
+#include "Skins.h"
 #include "PluginEditor.h"
 #if HAMA_MTS
  #include "libMTSClient.h"
@@ -414,7 +415,7 @@ void Hamamatsu108Processor::saveUserDefaults() const
     xml.setAttribute ("skin", skin.load());
     xml.setAttribute ("zoneOctave", zoneOctave.load());
     xml.setAttribute ("chordZones", chordZones.load());
-    xml.setAttribute ("version", 5);
+    xml.setAttribute ("version", 6);
     xml.setAttribute ("tuning", tuningA4.load());
     xml.setAttribute ("voices", maxVoices.load());
     xml.setAttribute ("mts", mtsEnabled.load());
@@ -431,7 +432,7 @@ void Hamamatsu108Processor::loadUserDefaults()
     {
         // from settings version 3 the default look is Graphite
         // from settings version 5 the default look is Ivory 84 (the 80s instrument)
-        skin.store (xml->getIntAttribute ("version", 1) >= 5 ? juce::jlimit (0, 11, xml->getIntAttribute ("skin", 11)) : 11);
+        skin.store (xml->getIntAttribute ("version", 1) >= 6 ? juce::jlimit (0, skins::numSkins - 1, xml->getIntAttribute ("skin", 12)) : 12);   // v6: Studio is the default
         zoneOctave.store (juce::jlimit (0, 3, xml->getIntAttribute ("zoneOctave", 1)));
         // from settings version 2 every key plays by default (chord zones are an option): piano-roll notes in
         // octave 2-3 used to fall into the zones and stay silent
@@ -470,6 +471,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     fl ("harpDecay", "Harp Decay", 0.15f, 8.0f, 1.8f, [] (float v, int) { return String (v, 2) + " s"; }, 1.5f);
     fl ("harpAttack", "Harp Attack", 0.0015f, 3.0f, 0.0015f, [] (float v, int) { return v < 0.01f ? String ("pluck") : String (roundToInt (v * 1000.0f)) + " ms"; }, 0.3f);
     fl ("harpSustain", "Harp Sustain", 0.0f, 1.0f, 0.0f, pct);
+    fl ("harpShape", "Layer A Shape", 0.0f, 1.0f, 0.4f, pct);
+    // layer B: its own engine settings (DUAL)
+    fl ("bTone", "Layer B Tone", 0.0f, 1.0f, 0.55f, pct);
+    fl ("bShape", "Layer B Shape", 0.0f, 1.0f, 0.4f, pct);
+    fl ("bAttack", "Layer B Attack", 0.0015f, 3.0f, 0.0015f, [] (float v, int) { return v < 0.01f ? String ("pluck") : String (roundToInt (v * 1000.0f)) + " ms"; }, 0.3f);
+    fl ("bDecay", "Layer B Decay", 0.15f, 8.0f, 2.4f, [] (float v, int) { return String (v, 2) + " s"; }, 1.5f);
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { "bOctave", 1 }, "Layer B Octave", -2, 2, 0,
+                                                     AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int) { return (v > 0 ? "+" : "") + String (v) + " oct"; })));
+    fl ("bLevel", "Layer B Level", -24.0f, 6.0f, 0.0f, [] (float v, int) { return String (v, 1) + " dB"; });
+    fl ("bDetune", "Layer B Detune", -50.0f, 50.0f, 7.0f, [] (float v, int) { return (v > 0 ? "+" : "") + String (roundToInt (v)) + " ct"; });
     fl ("harpRelease", "Harp Release", 0.02f, 8.0f, 8.0f, [] (float v, int) { return v > 7.9f ? String ("ring") : String (v, 2) + " s"; }, 0.4f);
     layout.add (std::make_unique<AudioParameterInt> (ParameterID { "harpRange", 1 }, "Harp Range", 1, 4, 3,
                                                      AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int) { return String (v) + " oct"; })));
@@ -1505,12 +1516,13 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     }
     const auto& model = modelSpec (juce::roundToInt (param (apvts, "model")));
     const float age = param (apvts, "macroAge"), dream = param (apvts, "macroDream"), wobble = param (apvts, "macroWobble");
-    morphNow = param (apvts, "morph");
+    morphNow = mp ("morph");
     voiceSettings.model = (harp::Model) juce::roundToInt (param (apvts, "harpVoice"));
     voiceSettings.tone = juce::jlimit (0.0f, 1.0f, mp ("harpTone") * model.tone * (1.0f - 0.35f * age));
     voiceSettings.decay = mp ("harpDecay") * model.decay * (1.0f + 1.2f * dream);
     voiceSettings.attack = param (apvts, "harpAttack");
     voiceSettings.sustain = param (apvts, "harpSustain");
+    voiceSettings.shape = mp ("harpShape");
     // long ringing strings pile up under dense strum patterns: trim the harp bus a little for long decays
     const float decayComp = 1.0f / (1.0f + 0.09f * juce::jmax (0.0f, voiceSettings.decay - 2.0f));
     const int range = juce::roundToInt (param (apvts, "harpRange"));
@@ -1537,6 +1549,12 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     dualOn = param (apvts, "dual") > 0.5f;
     voiceSettings2 = voiceSettings;
     voiceSettings2.model = (harp::Model) juce::roundToInt (param (apvts, "harpVoice2"));
+    voiceSettings2.tone = juce::jlimit (0.0f, 1.0f, mp ("bTone") * model.tone * (1.0f - 0.35f * age) * (mp ("harpTone") / juce::jmax (0.05f, param (apvts, "harpTone"))));
+    voiceSettings2.decay = param (apvts, "bDecay") * model.decay * (1.0f + 1.2f * dream);
+    voiceSettings2.attack = param (apvts, "bAttack");
+    voiceSettings2.shape = mp ("bShape");
+    voiceSettings2.level = juce::Decibels::decibelsToGain (param (apvts, "bLevel"));
+    voiceSettings2.pitchMul = std::exp2 ((float) juce::roundToInt (param (apvts, "bOctave")) + param (apvts, "bDetune") / 1200.0f);
 
     // GUI requests
     // HOLD (MIDI keys): on = the chord keeps sounding after the keys are released; off = only while held
@@ -2588,7 +2606,7 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
             for (size_t i = 0; i < memLength.size(); ++i)
                 memLength[i].store (i < (size_t) lens.size() ? juce::jlimit (0, memSteps, lens[(int) i].getIntValue()) : 0);
             memBank.store (juce::jlimit (0, memBanks - 1, (int) state.getProperty ("memBank", 0)));
-            skin.store (juce::jlimit (0, 11, (int) state.getProperty ("skin", skin.load())));
+            skin.store (juce::jlimit (0, skins::numSkins - 1, (int) state.getProperty ("skin", skin.load())));
             zoneOctave.store (juce::jlimit (0, 3, (int) state.getProperty ("zoneOctave", zoneOctave.load())));
             if ((int) state.getProperty ("zonesVersion", 1) >= 2)   // older projects: zones off (every key plays)
                 chordZones.store ((bool) state.getProperty ("chordZones", chordZones.load()));
