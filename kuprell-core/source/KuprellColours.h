@@ -23,8 +23,9 @@ namespace kuprell::colours
     inline const juce::Colour textFaint { 0xff7e8187 };
 
     // single accent (turquoise)
-    inline const juce::Colour accent     { 0xff10e8e0 };   // vivid aqua
-    inline const juce::Colour accentSoft { 0xff8afcf6 };
-    inline const juce::Colour accentDeep { 0xff079e9a };
+    // the plugin may set these to its skin's light colour, so the top bar matches the instrument
+    inline juce::Colour accent     { 0xff10e8e0 };   // vivid aqua
+    inline juce::Colour accentSoft { 0xff8afcf6 };
+    inline juce::Colour accentDeep { 0xff079e9a };
     inline const juce::Colour onAccent   { 0xff06201d };
 }

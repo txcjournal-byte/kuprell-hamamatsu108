@@ -60,6 +60,7 @@ namespace hama
             setBufferedToImage (true);
             setInterceptsMouseClicks (false, false);
             logo = juce::Drawable::createFromImageData (KuprellBrand::kuprelllogocream_svg, KuprellBrand::kuprelllogocream_svgSize);
+            logoInk = juce::Drawable::createFromImageData (KuprellBrand::kuprelllogoink_svg, KuprellBrand::kuprelllogoink_svgSize);   // on light panels
         }
 
         void paint (juce::Graphics& g) override
@@ -237,11 +238,12 @@ namespace hama
             const auto& sk = skins::get (skin);
             // logo (approved SVG, drawn as vector, never altered) and engraved model line
             const float tx = (float) innerX + 6.0f;
-            if (logo != nullptr)
+            auto* lg = (sk.panelMid.getPerceivedBrightness() > 0.6f && logoInk != nullptr) ? logoInk.get() : logo.get();
+            if (lg != nullptr)
             {
-                const auto lb = logo->getDrawableBounds();
+                const auto lb = lg->getDrawableBounds();
                 const float h = 22.0f, w = lb.getHeight() > 0 ? lb.getWidth() * h / lb.getHeight() : 96.0f;
-                logo->drawWithin (g, { tx, (float) rearY + 8.0f, w, h }, juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yTop, 1.0f);
+                lg->drawWithin (g, { tx, (float) rearY + 8.0f, w, h }, juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yTop, 1.0f);
             }
             g.setFont (spaced (11.0f, false, 0.45f));
             g.setColour (sk.engrave);
@@ -357,7 +359,7 @@ namespace hama
             g.drawVerticalLine ((int) b.getRight() + 1, b.getY() + 2.0f, b.getBottom() - 2.0f);
         }
 
-        std::unique_ptr<juce::Drawable> logo;
+        std::unique_ptr<juce::Drawable> logo, logoInk;
         int skin = 0;
     };
 
@@ -473,7 +475,7 @@ namespace hama
                 b = b.withTrimmedTop (3.0f);
                 g.setColour (th().accent.withAlpha (0.25f));
                 g.fillRoundedRectangle (b.expanded (5.0f), 10.0f);
-                g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2e6f6a), 0.0f, b.getY(), juce::Colour (0xff1c4a47), 0.0f, b.getBottom(), false));
+                g.setGradientFill (juce::ColourGradient (th().deep.darker (0.9f).withSaturation (0.55f), 0.0f, b.getY(), th().deep.darker (1.6f).withSaturation (0.5f), 0.0f, b.getBottom(), false));   // the lit key takes the skin's light
                 g.fillRoundedRectangle (b, 7.0f);
                 g.setColour (th().accent);
                 g.drawRoundedRectangle (b.reduced (0.5f), 7.0f, 2.0f);
@@ -720,11 +722,12 @@ namespace hama
         juce::Rectangle<float> holdArea() const  { return { 111.0f, 130.0f, 93.0f, 30.0f }; }
         juce::Rectangle<float> modeArea (int i) const { return { 12.0f + i * 65.0f, 166.0f, 61.0f, 34.0f }; }
         static int modeOf (int button) { return button == 2 ? 3 : button; }   // LIVE, ARP, OFF
-        juce::Rectangle<float> keyArea() const   { return { 100.0f, 222.0f, 104.0f, 24.0f }; }
-        juce::Rectangle<float> trDown() const    { return { 106.0f, 252.0f, 26.0f, 24.0f }; }
-        juce::Rectangle<float> trValue() const   { return { 134.0f, 252.0f, 40.0f, 24.0f }; }
-        juce::Rectangle<float> trUp() const      { return { 176.0f, 252.0f, 26.0f, 24.0f }; }
-        juce::Rectangle<float> meterArea() const { return { 40.0f, 288.0f, 164.0f, 13.0f }; }
+        juce::Rectangle<float> keyArea() const   { return { 100.0f, 220.0f, 104.0f, 24.0f }; }
+        juce::Rectangle<float> trDown() const    { return { 106.0f, 249.0f, 26.0f, 24.0f }; }
+        juce::Rectangle<float> trValue() const   { return { 134.0f, 249.0f, 40.0f, 24.0f }; }
+        juce::Rectangle<float> trUp() const      { return { 176.0f, 249.0f, 26.0f, 24.0f }; }
+        juce::Rectangle<float> charArea() const  { return { 100.0f, 278.0f, 104.0f, 24.0f }; }   // CHARACTER: the era / colour of the whole instrument
+        juce::Rectangle<float> meterArea() const { return { 40.0f, 400.0f, 164.0f, 13.0f }; }   // (meter retired: CHARACTER sits there)
 
         void resized() override
         {
@@ -809,7 +812,10 @@ namespace hama
             g.setColour (juce::Colour (0xff9aa0a7));
             g.drawText ("KEY", juce::Rectangle<float> (12.0f, keyArea().getY(), 80.0f, 24.0f), juce::Justification::centredLeft, false);
             g.drawText ("TRANSPOSE", juce::Rectangle<float> (12.0f, trValue().getY(), 90.0f, 24.0f), juce::Justification::centredLeft, false);
-            g.drawText ("OUT", juce::Rectangle<float> (12.0f, meterArea().getY(), 28.0f, 13.0f), juce::Justification::centredLeft, false);
+            g.drawText ("CHARACTER", juce::Rectangle<float> (12.0f, charArea().getY(), 90.0f, 24.0f), juce::Justification::centredLeft, false);
+            drawDisplay (g, charArea(), 5.0f);
+            g.setFont (LookAndFeel::monoFont (12.0f));
+            glowText (g, Hamamatsu108Processor::modelNames()[juce::roundToInt (plain (processor.apvts, "model"))].toUpperCase() + juce::String::fromUTF8 (" \xe2\x96\xbe"), charArea(), juce::Justification::centred);
 
             drawDisplay (g, keyArea(), 5.0f);
             g.setFont (LookAndFeel::monoFont (13.0f));
@@ -859,6 +865,16 @@ namespace hama
             else if (trDown().contains (p))    setParam (s, "transpose", (float) juce::jmax (-12, transpose - 1));
             else if (trUp().contains (p))      setParam (s, "transpose", (float) juce::jmin (12, transpose + 1));
             else if (keyArea().contains (p))   showKeyMenu();
+            else if (charArea().contains (p))
+            {
+                juce::PopupMenu m;
+                m.addSectionHeader ("CHARACTER: the colour of the whole instrument");
+                static const char* d[] = { "Warm: soft, round, a little dark", "Classic: the chime of the 80s", "Bright: glassy and clear",
+                                           "Clean: modern and precise", "Lo-fi: worn tape, fewer bits", "Hi-fi: wide and polished" };
+                const int cur = juce::roundToInt (plain (processor.apvts, "model"));
+                for (int i = 0; i < 6; ++i) m.addItem (100 + i, d[i], true, cur == i);
+                popup (m, charArea(), [this] (int r) { setParam (processor.apvts, "model", (float) (r - 100)); message ("Character: " + Hamamatsu108Processor::modelNames()[r - 100]); });
+            }
         }
 
         std::function<void (const juce::String&)> onMessage;
@@ -1081,6 +1097,17 @@ namespace hama
                 };
                 take (scope.startIndex1, scope.blockSize1);
                 take (scope.startIndex2, scope.blockSize2);
+                // keep a rolling take of the last 16 bars: endless loops never pile up thousands of notes
+                if (! notes.empty())
+                {
+                    const double keep = 16.0 * 4.0 * 60.0 / juce::jmax (40.0, processor.hostBpm.load());
+                    const double from = notes.back().seconds - keep;
+                    size_t cut = 0;
+                    while (cut < notes.size() && notes[cut].seconds < from) ++cut;
+                    // never start inside a chord: cut only before a note-on
+                    while (cut > 0 && cut < notes.size() && ! notes[cut].on) ++cut;
+                    if (cut > 0) notes.erase (notes.begin(), notes.begin() + (long) cut);
+                }
                 lastActivity = juce::Time::getMillisecondCounterHiRes();
                 changed = true;
             }
@@ -2121,16 +2148,17 @@ namespace hama
             g.drawText (type == 0 ? "CLICK / DRAG = LIGHT CELLS  /  HOLD A CHORD TO PLAY"
                         : type == 1 ? "DRAW A LINE = A FINGER OVER THE STRINGS  /  RIGHT-DRAG = ERASE"
                         : type == 2 ? "CLICK A STEP = CHANGE THE STROKE  /  IDEAS = 3-3-2, HALF-TIME ..."
-                                    : "EVERY STRING ITS OWN PULSE: CLICK THE RATE, CLICK ON THE STRING = START, DRAG UP / DOWN = LEVEL",
-                        r.reduced (14.0f, 6.0f).withHeight (12.0f).withTrimmedLeft (280.0f), juce::Justification::centredLeft, false);
-            for (int t = 0; t < 4; ++t)
+                        : type == 3 ? "EVERY STRING ITS OWN PULSE: CLICK THE RATE, CLICK THE STRING = START, DRAG = LEVEL"
+                                    : "THE STRUM PLATE: DRAG ACROSS THE STRINGS (OR PLAY C0 / D0 STROKES IN THE PIANO ROLL)",
+                        r.reduced (14.0f, 6.0f).withHeight (12.0f).withTrimmedLeft (346.0f), juce::Justification::centredLeft, false);
+            for (int t = 0; t < 5; ++t)
             {
                 auto tb = typeTab (t);
                 g.setColour (t == type ? th().accent.withAlpha (0.18f) : juce::Colour (0xff202226));
                 g.fillRoundedRectangle (tb, 4.0f);
                 g.setColour (t == type ? th().accent : juce::Colour (0xff8a9097));
                 g.setFont (spaced (8.5f, true, 0.15f));
-                g.drawText (t == 0 ? "GRID" : t == 1 ? "LINES" : t == 2 ? "RHYTHM" : "STRINGS", tb, juce::Justification::centred, false);
+                g.drawText (t == 0 ? "GRID" : t == 1 ? "LINES" : t == 2 ? "RHYTHM" : t == 3 ? "STRINGS" : "PLATE", tb, juce::Justification::centred, false);
             }
             const bool on = plain (processor.apvts, "gridOn") > 0.5f;
             const int len = juce::roundToInt (plain (processor.apvts, "gridLen"));
@@ -2143,6 +2171,7 @@ namespace hama
             if (type == 1) { paintLines (g, tones, on, playing); return; }
             if (type == 2) { paintRhythm (g, on, playing); return; }
             if (type == 3) { paintStrings (g, tones, on, playing); return; }
+            if (type == 4) { paintPlate (g); return; }
             for (int row = 0; row < prog::gridRows; ++row)
             {
                 auto c0 = cell (row, 0);
@@ -2287,6 +2316,50 @@ namespace hama
         }
         int levelRow = -1; float levelStart = 0.0f, levelY = 0.0f;
 
+        // PLATE: the classic strum plate, lying down: drag up or down across the strings
+        std::array<float, Hamamatsu108Processor::numStrings> glow {};
+        float plateLast = -1.0f;
+        float plateY (int s) const { auto a = gridArea(); return a.getBottom() - a.getHeight() * (float) s / (Hamamatsu108Processor::numStrings - 1); }
+        void paintPlate (juce::Graphics& g)
+        {
+            auto a = gridArea();
+            for (int s = 0; s < Hamamatsu108Processor::numStrings; ++s)
+            {
+                const float y = plateY (s), v = glow[(size_t) s];
+                g.setColour (th().accent.withAlpha (0.18f + 0.82f * v));
+                g.fillRect (juce::Rectangle<float> (a.getX(), y - 0.6f - v, a.getWidth(), 1.2f + 2.0f * v));
+                if (v > 0.05f)
+                {
+                    g.setColour (th().accent.withAlpha (0.25f * v));
+                    g.fillRect (juce::Rectangle<float> (a.getX(), y - 4.0f, a.getWidth(), 8.0f));
+                }
+            }
+        }
+    public:
+        void flash (std::uint32_t bits)
+        {
+            bool any = false;
+            for (int s = 0; s < Hamamatsu108Processor::numStrings; ++s)
+            {
+                if (bits & (1u << s)) glow[(size_t) s] = 1.0f;
+                if (glow[(size_t) s] > 0.0f) { glow[(size_t) s] = juce::jmax (0.0f, glow[(size_t) s] - 0.08f); any = true; }
+            }
+            if (any && juce::roundToInt (plain (processor.apvts, "motionType")) == 4) repaint();
+        }
+    private:
+        void plateMove (juce::Point<float> p)
+        {
+            auto a = gridArea();
+            const float pos = juce::jlimit (0.0f, 1.0f, (a.getBottom() - p.y) / a.getHeight()) * (Hamamatsu108Processor::numStrings - 1);
+            if (plateLast >= 0.0f)
+            {
+                const int s0 = (int) std::floor (juce::jmin (plateLast, pos)), s1 = (int) std::floor (juce::jmax (plateLast, pos));
+                for (int s = s0 + 1; s <= s1; ++s) { processor.pluckString (s); glow[(size_t) s] = 1.0f; }
+            }
+            plateLast = pos;
+            repaint();
+        }
+
         // LINES: strings as thin lines, the drawn path glowing, the playhead running across
         void paintLines (juce::Graphics& g, const std::vector<int>& tones, bool on, int playing)
         {
@@ -2414,7 +2487,7 @@ namespace hama
             const int i = juce::jlimit (0, prog::linePoints - 1, (int) ((p.x - a.getX()) / a.getWidth() * prog::linePoints));
             const float v = erase ? -1.0f : juce::jlimit (0.0f, 1.0f, (a.getBottom() - p.y) / a.getHeight());
             // fill the gap to the last point so a fast stroke stays one line
-            if (lastLineIndex >= 0 && std::abs (i - lastLineIndex) > 1)
+            if (lastLineIndex >= 0 && std::abs (i - lastLineIndex) >= 1)
             {
                 const int d = i > lastLineIndex ? 1 : -1;
                 const float v0 = processor.motionLine[(size_t) lastLineIndex].load();
@@ -2428,15 +2501,25 @@ namespace hama
 
         void mouseDown (const juce::MouseEvent& e) override
         {
-            for (int t = 0; t < 4; ++t)
+            for (int t = 0; t < 5; ++t)
                 if (typeTab (t).contains (e.position)) { setParam (processor.apvts, "motionType", (float) t); drawValue = -1; repaint(); return; }
             if (juce::roundToInt (plain (processor.apvts, "motionType")) == 2) { rhythmClick (e.position); drawValue = -1; return; }
             if (juce::roundToInt (plain (processor.apvts, "motionType")) == 3) { levelRow = -1; stringsMouseDown (e); drawValue = 3; return; }
+            if (juce::roundToInt (plain (processor.apvts, "motionType")) == 4)
+            {
+                plateLast = -1.0f;
+                plateMove (e.position);
+                const int s = juce::roundToInt (juce::jlimit (0.0f, 1.0f, (gridArea().getBottom() - e.position.y) / gridArea().getHeight()) * (Hamamatsu108Processor::numStrings - 1));
+                processor.pluckString (s);   // a tap plucks one string
+                drawValue = 4;
+                return;
+            }
             if (juce::roundToInt (plain (processor.apvts, "motionType")) == 1)
             {
                 lastLineIndex = -1;
                 lineErase = e.mods.isPopupMenu();
-                if (gridArea().contains (e.position)) drawLine (e.position, lineErase);
+                lastMouse = { -1.0f, -1.0f };
+                if (gridArea().contains (e.position)) { drawLine (e.position, lineErase); lastMouse = e.position; }
                 drawValue = 2;
                 return;
             }
@@ -2447,12 +2530,24 @@ namespace hama
         }
         void mouseDrag (const juce::MouseEvent& e) override
         {
+            if (drawValue == 4) { plateMove (e.position); return; }
             if (drawValue == 3)
             {
                 if (levelRow >= 0) { processor.strLevel[(size_t) levelRow].store (juce::jlimit (0.1f, 1.0f, levelStart + (levelY - e.position.y) / 60.0f)); repaint(); }
                 return;
             }
-            if (drawValue == 2) { if (gridArea().expanded (0.0f, 6.0f).contains (e.position)) drawLine (e.position.withY (juce::jlimit (gridArea().getY(), gridArea().getBottom(), e.position.y)), lineErase); return; }
+            if (drawValue == 2)
+            {
+                // walk from the last mouse position to this one in small steps: a fast stroke stays one unbroken line
+                auto a = gridArea();
+                auto clampPt = [a] (juce::Point<float> q) { return juce::Point<float> (juce::jlimit (a.getX(), a.getRight() - 0.01f, q.x), juce::jlimit (a.getY(), a.getBottom(), q.y)); };
+                const auto to = clampPt (e.position);
+                const auto from = lastMouse.x < 0.0f ? to : lastMouse;
+                const int n = juce::jmax (1, (int) (from.getDistanceFrom (to) / 2.0f));
+                for (int k = 1; k <= n; ++k) drawLine (from + (to - from) * ((float) k / (float) n), lineErase);
+                lastMouse = to;
+                return;
+            }
             int row, st;
             if (drawValue >= 0 && hit (e.position, row, st)) set (row, st);
         }
@@ -2460,6 +2555,7 @@ namespace hama
     private:
         int lastLineIndex = -1;
         bool lineErase = false;
+        juce::Point<float> lastMouse { -1.0f, -1.0f };
         bool hit (juce::Point<float> p, int& row, int& st) const
         {
             auto g = gridArea();
@@ -2852,6 +2948,11 @@ namespace hama
         th().accent = sk.accent.main;
         th().soft = sk.accent.soft;
         th().deep = sk.accent.deep;
+        // the top bar (EDIT, preset tag) takes the instrument's light colour too
+        kuprell::colours::accent = sk.accent.main;
+        kuprell::colours::accentSoft = sk.accent.soft;
+        kuprell::colours::accentDeep = sk.accent.deep;
+        if (auto* top = getParentComponent()) top->repaint();
         Knob::themeAccent = sk.accent.main;
         Knob::themeSoft = sk.accent.soft;
         Knob::themeDeep = sk.accent.deep;
@@ -2894,7 +2995,9 @@ namespace hama
         if (processor.skin.load() != currentSkin) applySkin (processor.skin.load());
         const int chord = processor.activeChord.load();
         pad->update (chord, juce::roundToInt (plain (processor.apvts, "keyRoot")), plain (processor.apvts, "keyMode") > 0.5f);
-        plate->update (processor.stringFlashes.exchange (0), chord >= 0 ? chord : processor.detectedChord.load());   // chord detection: piano roll notes too
+        const auto flashes = processor.stringFlashes.exchange (0);
+        plate->update (flashes, chord >= 0 ? chord : processor.detectedChord.load());
+        motion->flash (flashes);   // chord detection: piano roll notes too
         module->update (processor.meterLeft.load(), processor.meterRight.load(), chord);
         capture->update();
         rail->update();

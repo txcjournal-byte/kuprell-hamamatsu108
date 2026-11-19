@@ -45,7 +45,7 @@ public:
     int typeZoneHigh() const { return rootZoneLow() + 20; }
 
     //== Settings (saved with the project and as the user's defaults)
-    std::atomic<int> skin { 10 };   // Graphite
+    std::atomic<int> skin { 11 };   // Ivory 84
     std::atomic<float> tuningA4 { 440.0f };
     std::atomic<int> maxVoices { 64 };
     std::atomic<bool> mtsEnabled { true };
