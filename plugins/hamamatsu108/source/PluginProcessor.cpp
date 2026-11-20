@@ -609,7 +609,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
 
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "hold", 1 }, "Hold", true));
     // STRUM KEYS: one octave of the keyboard plays hand gestures (any keyboard size: pick the octave you can reach)
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumZone", 1 }, "Strum Keys", strumZoneNames(), 0));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumZone", 1 }, "Strum Keys", strumZoneNames(), 4));   // Off: every key plays its own note; turn on in settings
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "motionGate", 1 }, "Motion Notes", StringArray { "Ring", "Long", "Medium", "Tight" }, 2));
     // SWITCHES: 16 one-touch moves on the main page, each with its own amount
     for (int i = 0; i < numSwitches; ++i)

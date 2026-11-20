@@ -99,6 +99,11 @@ Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
     topBar.onHelp          = [this] { showPage (Page::play); help.setVisible (! help.isVisible()); help.toFront (false); };
     topBar.onSettings      = [this] { showPage (page == Page::settings ? Page::play : Page::settings); };
     topBar.onEdit          = [this] { showPage (page == Page::edit ? Page::play : Page::edit); };
+    editView.onSave    = [this] { browser.saveCurrent(); };
+    editView.onCompare = [this] { compareAB(); };
+    editView.onRandom  = [this] { showRandomMenu(); };
+    editView.onUndo    = [this] { audioProcessor.undoManager.beginNewTransaction(); audioProcessor.undoManager.undo(); say ("Undo"); };
+    editView.onRedo    = [this] { audioProcessor.undoManager.redo(); say ("Redo"); };
     topBar.onLogoClicked   = [this] { about.setVisible (true); about.toFront (false); };
 
     // resizable 50 % - 200 %, fixed aspect ratio; opens at the last used size, or fitted to the screen
@@ -194,13 +199,17 @@ void Hamamatsu108Editor::showSettingsMenu()
 void Hamamatsu108Editor::showPage (Page p)
 {
     page = p;
-    instrument.setVisible (p != Page::edit);   // presets and settings open over the instrument
+    instrument.setVisible (true);   // every page opens over the instrument: one header everywhere
     editView.setVisible (p == Page::edit);
     browser.setVisible (p == Page::presets);
     settings.setVisible (p == Page::settings);
     if (p != Page::play) help.setVisible (false);
     topBar.setEditActive (p == Page::edit);
-    topBar.setMinimal (p != Page::edit);   // the main page is quiet: only Edit and settings up there
+    topBar.setMinimal (true);   // the same quiet header on every page
+    // the open page lies over the instrument, the header stays on top
+    for (auto* c : { (juce::Component*) &editView, (juce::Component*) &browser, (juce::Component*) &settings })
+        if (c->isVisible()) c->toFront (false);
+    topBar.toFront (false);
 }
 
 void Hamamatsu108Editor::compareAB()
@@ -359,14 +368,15 @@ void Hamamatsu108Editor::resized()
     topBar.setBounds (hama::geo::innerX + 190, hama::geo::rearY + 3, hama::geo::innerW - 190, TopBar::height);
     // EDIT is laid out at 1280 x 682 and shown at 89 %: its header plate holds the preset bar
     const float editScale = (float) baseWidth / 1280.0f;
-    editView.setBounds (0, 0, 1280, 682);
-    editView.setTransform (juce::AffineTransform::scale (editScale));
+    editView.setBounds (0, 0, 1280, hama::EditView::overlayHeight);
+    editView.setTransform (juce::AffineTransform::scale (editScale).translated (0.0f, 66.0f));
     // presets and settings: below the preset bar
     const float ovScale = 0.8f;
     for (auto* c : { (juce::Component*) &browser, (juce::Component*) &settings })
     {
         c->setBounds (0, 0, 1280, c == (juce::Component*) &settings ? 514 : 682);
-        c->setTransform (juce::AffineTransform::scale (ovScale).translated ((baseWidth - 1280.0f * ovScale) * 0.5f, 84.0f));
+        c->setTransform (c == (juce::Component*) &settings ? juce::AffineTransform::scale (editScale).translated (0.0f, 66.0f)
+                                                           : juce::AffineTransform::scale (ovScale).translated ((baseWidth - 1280.0f * ovScale) * 0.5f, 60.0f));
     }
     help.setBounds (0, 0, 1280, 760);
     help.setTransform (juce::AffineTransform::translation (-62.0f, -54.0f));   // help bubbles use the old stage coordinates

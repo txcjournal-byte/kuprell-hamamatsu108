@@ -23,7 +23,7 @@ public:
     // MIDI zones (fixed for now; editable in Settings later). FL Studio names: C2-B2, C3-G#3, A3 and up.
     // chord zones start at an adjustable octave (Settings); default C1 = MIDI 24 (FL: C2)
     std::atomic<int> zoneOctave { 1 };      // 0..3 -> root zone starts at C0..C3
-    std::atomic<bool> keyswitches { true };   // C0-B0 pick the LIVE pattern, C-1..D#-1 the mode (below the chord zones)
+    std::atomic<bool> keyswitches { false };   // C0-B0 pick the LIVE pattern, C-1..D#-1 the mode (below the chord zones)
     std::atomic<bool> pcKeys { false };
     std::atomic<bool> midiOut { false };       // send the harp (ch 1), chord layer (ch 2) and bass (ch 3) as MIDI
     //== custom strum pattern (pattern "Custom"): one stroke character per step, see strumPatternSteps()

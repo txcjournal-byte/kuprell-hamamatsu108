@@ -276,11 +276,11 @@ namespace hama
                 // the maker's mark, cast into the slab: pressed-in letters (light edge below, shadow above)
                 {
                     static const auto michroma = juce::Typeface::createSystemTypefaceFor (KuprellBrand::michroma_ttf, (size_t) KuprellBrand::michroma_ttfSize);
-                    g.setFont (juce::Font (juce::FontOptions (michroma).withHeight (13.0f)).withExtraKerningFactor (0.3f));
-                    const juce::Rectangle<float> mark ((float) page::x0, (float) geo::deckBottom + 8.0f, 300.0f, 16.0f);
-                    g.setColour (page::theme().slab.brighter (0.5f));
+                    g.setFont (juce::Font (juce::FontOptions (michroma).withHeight (17.0f)).withExtraKerningFactor (0.32f));
+                    const juce::Rectangle<float> mark ((float) page::x0, (float) geo::deckBottom + 5.0f, 360.0f, 22.0f);
+                    g.setColour (page::theme().slab.brighter (0.9f));
                     g.drawText ("ALTRUISTI", mark.translated (0.0f, 1.0f), juce::Justification::centredLeft, false);
-                    g.setColour (page::theme().slab.darker (1.3f));
+                    g.setColour (page::theme().slab.darker (2.2f));
                     g.drawText ("ALTRUISTI", mark, juce::Justification::centredLeft, false);
                 }
                 return;

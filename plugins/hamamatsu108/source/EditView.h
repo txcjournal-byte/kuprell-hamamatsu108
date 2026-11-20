@@ -18,6 +18,9 @@ namespace hama
         void resized() override;
         void mouseDown (const juce::MouseEvent&) override;
 
+        // the tool row of the EDIT page (the header above it is the main page's)
+        std::function<void()> onSave, onCompare, onRandom, onUndo, onRedo;
+        static constexpr int overlayHeight = 576;
         void showTab (int index);
         int getTab() const noexcept { return tab; }
         static const juce::StringArray& tabNames();
@@ -29,6 +32,7 @@ namespace hama
     private:
         void timerCallback() override;
         juce::Rectangle<int> tabArea (int i) const;
+        juce::Rectangle<float> toolTile (int i) const;
 
         Hamamatsu108Processor& processor;
         juce::OwnedArray<EditPage> pages;

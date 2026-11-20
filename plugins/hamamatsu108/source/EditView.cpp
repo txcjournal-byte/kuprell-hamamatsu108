@@ -1831,7 +1831,7 @@ namespace hama
     public:
         AllPage (Hamamatsu108Processor& p, EditView& o) : EditPage (p, o)
         {
-            const int rh = 126, g = 8;
+            const int rh = 125, g = 8;
             auto cp = [this] (const char* t, int x, int y, int w, int h) { panel (t, x, y, w, h); return juce::Rectangle<int> (x + 10, y + 32, w - 20, h - 38); };
             auto small = [this] (const juce::String& id, const juce::String& label, int x, int y) { return knobAt (id, label, 26, x, y, 56); };
 
@@ -2039,6 +2039,8 @@ namespace hama
         repaint();
     }
 
+    juce::Rectangle<float> EditView::toolTile (int i) const { return { 24.0f + (float) i * 84.0f, 14.0f, 78.0f, 26.0f }; }
+
     juce::Rectangle<int> EditView::tabArea (int i) const
     {
         if (th().concrete)
@@ -2053,13 +2055,18 @@ namespace hama
     void EditView::resized()
     {
         for (auto* pg : pages) pg->setBounds (24, 142, 1232, 530);
-        if (th().concrete) pages[0]->setBounds (24, 80, 1232, 530);
+        pages[0]->setBounds (24, 44, 1232, 524);   // one look: the single EDIT page
     }
 
     void EditView::mouseDown (const juce::MouseEvent& e)
     {
         for (int i = 0; i < tabNames().size(); ++i)
             if (! th().concrete && tabArea (i).contains (e.getPosition())) showTab (i);
+        if (th().concrete)
+        {
+            const std::function<void()>* acts[] = { &onSave, &onCompare, &onRandom, &onUndo, &onRedo };
+            for (int i = 0; i < 5; ++i) if (toolTile (i).contains (e.position) && *acts[i]) (*acts[i])();
+        }
     }
 
     void EditView::timerCallback()
@@ -2071,36 +2078,30 @@ namespace hama
     {
         if (th().concrete)
         {
-            // the same slab as the main page (drawn in editor coordinates), the wordmark, flat tabs
+            // one cast block under the main header, like settings: dark frame, slab, a row of tools
+            g.fillAll (page::theme().hall);
+            auto slab = getLocalBounds().toFloat().reduced (8.0f);
+            g.setColour (page::theme().slab);
+            g.fillRect (slab);
+            g.setColour (page::theme().slab.brighter (0.45f));
+            g.fillRect (slab.withHeight (2.0f));
+            for (int i = 0; i < 5; ++i)
             {
-                juce::Graphics::ScopedSaveState save (g);
-                const float s = 1280.0f / 1156.0f;
-                g.addTransform (juce::AffineTransform::scale (s));
-                paintConcreteSlab (g, { 0.0f, 0.0f, 1156.0f, 682.0f / s });
-                paintWordmark (g, { (float) geo::innerX + 5.0f, (float) geo::rearY + 10.0f }, page::theme().wordmark);
-            }
-            for (int i = 0; i < 0; ++i)   // one page: no tabs
-            {
-                auto t = tabArea (i).toFloat();
-                const bool on = i == tab;
-                if (on)
-                {
-                    g.setColour (juce::Colours::black.withAlpha (0.5f));
-                    g.fillRect (t.translated (1.5f, 2.0f));
-                    g.setColour (page::lit());
-                    g.fillRect (t);
-                }
-                else
-                {
-                    g.setColour (juce::Colour (0xff4b4a46));
-                    g.fillRect (t);
-                    g.setColour (juce::Colour (0xff6c6a65));
-                    g.fillRect (t.withHeight (1.0f));
-                }
+                auto t = toolTile (i);
+                g.setColour (juce::Colours::black.withAlpha (0.5f));
+                g.fillRect (t.translated (1.5f, 2.0f));
+                g.setColour (juce::Colour (0xff4b4a46));
+                g.fillRect (t);
+                g.setColour (juce::Colours::white.withAlpha (0.12f));
+                g.fillRect (t.withHeight (1.0f));
                 g.setFont (LookAndFeel::uiFont (12.0f));
-                g.setColour (on ? page::litInk() : page::ink());
-                g.drawText (quiet (tabNames()[i]), t, juce::Justification::centred, false);
+                g.setColour (page::ink());
+                static const char* names[] = { "Save", "A | B", "Random", "Undo", "Redo" };
+                g.drawText (names[i], t, juce::Justification::centred, false);
             }
+            g.setFont (LookAndFeel::uiFont (12.0f));
+            g.setColour (page::ink().withAlpha (0.7f));
+            g.drawText (vfdName.isEmpty() ? juce::String() : vfdName + "   " + vfdValue, juce::Rectangle<float> (500.0f, 14.0f, 756.0f, 26.0f), juce::Justification::centredRight, false);
             return;
         }
         g.fillAll (juce::Colour (0xff0b0c0d));
