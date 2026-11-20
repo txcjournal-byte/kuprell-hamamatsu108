@@ -46,10 +46,10 @@ namespace hama
     SettingsView::~SettingsView() { stopTimer(); }
     void SettingsView::timerCallback() { if (isVisible()) repaint(); }
 
-    // HARPOLOGY settings: only what a player changes. Theme, window, tuning, voices, computer keys, MIDI learn.
-    juce::Rectangle<float> SettingsView::swatch (int i) const { return { 44.0f + (float) i * 124.0f, 68.0f, 112.0f, 190.0f }; }
-    juce::Rectangle<float> SettingsView::zoomButton (int i) const { return { 830.0f + (i % 3) * 136.0f, 68.0f + (i / 3) * 42.0f, 126.0f, 34.0f }; }
-    juce::Rectangle<float> SettingsView::rowButton (int row, int i) const { return { 180.0f + i * 92.0f, 384.0f + row * 50.0f, 86.0f, 34.0f }; }
+    // HARPOLOGY settings: everything that sets the instrument up, as rows of flat tiles in three columns.
+    juce::Rectangle<float> SettingsView::swatch (int) const { return {}; }
+    juce::Rectangle<float> SettingsView::zoomButton (int i) const { return { 0.0f, 0.0f, (float) i, 0.0f }; }
+    juce::Rectangle<float> SettingsView::rowButton (int, int) const { return {}; }
 
     namespace
     {
@@ -59,6 +59,8 @@ namespace hama
             g.setFont (LookAndFeel::uiFont (13.0f));
             g.setColour (page::ink());
             g.drawText (title, r.reduced (16.0f, 0.0f).withHeight (34.0f), juce::Justification::centredLeft, false);
+            g.setColour (juce::Colour (0xff2e2d2a));
+            g.fillRect (r.getX() + 16.0f, r.getY() + 34.0f, r.getWidth() - 32.0f, 1.0f);
         }
         void tile (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& t, bool on)
         {
@@ -68,17 +70,114 @@ namespace hama
             g.fillRect (r);
             g.setColour (juce::Colours::white.withAlpha (on ? 0.5f : 0.12f));
             g.fillRect (r.withHeight (1.0f));
-            g.setFont (LookAndFeel::uiFont (12.5f));
+            g.setFont (LookAndFeel::uiFont (12.0f));
             g.setColour (on ? page::litInk() : page::ink());
             g.drawText (t, r, juce::Justification::centred, false);
         }
-        void rowLabel (juce::Graphics& g, const juce::String& t, juce::Rectangle<float> r)
+
+        struct Row
         {
-            g.setFont (LookAndFeel::uiFont (12.5f));
-            g.setColour (page::dim().brighter (0.3f));
-            g.drawText (t, r, juce::Justification::centredLeft, false);
+            juce::String label, note;
+            juce::StringArray options;
+            std::function<int()> get;
+            std::function<void (int)> set;
+        };
+    }
+
+    // one place that lays the page out; paint and clicks both walk it
+    void SettingsView::walk (const std::function<void (const juce::String& kind, juce::Rectangle<float>, const juce::String&, bool, std::function<void()>)>& visit)
+    {
+        auto& p = processor;
+        auto choiceOf = [&p] (const char* id) { return dynamic_cast<juce::AudioParameterChoice*> (p.apvts.getParameter (id)); };
+        auto paramRow = [&] (const juce::String& label, const char* id, juce::StringArray shortNames, const juce::String& note) -> Row
+        {
+            auto* c = choiceOf (id);
+            juce::String pid (id);
+            return { label, note, shortNames.isEmpty() && c != nullptr ? c->choices : shortNames,
+                     [c] { return c != nullptr ? c->getIndex() : 0; },
+                     [this, pid] (int i) { setParam (processor.apvts, pid, (float) i); } };
+        };
+        auto onOff = [] (std::atomic<bool>& a) { return juce::StringArray { "On", "Off" }; };
+        auto flag = [] (const juce::String& label, std::atomic<bool>& a, const juce::String& note) -> Row
+        {
+            return { label, note, { "On", "Off" }, [&a] { return a.load() ? 0 : 1; }, [&a] (int i) { a.store (i == 0); } };
+        };
+        juce::ignoreUnused (onOff);
+
+        std::vector<std::pair<juce::String, std::vector<Row>>> cols;
+        cols.push_back ({ "Your keys", {
+            paramRow ("A key plays", "keysPlay", { "Notes", "Strum", "Pattern", "Plate", "Run up", "Run down", "Split" }, "Notes: every key is one note"),
+            paramRow ("Strum keys", "strumZone", {}, "a low octave of keys that strum"),
+            flag ("Keyswitches", p.keyswitches, "C-1..D#-1 pick the mode"),
+            flag ("Chord zones", p.chordZones, "low keys pick the chord"),
+            { "Zones start at", {}, { "C0", "C1", "C2", "C3" }, [&p] { return p.zoneOctave.load(); }, [&p] (int i) { p.zoneOctave.store (i); } },
+            flag ("Computer keys", p.pcKeys, "play from the keyboard"),
+        } });
+        cols.push_back ({ "MIDI", {
+            flag ("MIDI out", p.midiOut, "harp ch 1, chord ch 2, bass ch 3"),
+            { "Dragged MIDI", {}, { "Every note", "Clean" }, [&p] { return p.captureMode.load(); }, [&p] (int i) { p.captureMode.store (i); } },
+            { "Snap to", {}, { "Off", "1/16", "1/8", "1/4", "Bar" }, [&p] { return p.captureQuant.load(); }, [&p] (int i) { p.captureQuant.store (i); } },
+            { "Voices", {}, { "16", "32", "48", "64" }, [&p] { const int v = p.maxVoices.load(); return v <= 16 ? 0 : v <= 32 ? 1 : v <= 48 ? 2 : 3; }, [&p] (int i) { p.maxVoices.store (16 * (i + 1)); } },
+            flag ("MTS-ESP", p.mtsEnabled, p.mtsConnected() ? "tuning from the MTS master" : "no MTS master running"),
+        } });
+
+        const float colW = 400.0f, x0 = 24.0f, y0 = 20.0f, h = 470.0f;
+        for (size_t c = 0; c < cols.size(); ++c)
+        {
+            const float cx = x0 + (float) c * (colW + 24.0f);
+            visit ("box", { cx, y0, colW, h }, cols[c].first, false, {});
+            float y = y0 + 48.0f;
+            for (auto& row : cols[c].second)
+            {
+                visit ("label", { cx + 16.0f, y, colW - 32.0f, 16.0f }, row.label, false, {});
+                if (row.note.isNotEmpty()) visit ("note", { cx + 16.0f, y, colW - 32.0f, 16.0f }, row.note, false, {});
+                y += 20.0f;
+                float x = cx + 16.0f;
+                const int cur = row.get();
+                for (int i = 0; i < row.options.size(); ++i)
+                {
+                    const float w = juce::jmax (44.0f, 14.0f + 7.0f * (float) row.options[i].length());
+                    if (x + w > cx + colW - 16.0f) { x = cx + 16.0f; y += 32.0f; }
+                    auto set = row.set;
+                    visit ("tile", { x, y, w, 26.0f }, row.options[i], i == cur, [set, i] { set (i); });
+                    x += w + 6.0f;
+                }
+                y += 40.0f;
+            }
         }
-        constexpr int firstTheme = 14;   // skins 14..19 are the Harpology themes
+
+        // third column: tuning, window, MIDI learn, back
+        const float cx = x0 + 2.0f * (colW + 24.0f), w3 = 1232.0f - 2.0f * (colW + 24.0f);
+        visit ("box", { cx, y0, w3, h }, "Tuning and window", false, {});
+        float y = y0 + 48.0f;
+        visit ("label", { cx + 16.0f, y, 200.0f, 16.0f }, "A4", false, {});
+        y += 20.0f;
+        visit ("tile", { cx + 16.0f, y, 36.0f, 26.0f }, juce::String::fromUTF8 ("\xe2\x88\x92"), false, [&p] { p.tuningA4.store (juce::jmax (400.0f, p.tuningA4.load() - 0.5f)); });
+        visit ("display", { cx + 58.0f, y, 110.0f, 26.0f }, juce::String (p.tuningA4.load(), 1) + " Hz", false, {});
+        visit ("tile", { cx + 174.0f, y, 36.0f, 26.0f }, "+", false, [&p] { p.tuningA4.store (juce::jmin (480.0f, p.tuningA4.load() + 0.5f)); });
+        visit ("tile", { cx + 216.0f, y, 56.0f, 26.0f }, "440", std::abs (p.tuningA4.load() - 440.0f) < 0.01f, [&p] { p.tuningA4.store (440.0f); });
+        visit ("tile", { cx + 278.0f, y, 56.0f, 26.0f }, "432", std::abs (p.tuningA4.load() - 432.0f) < 0.01f, [&p] { p.tuningA4.store (432.0f); });
+        y += 60.0f;
+        visit ("label", { cx + 16.0f, y, 200.0f, 16.0f }, "Window size", false, {});
+        y += 20.0f;
+        const int z = currentZoom ? currentZoom() : 100;
+        for (int i = 0; i < 6; ++i)
+        {
+            const int zz = zooms[i];
+            visit ("tile", { cx + 16.0f + (float) (i % 3) * 78.0f, y + (float) (i / 3) * 32.0f, 72.0f, 26.0f }, juce::String (zz) + " %", std::abs (z - zz) <= 2,
+                   [this, zz] { if (onZoom) onZoom (zz / 100.0); });
+        }
+        y += 64.0f;
+        visit ("tile", { cx + 16.0f, y, 228.0f, 26.0f }, "Fit to screen", false, [this] { if (onFit) onFit(); });
+        y += 60.0f;
+        int learnedCount = 0;
+        for (auto& cc : p.ccMap) if (cc.load() >= 0) ++learnedCount;
+        visit ("label", { cx + 16.0f, y, 200.0f, 16.0f }, "MIDI learn", false, {});
+        visit ("note", { cx + 16.0f, y, w3 - 32.0f, 16.0f }, p.learnParam.load() >= 0 ? juce::String ("move a knob on your controller")
+                       : learnedCount == 0 ? juce::String ("right-click a knob") : juce::String (learnedCount) + " learned", false, {});
+        y += 20.0f;
+        visit ("tile", { cx + 16.0f, y, 110.0f, 26.0f }, "Clear all", false, [&p] { for (auto& cc : p.ccMap) cc.store (-1); });
+        visit ("back", { cx + 16.0f, y0 + h - 56.0f, w3 - 32.0f, 36.0f }, "Back to play", true, [this] { if (onClose) onClose(); });
     }
 
     void SettingsView::paint (juce::Graphics& g)
@@ -88,94 +187,27 @@ namespace hama
         g.fillRect (getLocalBounds().toFloat().reduced (8.0f));
         g.setColour (page::theme().slab.brighter (0.45f));
         g.fillRect (getLocalBounds().toFloat().reduced (8.0f).withHeight (2.0f));
-
-        // themes: each one a small cast block with its screen and lamp
-        box (g, { 24.0f, 20.0f, 770.0f, 270.0f }, "Theme");
-        const int cur = processor.skin.load() - firstTheme;
-        for (int i = 0; i < (int) page::themes().size(); ++i)
+        walk ([&g] (const juce::String& kind, juce::Rectangle<float> r, const juce::String& t, bool on, std::function<void()>)
         {
-            const auto& t = page::themes()[(size_t) i];
-            auto r = swatch (i);
-            auto block = r.withTrimmedBottom (30.0f);
-            g.setColour (juce::Colours::black.withAlpha (0.55f));
-            g.fillRect (block.translated (3.0f, 4.0f));
-            g.setColour (t.slab);
-            g.fillRect (block);
-            g.setColour (t.slab.brighter (0.45f));
-            g.fillRect (block.withHeight (1.5f));
-            auto scr = block.reduced (12.0f).withHeight (64.0f);
-            g.setColour (t.screenGlass);
-            g.fillRect (scr);
-            g.setColour (t.phosphor);
-            juce::Path wave;
-            for (int k = 0; k <= 40; ++k)
-            {
-                const float x = scr.getX() + 6.0f + (scr.getWidth() - 12.0f) * (float) k / 40.0f;
-                const float y = scr.getCentreY() + std::sin ((float) k * 0.45f) * 14.0f * std::exp (-(float) k * 0.03f);
-                if (k == 0) wave.startNewSubPath (x, y); else wave.lineTo (x, y);
-            }
-            g.strokePath (wave, juce::PathStrokeType (1.2f));
-            g.setColour (t.led);
-            g.fillEllipse (block.getX() + 12.0f, block.getBottom() - 22.0f, 7.0f, 7.0f);
-            g.setColour (t.wordmark);
-            g.setFont (LookAndFeel::uiFont (10.0f));
-            g.drawText ("Harpology", block.withTrimmedLeft (26.0f).withTop (block.getBottom() - 30.0f).withHeight (24.0f), juce::Justification::centredLeft, false);
-            if (i == cur) { g.setColour (page::lit()); g.drawRect (block.expanded (4.0f), 2.0f); }
-            g.setFont (LookAndFeel::uiFont (13.0f));
-            g.setColour (i == cur ? page::lit() : page::ink().withAlpha (0.75f));
-            g.drawText (t.name, r.withTop (r.getBottom() - 24.0f), juce::Justification::centred, false);
-        }
-
-        box (g, { 806.0f, 20.0f, 450.0f, 170.0f }, "Window size");
-        const int z = currentZoom ? currentZoom() : 100;
-        for (int i = 0; i < 6; ++i) tile (g, zoomButton (i), juce::String (zooms[i]) + " %", std::abs (z - zooms[i]) <= 2);
-        tile (g, { 830.0f, 152.0f, 398.0f, 28.0f }, "Fit to screen", false);
-
-        box (g, { 806.0f, 202.0f, 450.0f, 88.0f }, "Tuning");
-        tile (g, { 960.0f, 240.0f, 40.0f, 34.0f }, juce::String::fromUTF8 ("\xe2\x88\x92"), false);
-        auto tv = juce::Rectangle<float> (1006.0f, 240.0f, 110.0f, 34.0f);
-        drawDisplay (g, tv, 0.0f);
-        g.setFont (LookAndFeel::monoFont (14.0f));
-        glowText (g, juce::String (processor.tuningA4.load(), 1) + " Hz", tv, juce::Justification::centred);
-        tile (g, { 1122.0f, 240.0f, 40.0f, 34.0f }, "+", false);
-        tile (g, { 1168.0f, 240.0f, 66.0f, 34.0f }, "440", false);
-        rowLabel (g, "A4", { 830.0f, 240.0f, 120.0f, 34.0f });
-
-        box (g, { 24.0f, 302.0f, 770.0f, 220.0f }, "Playing");
-        rowLabel (g, "Voices", { 40.0f, 384.0f, 130.0f, 34.0f });
-        for (int i = 0; i < 4; ++i) tile (g, rowButton (0, i), juce::String (voiceOptions[i]), processor.maxVoices.load() == voiceOptions[i]);
-        rowLabel (g, "Computer keys", { 40.0f, 434.0f, 130.0f, 34.0f });
-        tile (g, rowButton (1, 0), "On", processor.pcKeys.load());
-        tile (g, rowButton (1, 1), "Off", ! processor.pcKeys.load());
-        rowLabel (g, "MIDI learn", { 40.0f, 340.0f, 130.0f, 34.0f });
-        int learnedCount = 0;
-        for (auto& c : processor.ccMap) if (c.load() >= 0) ++learnedCount;
-        g.setFont (LookAndFeel::uiFont (12.0f));
-        g.setColour (page::ink().withAlpha (0.7f));
-        g.drawText (processor.learnParam.load() >= 0 ? juce::String ("Move a knob on your controller")
-                    : learnedCount == 0 ? juce::String ("Right-click a knob > MIDI Learn") : juce::String (learnedCount) + " controls learned",
-                    180, 340, 360, 34, juce::Justification::centredLeft, false);
-        tile (g, { 550.0f, 340.0f, 128.0f, 34.0f }, "Clear", false);
-
-        tile (g, { 806.0f, 302.0f, 450.0f, 40.0f }, "Back to play", true);
+            if (kind == "box") box (g, r, t);
+            else if (kind == "label") { g.setFont (LookAndFeel::uiFont (12.0f)); g.setColour (page::ink()); g.drawText (t, r, juce::Justification::centredLeft, false); }
+            else if (kind == "note") { g.setFont (LookAndFeel::uiFont (10.5f)); g.setColour (page::dim().brighter (0.25f)); g.drawText (t, r, juce::Justification::centredRight, false); }
+            else if (kind == "display") { drawDisplay (g, r, 0.0f); g.setFont (LookAndFeel::monoFont (13.0f)); glowText (g, t, r, juce::Justification::centred); }
+            else tile (g, r, t, on);
+        });
     }
 
     void SettingsView::mouseDown (const juce::MouseEvent& e)
     {
-        const auto p = e.position;
-        bool changed = false;
-        for (int i = 0; i < (int) page::themes().size(); ++i) if (swatch (i).contains (p)) { processor.skin.store (firstTheme + i); changed = true; }
-        for (int i = 0; i < 6; ++i) if (zoomButton (i).contains (p) && onZoom) onZoom (zooms[i] / 100.0);
-        if (juce::Rectangle<float> (830.0f, 152.0f, 398.0f, 28.0f).contains (p) && onFit) onFit();
-        if (juce::Rectangle<float> (960.0f, 240.0f, 40.0f, 34.0f).contains (p)) { processor.tuningA4.store (juce::jmax (400.0f, processor.tuningA4.load() - 0.5f)); changed = true; }
-        if (juce::Rectangle<float> (1122.0f, 240.0f, 40.0f, 34.0f).contains (p)) { processor.tuningA4.store (juce::jmin (480.0f, processor.tuningA4.load() + 0.5f)); changed = true; }
-        if (juce::Rectangle<float> (1168.0f, 240.0f, 66.0f, 34.0f).contains (p)) { processor.tuningA4.store (440.0f); changed = true; }
-        for (int i = 0; i < 4; ++i) if (rowButton (0, i).contains (p)) { processor.maxVoices.store (voiceOptions[i]); changed = true; }
-        if (rowButton (1, 0).contains (p)) { processor.pcKeys.store (true); changed = true; if (onPcKeys) onPcKeys(); }
-        if (rowButton (1, 1).contains (p)) { processor.pcKeys.store (false); changed = true; if (onPcKeys) onPcKeys(); }
-        if (juce::Rectangle<float> (550.0f, 340.0f, 128.0f, 34.0f).contains (p)) for (auto& c : processor.ccMap) c.store (-1);
-        if (juce::Rectangle<float> (806.0f, 302.0f, 450.0f, 40.0f).contains (p) && onClose) onClose();
-        if (changed) processor.saveUserDefaults();
+        std::function<void()> hit;
+        walk ([&] (const juce::String&, juce::Rectangle<float> r, const juce::String&, bool, std::function<void()> act) { if (act && r.contains (e.position)) hit = act; });
+        if (hit)
+        {
+            const bool pcBefore = processor.pcKeys.load();
+            hit();
+            if (pcBefore != processor.pcKeys.load() && onPcKeys) onPcKeys();
+            processor.saveUserDefaults();
+        }
         repaint();
     }
 

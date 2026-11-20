@@ -20,6 +20,7 @@ namespace hama
 
     private:
         void timerCallback() override;
+        void walk (const std::function<void (const juce::String&, juce::Rectangle<float>, const juce::String&, bool, std::function<void()>)>&);
         juce::Rectangle<float> swatch (int i) const;
         juce::Rectangle<float> zoomButton (int i) const;
         juce::Rectangle<float> rowButton (int row, int i) const;

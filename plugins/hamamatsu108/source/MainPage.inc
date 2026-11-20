@@ -687,3 +687,166 @@
         juce::Random rnd;
         int lastSig = -99;
     };
+
+    //==========================================================================
+    // MODE STRIP: when ARP, GATE or FLOURISH is on, its settings sit in a thin bar at the bottom of the strum window
+    class ModeStrip : public juce::Component
+    {
+    public:
+        explicit ModeStrip (Hamamatsu108Processor& p) : processor (p)
+        {
+            Knob::Style st;
+            st.ring = page::lit(); st.themed = 0; st.pointer = page::lit();
+            st.track = juce::Colours::white.withAlpha (0.08f);
+            st.label = page::dim(); st.value = page::ink();
+            st.labelHeight = 9.0f; st.showValue = false;
+            auto knob = [&] (std::vector<Knob*>& into, const char* id, const char* label)
+            {
+                auto* k = knobs.add (new Knob (p.apvts, id, label, 22, st));
+                k->onInteract = [this] (const Knob& kn) { if (onStatus) onStatus (kn.getDisplayName(), kn.getValueText()); };
+                addChildComponent (k);
+                into.push_back (k);
+            };
+            auto choice = [&] (std::vector<ChoiceBox*>& into, const char* id)
+            {
+                auto* c = choices.add (new ChoiceBox (p.apvts, id, {}));
+                c->onInteract = [this] (const juce::String& n, const juce::String& v) { if (onStatus) onStatus (n, v); };
+                addChildComponent (c);
+                into.push_back (c);
+            };
+            choice (arpChoices, "arpPattern");
+            choice (arpChoices, "arpRegen");
+            knob (arpKnobs, "strumRate", "Rate");
+            knob (arpKnobs, "arpOctaves", "Oct");
+            knob (arpKnobs, "arpGate", "Length");
+            knob (arpKnobs, "arpSwing", "Swing");
+            knob (arpKnobs, "arpChance", "Chance");
+            choice (gateChoices, "gateRate");
+            choice (gateChoices, "gateTarget");
+            knob (gateKnobs, "gateDepth", "Depth");
+            knob (gateKnobs, "gateSmooth", "Smooth");
+            knob (flourishKnobs, "strumRate", "Speed");
+        }
+
+        std::function<void (const juce::String&, const juce::String&)> onStatus;
+
+        bool arp() const      { return juce::roundToInt (plain (processor.apvts, "strumMode")) == 1; }
+        bool gate() const     { return plain (processor.apvts, "gateOn") > 0.5f; }
+        bool flourish() const { const int k = juce::roundToInt (plain (processor.apvts, "keysPlay")); return k == 4 || k == 5; }
+        bool anyOn() const    { return arp() || gate() || flourish(); }
+
+        void update()
+        {
+            const int sig = (arp() ? 1 : 0) | (gate() ? 2 : 0) | (flourish() ? 4 : 0);
+            if (sig != lastSig) { lastSig = sig; resized(); repaint(); }
+            const auto g = juce::String ((juce::int64) processor.gateMask.load()) + "|" + juce::String (processor.gateStepGui.load());
+            if (gate() && g != lastGate) { lastGate = g; repaint (gateCells.toNearestInt()); }
+        }
+
+        void resized() override
+        {
+            float x = 10.0f;
+            const float h = (float) getHeight();
+            auto place = [&] (bool on, const char*, std::vector<ChoiceBox*>& cs, std::vector<Knob*>& ks, float& start)
+            {
+                for (auto* c : cs) c->setVisible (on);
+                for (auto* k : ks) k->setVisible (on);
+                if (! on) return;
+                start = x;
+                x += 50.0f;   // the section name
+                for (auto* c : cs) { c->setBounds ((int) x, (int) (h * 0.5f - 13.0f), 80, 26); x += 84.0f; }
+                for (auto* k : ks) { k->setBounds ((int) x, 4, 38, (int) h - 8); x += 38.0f; }
+                x += 8.0f;
+            };
+            place (arp(), "Arp", arpChoices, arpKnobs, arpX);
+            place (gate(), "Gate", gateChoices, gateKnobs, gateX);
+            gateCells = {};
+            if (gate()) { gateCells = { x, 10.0f, 16.0f * 12.0f, h - 20.0f }; x += gateCells.getWidth() + 18.0f; }
+            place (flourish(), "Flourish", noChoices, flourishKnobs, flourishX);
+            flourishDir = {};
+            if (flourish()) flourishDir = { flourishX + 50.0f + 40.0f, h * 0.5f - 13.0f, 96.0f, 26.0f };
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat();
+            g.setColour (page::screen().withAlpha (0.95f));
+            g.fillRect (r);
+            g.setColour (page::phosphorDim().withAlpha (0.6f));
+            g.fillRect (r.withHeight (1.0f));
+            g.setFont (LookAndFeel::uiFont (12.0f));
+            auto title = [&] (bool on, float x, const char* t)
+            {
+                if (! on) return;
+                g.setColour (page::phosphor());
+                g.drawText (t, juce::Rectangle<float> (x, 0.0f, 48.0f, r.getHeight()), juce::Justification::centredLeft, false);
+            };
+            title (arp(), arpX, "Arp");
+            title (gate(), gateX, "Gate");
+            title (flourish(), flourishX, "Flourish");
+            if (gate())
+            {
+                const auto mask = processor.gateMask.load();
+                const int playing = processor.gateStepGui.load();
+                for (int i = 0; i < 16; ++i)
+                {
+                    auto c = gateCell (i);
+                    const bool on = (mask >> i) & 1;
+                    g.setColour (on ? page::phosphor().withAlpha (i == playing ? 1.0f : 0.75f) : page::phosphor().withAlpha (i == playing ? 0.25f : 0.08f));
+                    g.fillRect (c);
+                }
+            }
+            if (flourish())
+            {
+                const bool up = juce::roundToInt (plain (processor.apvts, "keysPlay")) == 4;
+                for (int i = 0; i < 2; ++i)
+                {
+                    auto b = flourishDir.withWidth (46.0f).translated (i * 50.0f, 0.0f);
+                    const bool on = (i == 0) == up;
+                    g.setColour (on ? page::phosphor() : page::phosphor().withAlpha (0.1f));
+                    g.fillRect (b);
+                    g.setColour (on ? page::screen() : page::phosphor());
+                    g.drawText (i == 0 ? "Up" : "Down", b, juce::Justification::centred, false);
+                }
+            }
+        }
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            for (int i = 0; i < 16; ++i)
+                if (gate() && gateCell (i).contains (e.position))
+                {
+                    paintOn = ! ((processor.gateMask.load() >> i) & 1);
+                    setCell (i);
+                    return;
+                }
+            if (flourish() && flourishDir.contains (e.position))
+                setParam (processor.apvts, "keysPlay", e.position.x < flourishDir.getX() + 48.0f ? 4.0f : 5.0f);
+        }
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            for (int i = 0; i < 16; ++i) if (gate() && gateCell (i).contains (e.position)) setCell (i);
+        }
+
+    private:
+        juce::Rectangle<float> gateCell (int i) const { const float w = gateCells.getWidth() / 16.0f; return { gateCells.getX() + i * w + 1.0f, gateCells.getY(), w - 2.0f, gateCells.getHeight() }; }
+        void setCell (int i)
+        {
+            // the bar repeats: the same step in both halves of the 32-step gate
+            auto m = processor.gateMask.load();
+            for (int k : { i, i + 16 }) m = paintOn ? (m | (1u << k)) : (m & ~(1u << k));
+            processor.gateMask.store (m);
+            repaint (gateCells.toNearestInt());
+        }
+
+        Hamamatsu108Processor& processor;
+        juce::OwnedArray<Knob> knobs;
+        juce::OwnedArray<ChoiceBox> choices;
+        std::vector<Knob*> arpKnobs, gateKnobs, flourishKnobs;
+        std::vector<ChoiceBox*> arpChoices, gateChoices, noChoices;
+        juce::Rectangle<float> gateCells, flourishDir;
+        float arpX = 0.0f, gateX = 0.0f, flourishX = 0.0f;
+        int lastSig = -1;
+        juce::String lastGate;
+        bool paintOn = true;
+    };

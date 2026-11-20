@@ -1825,6 +1825,180 @@ namespace hama
     };
 
     //==========================================================================
+    // EDIT: one page, everything the main page does not show, packed tight
+    class AllPage : public EditPage
+    {
+    public:
+        AllPage (Hamamatsu108Processor& p, EditView& o) : EditPage (p, o)
+        {
+            const int rh = 126, g = 8;
+            auto cp = [this] (const char* t, int x, int y, int w, int h) { panel (t, x, y, w, h); return juce::Rectangle<int> (x + 10, y + 32, w - 20, h - 38); };
+            auto small = [this] (const juce::String& id, const juce::String& label, int x, int y) { return knobAt (id, label, 26, x, y, 56); };
+
+            // row 1: the two engines and the character
+            int y = 0;
+            auto a = cp ("Layer A", 0, y, 330, rh);
+            choice ("harpVoice", "Engine", { a.getX(), a.getY(), 124, 36 });
+            choice ("harpOctave", "Octave", { a.getX(), a.getY() + 44, 124, 36 });
+            small ("harpTone", "Tone", a.getX() + 130, a.getY());
+            small ("harpShape", "Shape", a.getX() + 186, a.getY());
+            small ("harpRange", "Range", a.getX() + 242, a.getY());
+
+            auto b = cp ("Layer B", 338, y, 486, rh);
+            choice ("harpVoice2", "Engine", { b.getX(), b.getY(), 120, 36 });
+            choice ("bOctave", "Octave", { b.getX(), b.getY() + 44, 58, 36 });
+            toggle ("dual", "On", { b.getX() + 62, b.getY() + 58, 58, 22 });
+            const char* bIds[] = { "bTone", "bShape", "bDetune", "bAttack", "bDecay", "bLevel" };
+            const char* bNames[] = { "Tone", "Shape", "Detune", "Attack", "Decay", "Level" };
+            for (int i = 0; i < 6; ++i) small (bIds[i], bNames[i], b.getX() + 126 + i * 56, b.getY());
+
+            auto c = cp ("Character", 832, y, 400, rh);
+            cards = { c.getX(), c.getY() + 2, 170, 80 };
+            small ("filterReso", "Reso", c.getX() + 176, c.getY());
+            small ("drive", "Drive", c.getX() + 232, c.getY());
+            small ("vibRate", "Vib rate", c.getX() + 288, c.getY());
+            small ("vibDepth", "Vib depth", c.getX() + 344 - 6, c.getY());
+
+            // row 2: how the strum feels, the key, the chord layer and the bass
+            y += rh + g;
+            auto f = cp ("Stroke feel", 0, y, 404, rh);
+            choice ("strumShape", "Shape", { f.getX(), f.getY(), 140, 36 });
+            choice ("strumPattern", "Pattern", { f.getX(), f.getY() + 44, 140, 36 });
+            const char* fk[] = { "strumFeel", "strumSpeed", "strumSwing", "strumVary" };
+            const char* fn[] = { "Feel", "Speed", "Swing", "Vary" };
+            for (int i = 0; i < 4; ++i) small (fk[i], fn[i], f.getX() + 150 + i * 58, f.getY());
+
+            auto k = cp ("Key and motion", 412, y, 270, rh);
+            choice ("keyRoot", "Key", { k.getX(), k.getY(), 78, 36 });
+            choice ("keyMode", "Scale", { k.getX() + 84, k.getY(), 78, 36 });
+            choice ("motionType", "Motion", { k.getX() + 168, k.getY(), 82, 36 });
+            choice ("gridRate", "Rate", { k.getX(), k.getY() + 44, 78, 36 });
+            choice ("motionGate", "Notes", { k.getX() + 84, k.getY() + 44, 78, 36 });
+            toggle ("gridOn", "Motion", { k.getX() + 168, k.getY() + 58, 82, 22 });
+
+            auto ch = cp ("Chord layer", 690, y, 266, rh);
+            choice ("chordType", "Chord", { ch.getX(), ch.getY(), 124, 36 });
+            small ("chordLevel", "Level", ch.getX() + 130, ch.getY());
+            small ("chordFilter", "Filter", ch.getX() + 186, ch.getY());
+
+            auto bs = cp ("Bass", 964, y, 268, rh);
+            choice ("bassType", "Bass", { bs.getX(), bs.getY(), 124, 36 });
+            choice ("bassMode", "Pattern", { bs.getX(), bs.getY() + 44, 124, 36 });
+            small ("bassLevel", "Level", bs.getX() + 130, bs.getY());
+            small ("bassTone", "Tone", bs.getX() + 186, bs.getY());
+
+            // row 3: the steps, the morph targets and the modulation matrix
+            y += rh + g;
+            auto as = cp ("Arp steps", 0, y, 296, rh);
+            seq = std::make_unique<SeqEditor> (processor);
+            addAndMakeVisible (*seq);
+            seq->setBounds (as);
+            auto gs = cp ("Gate steps", 304, y, 236, rh);
+            gate = std::make_unique<GateEditor> (processor);
+            addAndMakeVisible (*gate);
+            gate->setBounds (gs);
+            auto mt = cp ("Morph targets", 548, y, 300, rh);
+            for (int i = 0; i < mod::morphSlots; ++i)
+            {
+                const juce::String n (i + 1);
+                const int cx = mt.getX() + (i / 4) * 142, cy = mt.getY() + (i % 4) * 20;
+                choice ("morph" + n + "Dst", {}, { cx, cy, 108, 18 });
+                tiny ("morph" + n + "Amt", cx + 108, cy - 5);
+            }
+            auto mx = cp ("Modulation", 856, y, 376, rh);
+            for (int i = 0; i < mod::matrixSlots; ++i)
+            {
+                const juce::String n (i + 1);
+                const int cx = mx.getX() + (i / 4) * 180, cy = mx.getY() + (i % 4) * 20;
+                choice ("mod" + n + "Src", {}, { cx, cy, 60, 18 });
+                choice ("mod" + n + "Dst", {}, { cx + 62, cy, 84, 18 });
+                tiny ("mod" + n + "Amt", cx + 146, cy - 5);
+            }
+
+            // row 4: the eight effect slots, left to right
+            y += rh + g;
+            auto fxp = cp ("Effects", 0, y, 1232, rh);
+            for (int i = 0; i < fx::numSlots; ++i)
+            {
+                const juce::String n (i + 1), id ("fx" + n);
+                const int cx = fxp.getX() + i * 152;
+                auto* t = choice (id + "Type", {}, { cx, fxp.getY(), 98, 20 });
+                t->onChange = [this] { updateFx(); };
+                toggle (id + "On", "On", { cx + 100, fxp.getY(), 42, 20 });
+                fxA[(size_t) i] = knobAt (id + "A", "A", 22, cx - 4, fxp.getY() + 24, 48);
+                fxB[(size_t) i] = knobAt (id + "B", "B", 22, cx + 44, fxp.getY() + 24, 48);
+                knobAt (id + "Mix", "Mix", 22, cx + 92, fxp.getY() + 24, 48);
+            }
+            updateFx();
+        }
+
+        void tick() override
+        {
+            seq->tick(); gate->tick();
+            const int m = juce::roundToInt (plain (processor.apvts, "model"));
+            if (m != shownModel) { shownModel = m; repaint (cards); }
+            juce::String sig;
+            for (int i = 0; i < fx::numSlots; ++i) sig << plain (processor.apvts, ("fx" + juce::String (i + 1) + "Type").toRawUTF8()) << ",";
+            if (sig != fxSig) { fxSig = sig; updateFx(); }
+        }
+
+        juce::Rectangle<float> card (int i) const
+        {
+            const float w = (cards.getWidth() - 8.0f) / 2.0f, h = (cards.getHeight() - 8.0f) / 3.0f;
+            return { cards.getX() + (i % 2) * (w + 8.0f), cards.getY() + (i / 2) * (h + 4.0f), w, h };
+        }
+
+        void paintExtras (juce::Graphics& g) override
+        {
+            for (int i = 0; i < 6; ++i)
+            {
+                auto r = card (i);
+                const bool on = i == shownModel;
+                g.setColour (on ? page::phosphor() : page::screen());
+                g.fillRect (r);
+                g.setFont (LookAndFeel::monoFont (10.5f));
+                g.setColour (on ? page::screen() : page::phosphor().withAlpha (0.8f));
+                g.drawText (Hamamatsu108Processor::modelNames()[i], r.reduced (6.0f, 0.0f), juce::Justification::centredLeft, false);
+            }
+        }
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            for (int i = 0; i < 6; ++i)
+                if (card (i).contains (e.position)) { setParam (processor.apvts, "model", (float) i); owner.status ("Character", Hamamatsu108Processor::modelNames()[i]); }
+        }
+
+    private:
+        void tiny (const juce::String& id, int x, int y)
+        {
+            Knob::Style st; st.showValue = false; st.labelHeight = 1.0f;
+            auto* k = knobs.add (new Knob (processor.apvts, id, {}, 14, st));
+            k->onInteract = [this] (const Knob& kn) { owner.status (kn.getDisplayName(), kn.getValueText()); };
+            addAndMakeVisible (k);
+            k->setBounds (x, y + 2, 32, 24);
+        }
+        void updateFx()
+        {
+            for (int i = 0; i < fx::numSlots; ++i)
+            {
+                const int t = juce::roundToInt (plain (processor.apvts, ("fx" + juce::String (i + 1) + "Type").toRawUTF8()));
+                const auto names = fx::controlNames (t);
+                fxA[(size_t) i]->setLabel (names.first);
+                fxB[(size_t) i]->setLabel (names.second);
+                fxA[(size_t) i]->setEnabled (t != 0);
+                fxB[(size_t) i]->setEnabled (t != 0);
+            }
+        }
+
+        std::unique_ptr<SeqEditor> seq;
+        std::unique_ptr<GateEditor> gate;
+        std::array<Knob*, fx::numSlots> fxA {}, fxB {};
+        juce::Rectangle<int> cards;
+        juce::String fxSig;
+        int shownModel = -1;
+    };
+
+    //==========================================================================
     const juce::StringArray& EditView::tabNames()
     {
         static const juce::StringArray n { "LAYERS", "PLAY", "ARP & GATE", "FILTER", "MOD", "FX" };
@@ -1835,6 +2009,7 @@ namespace hama
     {
         logo = juce::Drawable::createFromImageData (KuprellBrand::kuprelllogocream_svg, KuprellBrand::kuprelllogocream_svgSize);
 
+        pages.add (new AllPage (p, *this));   // HARPOLOGY: one EDIT page
         pages.add (new EnginePage (p, *this));
         pages.add (new PlayPage (p, *this));
         pages.add (new ArpGatePage (p, *this));
@@ -1878,12 +2053,13 @@ namespace hama
     void EditView::resized()
     {
         for (auto* pg : pages) pg->setBounds (24, 142, 1232, 530);
+        if (th().concrete) pages[0]->setBounds (24, 80, 1232, 530);
     }
 
     void EditView::mouseDown (const juce::MouseEvent& e)
     {
         for (int i = 0; i < tabNames().size(); ++i)
-            if (tabArea (i).contains (e.getPosition())) showTab (i);
+            if (! th().concrete && tabArea (i).contains (e.getPosition())) showTab (i);
     }
 
     void EditView::timerCallback()
@@ -1903,7 +2079,7 @@ namespace hama
                 paintConcreteSlab (g, { 0.0f, 0.0f, 1156.0f, 682.0f / s });
                 paintWordmark (g, { (float) geo::innerX + 5.0f, (float) geo::rearY + 10.0f }, page::theme().wordmark);
             }
-            for (int i = 0; i < tabNames().size(); ++i)
+            for (int i = 0; i < 0; ++i)   // one page: no tabs
             {
                 auto t = tabArea (i).toFloat();
                 const bool on = i == tab;

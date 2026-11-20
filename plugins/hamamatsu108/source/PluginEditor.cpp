@@ -365,7 +365,7 @@ void Hamamatsu108Editor::resized()
     const float ovScale = 0.8f;
     for (auto* c : { (juce::Component*) &browser, (juce::Component*) &settings })
     {
-        c->setBounds (0, 0, 1280, c == (juce::Component*) &settings ? 540 : 682);
+        c->setBounds (0, 0, 1280, c == (juce::Component*) &settings ? 514 : 682);
         c->setTransform (juce::AffineTransform::scale (ovScale).translated ((baseWidth - 1280.0f * ovScale) * 0.5f, 84.0f));
     }
     help.setBounds (0, 0, 1280, 760);
