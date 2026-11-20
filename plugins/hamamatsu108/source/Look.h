@@ -27,6 +27,21 @@ namespace hama::look
         }
     }
 
+    // brutalist skin: no shouting labels. "LAYER A  ·  ENGINE" -> "Layer A", hints after the dot are dropped
+    inline juce::String quiet (const juce::String& t)
+    {
+        auto head = t.upToFirstOccurrenceOf (juce::String::fromUTF8 ("  \xc2\xb7"), false, false).trim();
+        juce::StringArray w; w.addTokens (head, " ", "");
+        static const juce::StringArray keep { "A", "B", "LFO", "FX", "MIDI", "ADSR", "1", "2", "3", "4", "5", "6", "7", "8" };
+        for (int i = 0; i < w.size(); ++i)
+        {
+            if (keep.contains (w[i])) continue;
+            const auto lower = w[i].toLowerCase();
+            w.set (i, i == 0 ? lower.substring (0, 1).toUpperCase() + lower.substring (1) : lower);
+        }
+        return w.joinIntoString (" ").replace ("&", "and");
+    }
+
     inline float plain (juce::AudioProcessorValueTreeState& s, const char* id) { return s.getRawParameterValue (id)->load(); }
 
     // recessed area with an inner shadow
@@ -79,6 +94,26 @@ namespace hama::look
     // 3D push button (raised cap with a dark side), optional LED strip or dot
     inline void drawHardButton (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& text, bool lit, bool enabled, bool stripLed)
     {
+        if (th().concrete)
+        {
+            // a flat cast tile: in the light when on, with the red lamp
+            g.setColour (juce::Colours::black.withAlpha (0.5f));
+            g.fillRect (r.translated (1.5f, 2.0f));
+            g.setColour (lit ? page::lit() : juce::Colour (0xff4b4a46));
+            g.fillRect (r);
+            g.setColour (lit ? juce::Colours::white.withAlpha (0.6f) : juce::Colour (0xff6c6a65));
+            g.fillRect (r.withHeight (1.0f));
+            if (text.isEmpty()) return;
+            g.setFont (LookAndFeel::uiFont (10.5f));
+            const auto label = quiet (text);
+            const float tw = (float) juce::GlyphArrangement::getStringWidthInt (g.getCurrentFont(), label);
+            const float x0 = r.getCentreX() - (tw + 11.0f) * 0.5f;
+            g.setColour (lit ? page::led() : juce::Colour (0xff2a2927));
+            g.fillEllipse (x0, r.getCentreY() - 2.5f, 5.0f, 5.0f);
+            g.setColour (! enabled ? page::dim() : lit ? page::litInk() : page::ink());
+            g.drawText (label, juce::Rectangle<float> (x0 + 11.0f, r.getY(), tw + 4.0f, r.getHeight()), juce::Justification::centredLeft, false);
+            return;
+        }
         const float side = 4.0f;
         g.setColour (juce::Colours::black.withAlpha (0.7f));
         g.fillRoundedRectangle (r.translated (0.0f, 3.0f), 6.0f);
@@ -129,6 +164,16 @@ namespace hama::look
    #endif
     inline void drawDisplay (juce::Graphics& g, juce::Rectangle<float> r, float radius)
     {
+        if (th().concrete)
+        {
+            g.setColour (juce::Colour (0xff0a0f0c));
+            g.fillRect (r);
+            g.setColour (juce::Colour (0xff070807));
+            g.fillRect (r.withHeight (1.5f));
+            g.setColour (juce::Colour (0xff3b3a37));
+            g.fillRect (r.withTop (r.getBottom() - 1.0f));
+            return;
+        }
         if (th().lcdNow)
         {
             // backlit LCD: pale aqua glass, a soft inner shadow at the top
@@ -154,6 +199,14 @@ namespace hama::look
 
     inline void glowText (juce::Graphics& g, const juce::String& text, juce::Rectangle<float> r, juce::Justification j, float alpha = 1.0f)
     {
+        if (th().concrete)
+        {
+            g.setColour (page::phosphor().withAlpha (0.16f * alpha));
+            g.drawText (text, r.translated (0.0f, 0.8f), j, false);
+            g.setColour (page::phosphor().withAlpha (alpha));
+            g.drawText (text, r, j, false);
+            return;
+        }
         if (th().lcdNow)
         {
             g.setColour (juce::Colours::black.withAlpha (0.08f * alpha));

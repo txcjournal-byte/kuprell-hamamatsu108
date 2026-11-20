@@ -38,6 +38,51 @@ namespace kuprell
             const float prop = enabled ? (float) valueToProportionOfLength (getValue()) : 0.0f;
             const float angle = startAngle + prop * (endAngle - startAngle);
 
+            if (Knob::concrete)
+            {
+                const float ringR = size * 0.5f - 2.0f;
+                juce::Path track;
+                track.addCentredArc (c.x, c.y, ringR, ringR, 0.0f, startAngle, endAngle, true);
+                g.setColour (juce::Colour (0xff3a3936));
+                g.strokePath (track, juce::PathStrokeType (1.5f));
+                if (enabled && prop > 0.001f)
+                {
+                    juce::Path arc;
+                    arc.addCentredArc (c.x, c.y, ringR, ringR, 0.0f, startAngle, angle, true);
+                    g.setColour (juce::Colour (0xffe8e6df));
+                    g.strokePath (arc, juce::PathStrokeType (1.5f));
+                }
+                if (enabled && Knob::modulationOf)
+                    if (const float depth = Knob::modulationOf (owner.getParamID()); std::abs (depth) > 0.001f)
+                    {
+                        const float to = juce::jlimit (0.0f, 1.0f, prop + depth);
+                        const float a2 = startAngle + to * (endAngle - startAngle);
+                        juce::Path m;
+                        const float mr = ringR - 3.0f;
+                        m.addCentredArc (c.x, c.y, mr, mr, 0.0f, juce::jmin (angle, a2), juce::jmax (angle, a2), true);
+                        g.setColour (juce::Colour (0xffc8321e));
+                        g.strokePath (m, juce::PathStrokeType (1.5f));
+                    }
+                // a cast cylinder: flat, hard offset shadow, one light edge where the shaft hits it
+                auto body = area.reduced (size * 0.2f);
+                g.setColour (juce::Colours::black.withAlpha (0.6f));
+                g.fillEllipse (body.translated (2.0f, 2.5f));
+                g.setColour (enabled ? juce::Colour (0xff6b6964) : juce::Colour (0xff3d3c39));
+                g.fillEllipse (body);
+                juce::Path edge;
+                const float br = body.getWidth() * 0.5f - 0.5f;
+                edge.addCentredArc (c.x, c.y, br, br, 0.0f, -2.2f, 0.4f, true);
+                g.setColour (juce::Colour (0xff97958f));
+                g.strokePath (edge, juce::PathStrokeType (1.0f));
+                g.setColour (juce::Colour (0xff2a2927));
+                g.drawEllipse (body, 1.0f);
+                const float pr0 = br * 0.25f, pr1 = br * 0.92f;
+                g.setColour (enabled ? juce::Colour (0xff161615) : juce::Colour (0xff2a2927));
+                g.drawLine (juce::Line<float> (c.x + pr0 * std::sin (angle), c.y - pr0 * std::cos (angle),
+                                               c.x + pr1 * std::sin (angle), c.y - pr1 * std::cos (angle)), size > 50 ? 2.4f : 1.8f);
+                return;
+            }
+
             // value ring
             const float ringR = size * 0.5f - 2.0f;
             juce::Path track;
@@ -269,14 +314,15 @@ namespace kuprell
         auto r = getLocalBounds().withTrimmedTop (box + 1);
         const bool enabled = parameter != nullptr;
 
-        g.setFont (LookAndFeel::uiFont (style.labelHeight, true));
-        g.setColour (enabled ? style.label : style.label.withAlpha (0.45f));
+        g.setFont (LookAndFeel::uiFont (style.labelHeight, ! Knob::concrete));
+        const auto labelColour = Knob::concrete ? juce::Colour (0xffb3b0a9) : style.label;
+        g.setColour (enabled ? labelColour : labelColour.withAlpha (0.45f));
         g.drawText (label, r.removeFromTop (12), juce::Justification::centredTop, false);
 
         if (style.showValue)
         {
             g.setFont (LookAndFeel::monoFont (10.5f));
-            const auto valueColour = style.themed == 1 ? Knob::themeSoft : style.value;
+            const auto valueColour = Knob::concrete ? juce::Colour (0xff74f5b8) : style.themed == 1 ? Knob::themeSoft : style.value;
             g.setColour (enabled ? valueColour : valueColour.withAlpha (0.4f));
             g.drawText (enabled ? getValueText() : juce::String::fromUTF8 ("\xe2\x80\x94"), r.removeFromTop (12), juce::Justification::centredTop, false);
         }

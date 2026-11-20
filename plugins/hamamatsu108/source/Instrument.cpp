@@ -1,4 +1,5 @@
 #include "Instrument.h"
+#include "KuprellTopBar.h"
 #include "KuprellMidiClip.h"
 #include "Look.h"
 #include "Skins.h"
@@ -10,6 +11,78 @@ using namespace hama::look;
 
 namespace hama
 {
+        // CONCRETE: one cast slab in a dark hall, cut by a single hard shaft of light
+    void paintConcreteSlab (juce::Graphics& g, juce::Rectangle<float> bounds)
+        {
+            using namespace geo;
+            g.fillAll (juce::Colour (0xff141413));
+            // the shaft in the hall behind the slab (a hard-edged wedge, no blur)
+            {
+                juce::Path wedge;
+                wedge.startNewSubPath (bounds.getWidth() * 0.58f, 0.0f);
+                wedge.lineTo (bounds.getWidth() * 0.80f, 0.0f);
+                wedge.lineTo (bounds.getWidth() * 0.46f, bounds.getBottom());
+                wedge.lineTo (bounds.getWidth() * 0.12f, bounds.getBottom());
+                wedge.closeSubPath();
+                g.setColour (juce::Colour (0xff2a2a28));
+                g.fillPath (wedge);
+            }
+            const juce::Rectangle<float> slab ((float) bodyX, (float) bodyY, (float) bodyW, (float) (panelH + frontH));
+            // drop shadow: one hard offset block, like a heavy object on the floor
+            g.setColour (juce::Colours::black.withAlpha (0.55f));
+            g.fillRect (slab.translated (10.0f, 12.0f));
+            g.setColour (juce::Colour (0xff595854));
+            g.fillRect (slab);
+            // cast concrete: fine grain and the odd pore, fixed seed so it never changes
+            {
+                juce::Random rnd (2049);
+                for (int i = 0; i < 26000; ++i)
+                {
+                    const float x = slab.getX() + rnd.nextFloat() * slab.getWidth(), y = slab.getY() + rnd.nextFloat() * slab.getHeight();
+                    const bool dark = rnd.nextBool();
+                    g.setColour ((dark ? juce::Colours::black : juce::Colours::white).withAlpha (0.02f + rnd.nextFloat() * 0.05f));
+                    g.fillRect (x, y, 1.0f, 1.0f);
+                }
+                for (int i = 0; i < 260; ++i)
+                {
+                    const float x = slab.getX() + rnd.nextFloat() * slab.getWidth(), y = slab.getY() + rnd.nextFloat() * slab.getHeight();
+                    const float d = 1.0f + rnd.nextFloat() * 2.2f;
+                    g.setColour (juce::Colours::black.withAlpha (0.18f + rnd.nextFloat() * 0.2f));
+                    g.fillEllipse (x, y, d, d);
+                }
+                // formwork joints: the slab was cast in panels
+                g.setColour (juce::Colours::black.withAlpha (0.22f));
+                for (float x = slab.getX() + 280.0f; x < slab.getRight() - 40.0f; x += 280.0f) g.fillRect (x, slab.getY(), 1.0f, slab.getHeight());
+                g.fillRect (slab.getX(), slab.getY() + 300.0f, slab.getWidth(), 1.0f);
+            }
+            // the light falls across the slab: the same wedge, lighter where it hits
+            {
+                juce::Graphics::ScopedSaveState save (g);
+                g.reduceClipRegion (slab.toNearestInt());
+                juce::Path lit;
+                lit.startNewSubPath (bounds.getWidth() * 0.58f, 0.0f);
+                lit.lineTo (bounds.getWidth() * 0.80f, 0.0f);
+                lit.lineTo (bounds.getWidth() * 0.46f, bounds.getBottom());
+                lit.lineTo (bounds.getWidth() * 0.12f, bounds.getBottom());
+                lit.closeSubPath();
+                g.setColour (juce::Colour (0xffe8e6df).withAlpha (0.13f));
+                g.fillPath (lit);
+            }
+            // hard edges: light on top, shadow at the bottom
+            g.setColour (juce::Colour (0xff8a8883));
+            g.fillRect (slab.withHeight (2.0f));
+            g.setColour (juce::Colour (0xff2c2b29));
+            g.fillRect (slab.withTop (slab.getBottom() - 3.0f));
+        }
+
+    void paintWordmark (juce::Graphics& g, juce::Point<float> at, juce::Colour c)
+    {
+        static const auto michroma = juce::Typeface::createSystemTypefaceFor (KuprellBrand::michroma_ttf, (size_t) KuprellBrand::michroma_ttfSize);
+        g.setFont (juce::Font (juce::FontOptions (michroma).withHeight (25.0f)).withExtraKerningFactor (0.04f));
+        g.setColour (c);
+        g.drawText ("Harpology", juce::Rectangle<float> (at.x, at.y, 300.0f, 30.0f), juce::Justification::centredLeft, false);
+    }
+
     namespace
     {
         // deck layout shared by the backdrop (engravings) and the knobs
@@ -125,69 +198,7 @@ namespace hama
 
         }
 
-        // CONCRETE: one cast slab in a dark hall, cut by a single hard shaft of light
-        void paintConcrete (juce::Graphics& g, juce::Rectangle<float> bounds)
-        {
-            using namespace geo;
-            g.fillAll (juce::Colour (0xff141413));
-            // the shaft in the hall behind the slab (a hard-edged wedge, no blur)
-            {
-                juce::Path wedge;
-                wedge.startNewSubPath (bounds.getWidth() * 0.58f, 0.0f);
-                wedge.lineTo (bounds.getWidth() * 0.80f, 0.0f);
-                wedge.lineTo (bounds.getWidth() * 0.46f, bounds.getBottom());
-                wedge.lineTo (bounds.getWidth() * 0.12f, bounds.getBottom());
-                wedge.closeSubPath();
-                g.setColour (juce::Colour (0xff2a2a28));
-                g.fillPath (wedge);
-            }
-            const juce::Rectangle<float> slab ((float) bodyX, (float) bodyY, (float) bodyW, (float) (panelH + frontH));
-            // drop shadow: one hard offset block, like a heavy object on the floor
-            g.setColour (juce::Colours::black.withAlpha (0.55f));
-            g.fillRect (slab.translated (10.0f, 12.0f));
-            g.setColour (juce::Colour (0xff595854));
-            g.fillRect (slab);
-            // cast concrete: fine grain and the odd pore, fixed seed so it never changes
-            {
-                juce::Random rnd (2049);
-                for (int i = 0; i < 26000; ++i)
-                {
-                    const float x = slab.getX() + rnd.nextFloat() * slab.getWidth(), y = slab.getY() + rnd.nextFloat() * slab.getHeight();
-                    const bool dark = rnd.nextBool();
-                    g.setColour ((dark ? juce::Colours::black : juce::Colours::white).withAlpha (0.02f + rnd.nextFloat() * 0.05f));
-                    g.fillRect (x, y, 1.0f, 1.0f);
-                }
-                for (int i = 0; i < 260; ++i)
-                {
-                    const float x = slab.getX() + rnd.nextFloat() * slab.getWidth(), y = slab.getY() + rnd.nextFloat() * slab.getHeight();
-                    const float d = 1.0f + rnd.nextFloat() * 2.2f;
-                    g.setColour (juce::Colours::black.withAlpha (0.18f + rnd.nextFloat() * 0.2f));
-                    g.fillEllipse (x, y, d, d);
-                }
-                // formwork joints: the slab was cast in panels
-                g.setColour (juce::Colours::black.withAlpha (0.22f));
-                for (float x = slab.getX() + 280.0f; x < slab.getRight() - 40.0f; x += 280.0f) g.fillRect (x, slab.getY(), 1.0f, slab.getHeight());
-                g.fillRect (slab.getX(), slab.getY() + 300.0f, slab.getWidth(), 1.0f);
-            }
-            // the light falls across the slab: the same wedge, lighter where it hits
-            {
-                juce::Graphics::ScopedSaveState save (g);
-                g.reduceClipRegion (slab.toNearestInt());
-                juce::Path lit;
-                lit.startNewSubPath (bounds.getWidth() * 0.58f, 0.0f);
-                lit.lineTo (bounds.getWidth() * 0.80f, 0.0f);
-                lit.lineTo (bounds.getWidth() * 0.46f, bounds.getBottom());
-                lit.lineTo (bounds.getWidth() * 0.12f, bounds.getBottom());
-                lit.closeSubPath();
-                g.setColour (juce::Colour (0xffe8e6df).withAlpha (0.13f));
-                g.fillPath (lit);
-            }
-            // hard edges: light on top, shadow at the bottom
-            g.setColour (juce::Colour (0xff8a8883));
-            g.fillRect (slab.withHeight (2.0f));
-            g.setColour (juce::Colour (0xff2c2b29));
-            g.fillRect (slab.withTop (slab.getBottom() - 3.0f));
-        }
+        void paintConcrete (juce::Graphics& g, juce::Rectangle<float> bounds) { paintConcreteSlab (g, bounds); }
 
         void paintCheek (juce::Graphics& g, juce::Rectangle<float> r, bool left)
         {
@@ -3200,6 +3211,9 @@ namespace hama
         Knob::themeAccent = sk.accent.main;
         Knob::themeSoft = sk.accent.soft;
         Knob::themeDeep = sk.accent.deep;
+        Knob::concrete = th().concrete;
+        kuprell::TopBar::concrete = th().concrete;
+        kuprell::LookAndFeel::flat = th().concrete;
         backdrop->skin = skinIndex;
         backdrop->repaint();
         if (perform != nullptr) perform->restyle (sk.lcd);

@@ -158,7 +158,7 @@ namespace kuprell
         }
         for (juce::Component* c : std::initializer_list<juce::Component*> { &prevButton, &nextButton, &randomButton, &undoButton, &redoButton, &helpButton, &saveButton, &compareButton })
             c->setVisible (true);
-        editButton.setButtonText ("EDIT");
+        editButton.setButtonText (concrete ? "Play" : "EDIT");
         constexpr int button = 32, gap = 6;
         const int margin = embedded ? 0 : 16;
         const int y = (getHeight() - button) / 2;
@@ -223,6 +223,28 @@ namespace kuprell
     {
         using namespace colours;
         auto r = presetArea.toFloat();
+        if (concrete)
+        {
+            g.setColour (juce::Colour (0xff0a0f0c));
+            g.fillRect (r);
+            g.setColour (juce::Colour (0xff0e0e0d));
+            g.fillRect (r.withHeight (2.0f));
+            g.setColour (juce::Colour (0xff6f6d68));
+            g.fillRect (r.withTop (r.getBottom() - 1.0f));
+            auto in = r.reduced (10.0f, 0.0f);
+            g.setFont (LookAndFeel::monoFont (10.0f));
+            const auto cat = presetCategory.substring (0, 1) + presetCategory.substring (1).toLowerCase();
+            const float cw = g.getCurrentFont().getStringWidthFloat (cat) + 12.0f;
+            g.setColour (juce::Colour (0xff2c7a58));
+            g.drawText (cat, in.removeFromLeft (cw), juce::Justification::centredLeft);
+            g.setFont (LookAndFeel::monoFont (13.0f));
+            const auto label = presetName + (presetModified ? " *" : "");
+            g.setColour (juce::Colour (0xff74f5b8).withAlpha (0.18f));
+            g.drawText (label, in.translated (0.0f, 1.0f), juce::Justification::centredLeft);
+            g.setColour (juce::Colour (0xff74f5b8));
+            g.drawText (label, in, juce::Justification::centredLeft);
+            return;
+        }
 
         g.setColour (display);
         g.fillRoundedRectangle (r, 7.0f);

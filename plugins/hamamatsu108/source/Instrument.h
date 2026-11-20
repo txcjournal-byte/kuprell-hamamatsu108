@@ -9,6 +9,10 @@
 // only the live parts (keys, strings, displays, knobs, meter) repaint.
 namespace hama
 {
+    // the brutalist skin's slab (editor coordinates) and the product wordmark, shared by both pages
+    void paintConcreteSlab (juce::Graphics&, juce::Rectangle<float> editorBounds);
+    void paintWordmark (juce::Graphics&, juce::Point<float> at, juce::Colour);
+
     // light colour of the instrument (one accent per skin)
     struct Theme
     {

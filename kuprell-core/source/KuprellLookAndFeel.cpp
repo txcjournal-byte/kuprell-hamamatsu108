@@ -32,6 +32,20 @@ namespace kuprell
         auto r = button.getLocalBounds().toFloat().reduced (0.5f);
         const float corner = 7.0f;
         const bool isAccent = button.getComponentID() == "accent";
+        if (flat)
+        {
+            auto t = r.reduced (0.0f, 1.0f).withTrimmedRight (1.5f).withTrimmedBottom (1.5f);
+            g.setColour (juce::Colours::black.withAlpha (0.5f));
+            g.fillRect (t.translated (1.5f, 2.0f));
+            auto c = (isAccent || button.getToggleState()) ? juce::Colour (0xffe8e6df) : juce::Colour (0xff4b4a46);
+            if (isMouseOverButton) c = c.brighter (0.08f);
+            if (isButtonDown) c = c.darker (0.15f);
+            g.setColour (c);
+            g.fillRect (t);
+            g.setColour (juce::Colours::white.withAlpha (isAccent ? 0.5f : 0.14f));
+            g.fillRect (t.withHeight (1.0f));
+            return;
+        }
 
         juce::Colour top    = isAccent ? accent     : control;
         juce::Colour bottom = isAccent ? accentDeep : controlLo;
@@ -52,6 +66,7 @@ namespace kuprell
 
     juce::Font LookAndFeel::getTextButtonFont (juce::TextButton& button, int)
     {
+        if (flat) return uiFont (12.0f);
         return uiFont (button.getComponentID() == "accent" ? 11.5f : 12.5f, true);
     }
 

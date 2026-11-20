@@ -484,8 +484,8 @@
             const auto r = getLocalBounds().toFloat();
             g.setColour (juce::Colour (0xff262624));
             g.fillRect (r);
-            g.setFont (LookAndFeel::uiFont (12.0f, true));
-            g.setColour (page::ink());
+            g.setFont (LookAndFeel::uiFont (11.5f));
+            g.setColour (page::dim());
             g.drawText (title, juce::Rectangle<float> (126.0f, (float) getHeight() - 16.0f, 80.0f, 12.0f), juce::Justification::centredLeft, false);
             chip (g, targetChip(), "To " + mod::targetNames()[juce::roundToInt (plain (processor.apvts, (id + "QDst").toRawUTF8()))]);
             chip (g, shapeChip(), mod::lfoShapeNames()[juce::roundToInt (plain (processor.apvts, (id + "Shape").toRawUTF8()))]);
@@ -518,10 +518,10 @@
         }
         void chip (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& text) const
         {
-            g.setColour (juce::Colour (0xff353432));
+            g.setColour (juce::Colour (0xff0a0f0c));
             g.fillRect (r);
-            g.setFont (LookAndFeel::uiFont (11.0f, false));
-            g.setColour (page::ink());
+            g.setFont (LookAndFeel::monoFont (11.0f));
+            g.setColour (page::phosphor());
             g.drawFittedText (text + juce::String::fromUTF8 ("  \xe2\x96\xbe"), r.toNearestInt().reduced (4, 0), juce::Justification::centredLeft, 1, 0.8f);
         }
         juce::Rectangle<float> targetChip() const { return { 126.0f, 8.0f, (float) getWidth() - 134.0f, 20.0f }; }

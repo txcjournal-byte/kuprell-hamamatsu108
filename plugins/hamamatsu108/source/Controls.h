@@ -31,12 +31,12 @@ namespace hama
             auto r = getLocalBounds().toFloat();
             if (label.isNotEmpty())
             {
-                g.setFont (spaced (8.5f, true, 0.18f));
-                g.setColour (juce::Colour (0xff9aa0a7));
-                g.drawText (label, r.removeFromTop (14.0f), juce::Justification::centredLeft, false);
+                if (th().concrete) { g.setFont (LookAndFeel::uiFont (10.0f)); g.setColour (juce::Colour (0xffb3b0a9)); }
+                else { g.setFont (spaced (8.5f, true, 0.18f)); g.setColour (juce::Colour (0xff9aa0a7)); }
+                g.drawText (th().concrete ? quiet (label) : label, r.removeFromTop (14.0f), juce::Justification::centredLeft, false);
             }
             drawDisplay (g, r, 5.0f);
-            if (hover) { g.setColour (th().accent.withAlpha (0.6f)); g.drawRoundedRectangle (r, 5.0f, 1.0f); }
+            if (hover) { g.setColour (th().concrete ? page::phosphorDim() : th().accent.withAlpha (0.6f)); if (th().concrete) g.drawRect (r, 1.0f); else g.drawRoundedRectangle (r, 5.0f, 1.0f); }
             g.setFont (kuprell::LookAndFeel::monoFont (12.0f));
             glowText (g, param->getCurrentValueAsText(), r.reduced (8.0f, 0.0f), juce::Justification::centredLeft);
             g.setColour (juce::Colour (0xff7e8187));

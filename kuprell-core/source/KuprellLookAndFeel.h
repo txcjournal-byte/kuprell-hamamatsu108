@@ -17,6 +17,7 @@ namespace kuprell
 
         juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
 
+        static inline bool flat = false;   // brutalist skins: flat cast tiles instead of machined buttons
         static juce::Font uiFont (float height, bool bold = false);
         static juce::Font monoFont (float height);
     };

@@ -20,6 +20,15 @@ namespace hama
             for (auto& pn : panels)
             {
                 drawWell (g, pn.area.toFloat(), 14.0f);
+                if (th().concrete)
+                {
+                    g.setFont (LookAndFeel::uiFont (11.0f));
+                    g.setColour (page::ink());
+                    g.drawText (quiet (pn.title), pn.area.toFloat().reduced (14.0f, 0.0f).withHeight (28.0f), juce::Justification::centredLeft, false);
+                    g.setColour (juce::Colour (0xff2e2d2a));
+                    g.fillRect ((float) pn.area.getX() + 14.0f, (float) pn.area.getY() + 28.0f, (float) pn.area.getWidth() - 28.0f, 1.0f);
+                    continue;
+                }
                 g.setFont (spaced (9.0f, true, 0.28f));
                 g.setColour (engrave);
                 g.drawText (pn.title, pn.area.toFloat().reduced (16.0f, 0.0f).withHeight (30.0f), juce::Justification::centredLeft, false);
@@ -1647,7 +1656,7 @@ namespace hama
 
             auto m = panel ("MACROS", 532, 0, 700, 250);
             const char* ids[] = { "morph", "macroAge", "macroDream", "macroWobble" };
-            const char* labels[] = { "MORPH", "AGE", "DREAM", "WOBBLE" };
+            const char* labels[] = { "Morph", "Age", "Dream", "Wobble" };
             for (int i = 0; i < 4; ++i)
             {
                 knobAt (ids[i], labels[i], 52, m.getX() + i * 175, m.getY() + 4, 150);
@@ -1689,6 +1698,37 @@ namespace hama
             {
                 auto c = modelCard (i);
                 const bool on = i == shownModel;
+                if (th().concrete)
+                {
+                    // a phosphor screen per character, the chosen one in the light
+                    g.setColour (on ? page::lit() : juce::Colour (0xff0a0f0c));
+                    g.fillRect (c);
+                    auto in = c.reduced (12.0f);
+                    const auto ink = on ? page::litInk() : page::phosphor();
+                    g.setFont (LookAndFeel::monoFont (10.0f));
+                    g.setColour (on ? page::dim() : page::phosphorDim());
+                    g.drawText (era[i], in.removeFromTop (16.0f), juce::Justification::centredLeft, false);
+                    g.setFont (LookAndFeel::uiFont (16.0f));
+                    g.setColour (ink);
+                    g.drawText (Hamamatsu108Processor::modelNames()[i], in.removeFromTop (26.0f), juce::Justification::centredLeft, false);
+                    const auto& sp = Hamamatsu108Processor::modelSpec (i);
+                    const float vals[] = { sp.cutoff / 20000.0f, juce::jmin (1.0f, sp.width / 1.2f), juce::jmin (1.0f, sp.hiss / 0.0009f), (16.0f - sp.bits) / 8.0f };
+                    const char* names[] = { "Bright", "Wide", "Noise", "Grit" };
+                    in.removeFromTop (10.0f);
+                    for (int k = 0; k < 4; ++k)
+                    {
+                        auto row = in.removeFromTop (22.0f);
+                        g.setFont (LookAndFeel::uiFont (10.0f));
+                        g.setColour (on ? page::litInk().withAlpha (0.7f) : page::phosphorDim());
+                        g.drawText (names[k], row.removeFromLeft (52.0f), juce::Justification::centredLeft, false);
+                        auto bar = row.withSizeKeepingCentre (row.getWidth(), 2.0f);
+                        g.setColour (on ? juce::Colour (0x33000000) : juce::Colour (0xff17241d));
+                        g.fillRect (bar);
+                        g.setColour (ink);
+                        g.fillRect (bar.withWidth (juce::jmax (2.0f, bar.getWidth() * vals[k])));
+                    }
+                    continue;
+                }
                 if (on) { g.setColour (th().accent.withAlpha (0.25f)); g.fillRoundedRectangle (c.expanded (3.0f), 12.0f); }
                 g.setGradientFill (juce::ColourGradient (juce::Colour (0xff3a3f46), 0.0f, c.getY(), juce::Colour (0xff24272b), 0.0f, c.getBottom(), false));
                 g.fillRoundedRectangle (c, 10.0f);
@@ -1727,9 +1767,63 @@ namespace hama
     };
 
     //==========================================================================
+    // PLAY: everything the hand and the switches do, packed on one page
+    class PlayPage : public EditPage
+    {
+    public:
+        PlayPage (Hamamatsu108Processor& p, EditView& o) : EditPage (p, o)
+        {
+            auto h = panel ("Hand", 0, 0, 470, 276);
+            choice ("motionType", "Motion", { h.getX(), h.getY(), 140, 40 });
+            choice ("gridRate", "Rate", { h.getX() + 148, h.getY(), 140, 40 });
+            choice ("motionGate", "Note length", { h.getX() + 296, h.getY(), 142, 40 });
+            choice ("strumZone", "Strum keys", { h.getX(), h.getY() + 50, 140, 40 });
+            choice ("keysPlay", "Your keys", { h.getX() + 148, h.getY() + 50, 140, 40 });
+            toggle ("gridOn", "Motion", { h.getX() + 296, h.getY() + 64, 142, 26 });
+            const char* strokes[] = { "strokeDown", "strokeHalf", "strokeBounce", "strokeWaver", "strokeMiddle", "strokeSlow" };
+            const char* names[]   = { "Down", "Half", "Bounce", "Waver", "Middle", "Half time" };
+            for (int i = 0; i < 6; ++i)
+                toggle (strokes[i], names[i], { h.getX() + (i % 3) * 148, h.getY() + 100 + (i / 3) * 30, 142, 24 });
+            knobAt ("gridLen", "Steps", 28, h.getX(), h.getY() + 158, 74);
+            knobAt ("strumRate", "Speed", 28, h.getX() + 74, h.getY() + 158, 74);
+            knobAt ("arpSwing", "Swing", 28, h.getX() + 148, h.getY() + 158, 74);
+            knobAt ("arpChance", "Chance", 28, h.getX() + 222, h.getY() + 158, 74);
+            knobAt ("arpVelScale", "Dynamics", 28, h.getX() + 296, h.getY() + 158, 74);
+            knobAt ("arpGate", "Length", 28, h.getX() + 370, h.getY() + 158, 68);
+
+            auto l = panel ("Chord and bass", 480, 0, 300, 276);
+            choice ("chordType", "Chord layer", { l.getX(), l.getY(), 128, 40 });
+            choice ("bassType", "Bass", { l.getX() + 138, l.getY(), 130, 40 });
+            choice ("bassMode", "Bass pattern", { l.getX(), l.getY() + 50, 268, 40 });
+            knobAt ("bLevel", "Layer B", 28, l.getX(), l.getY() + 104, 67);
+            knobAt ("bDetune", "Detune", 28, l.getX() + 67, l.getY() + 104, 67);
+            knobAt ("bOctave", "B octave", 28, l.getX() + 134, l.getY() + 104, 67);
+            knobAt ("harpRange", "Range", 28, l.getX() + 201, l.getY() + 104, 67);
+
+            auto m = panel ("Mix", 790, 0, 442, 276);
+            const char* mix[]  = { "master", "width", "spread", "polish", "drive", "filterCutoff", "filterReso", "harpTone",
+                                   "harpAttack", "harpDecay", "harpSustain", "harpRelease" };
+            const char* mixN[] = { "Volume", "Width", "Spread", "Polish", "Drive", "Cutoff", "Reso", "Tone",
+                                   "Attack", "Decay", "Sustain", "Release" };
+            for (int i = 0; i < 12; ++i)
+                knobAt (mix[i], mixN[i], 28, m.getX() + (i % 6) * 68, m.getY() + (i / 6) * 96, 68);
+
+            auto sw = panel ("Switches", 0, 286, 1232, 244);
+            const auto& sn = Hamamatsu108Processor::switchNames();
+            for (int i = 0; i < Hamamatsu108Processor::numSwitches; ++i)
+            {
+                const int cx = sw.getX() + (i % 12) * 100, cy = sw.getY() + (i / 12) * 98;
+                auto name = sn[i].substring (0, 1).toUpperCase() + sn[i].substring (1).toLowerCase();
+                toggle ("sw" + juce::String (i) + "On", name, { cx, cy, 94, 26 });
+                knobAt ("sw" + juce::String (i) + "Amt", {}, 26, cx, cy + 32, 94);
+            }
+        }
+    };
+
+    //==========================================================================
     const juce::StringArray& EditView::tabNames()
     {
-        static const juce::StringArray n { "LAYERS", "ARP & GATE", "FILTER", "MOD", "FX" };
+        static const juce::StringArray n { "LAYERS", "PLAY", "ARP & GATE", "FILTER", "MOD", "FX" };
         return n;
     }
 
@@ -1738,6 +1832,7 @@ namespace hama
         logo = juce::Drawable::createFromImageData (KuprellBrand::kuprelllogocream_svg, KuprellBrand::kuprelllogocream_svgSize);
 
         pages.add (new EnginePage (p, *this));
+        pages.add (new PlayPage (p, *this));
         pages.add (new ArpGatePage (p, *this));
         pages.add (new CharacterPage (p, *this));   // FILTER: character, filter, saturation, macros
         pages.add (new ModPage (p, *this));
@@ -1767,6 +1862,11 @@ namespace hama
 
     juce::Rectangle<int> EditView::tabArea (int i) const
     {
+        if (th().concrete)
+        {
+            // narrow flat tabs, left aligned under the wordmark
+            return juce::Rectangle<int> (24 + i * 112, 104, 108, 26);
+        }
         const float w = 1232.0f / (float) tabNames().size();
         return juce::Rectangle<float> (24.0f + i * w, 98.0f, w - 6.0f, 34.0f).toNearestInt();
     }
@@ -1789,6 +1889,40 @@ namespace hama
 
     void EditView::paint (juce::Graphics& g)
     {
+        if (th().concrete)
+        {
+            // the same slab as the main page (drawn in editor coordinates), the wordmark, flat tabs
+            {
+                juce::Graphics::ScopedSaveState save (g);
+                const float s = 1280.0f / 1156.0f;
+                g.addTransform (juce::AffineTransform::scale (s));
+                paintConcreteSlab (g, { 0.0f, 0.0f, 1156.0f, 682.0f / s });
+                paintWordmark (g, { (float) geo::innerX + 5.0f, (float) geo::rearY + 10.0f }, juce::Colour (0xffeceae4));
+            }
+            for (int i = 0; i < tabNames().size(); ++i)
+            {
+                auto t = tabArea (i).toFloat();
+                const bool on = i == tab;
+                if (on)
+                {
+                    g.setColour (juce::Colours::black.withAlpha (0.5f));
+                    g.fillRect (t.translated (1.5f, 2.0f));
+                    g.setColour (page::lit());
+                    g.fillRect (t);
+                }
+                else
+                {
+                    g.setColour (juce::Colour (0xff4b4a46));
+                    g.fillRect (t);
+                    g.setColour (juce::Colour (0xff6c6a65));
+                    g.fillRect (t.withHeight (1.0f));
+                }
+                g.setFont (LookAndFeel::uiFont (12.0f));
+                g.setColour (on ? page::litInk() : page::ink());
+                g.drawText (quiet (tabNames()[i]), t, juce::Justification::centred, false);
+            }
+            return;
+        }
         g.fillAll (juce::Colour (0xff0b0c0d));
 
         // metal header plate (top of the instrument)

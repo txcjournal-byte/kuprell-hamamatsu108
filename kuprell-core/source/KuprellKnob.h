@@ -36,6 +36,8 @@ namespace kuprell
 
         // skin colours shared by all knobs of the plugin window
         static juce::Colour themeAccent, themeSoft, themeDeep;
+        // brutalist skin: flat cast knobs, hairline arcs, no chrome
+        static inline bool concrete = false;
         juce::String getParamID() const { return parameter != nullptr ? parameter->getParameterID() : juce::String(); }
         // placeholder knob for a feature that arrives later (drawn dimmed, not editable)
         Knob (const juce::String& label, int knobSize, Style, const juce::String& comingSoonText);

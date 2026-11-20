@@ -37,6 +37,7 @@ namespace kuprell
         // minimal: only a small "Edit" and the settings (the main page shows sounds itself; save, A/B, random live in EDIT)
         void setMinimal (bool m) { if (minimal != m) { minimal = m; setInterceptsMouseClicks (! m, true); resized(); repaint(); } }
 
+        static inline bool concrete = false;   // brutalist skin: the preset name sits on a phosphor screen
         void paint (juce::Graphics&) override;
         void resized() override;
         void mouseUp (const juce::MouseEvent&) override;
