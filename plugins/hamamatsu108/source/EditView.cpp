@@ -125,19 +125,19 @@ namespace hama
             for (int i = 0; i < 6; ++i) knobAt (bIds[i], bNames[i], 42, b.getX() + i * 78, b.getY() + 64, 76);
 
             auto env = panel ("LAYER A ENVELOPE", 0, 262, 380, 268);
-            knobAt ("harpAttack", "Attack", 46, env.getX() - 6, env.getY() + 20, 90);
-            knobAt ("harpDecay", "Decay", 46, env.getX() + 82, env.getY() + 20, 90);
-            knobAt ("harpSustain", "Sustain", 46, env.getX() + 170, env.getY() + 20, 90);
-            knobAt ("harpRelease", "Release", 46, env.getX() + 258, env.getY() + 20, 90);
+            knobAt ("harpAttack", "Attack", 60, env.getX() - 6, env.getY() + 50, 90);
+            knobAt ("harpDecay", "Decay", 60, env.getX() + 82, env.getY() + 50, 90);
+            knobAt ("harpSustain", "Sustain", 60, env.getX() + 170, env.getY() + 50, 90);
+            knobAt ("harpRelease", "Release", 60, env.getX() + 258, env.getY() + 50, 90);
 
             auto st = panel (juce::String::fromUTF8 ("STEREO  \xc2\xb7  POLISH"), 392, 262, 212, 268);
-            knobAt ("spread", "Spread", 40, st.getX() - 10, st.getY() + 20, 66);
-            knobAt ("width", "Width", 40, st.getX() + 56, st.getY() + 20, 66);
-            knobAt ("polish", "Polish", 40, st.getX() + 122, st.getY() + 20, 66);
+            knobAt ("spread", "Spread", 46, st.getX() - 10, st.getY() + 6, 66);
+            knobAt ("width", "Width", 46, st.getX() + 56, st.getY() + 6, 66);
+            knobAt ("polish", "Polish", 46, st.getX() + 122, st.getY() + 6, 66);
 
             auto v = panel ("VIBRATO", 616, 262, 188, 268);
-            knobAt ("vibRate", "Rate", 40, v.getX() - 8, v.getY() + 20, 80);
-            knobAt ("vibDepth", "Depth", 40, v.getX() + 72, v.getY() + 20, 80);
+            knobAt ("vibRate", "Rate", 46, v.getX() - 8, v.getY() + 20, 80);
+            knobAt ("vibDepth", "Depth", 46, v.getX() + 72, v.getY() + 20, 80);
 
             auto mt = panel ("MORPH TARGETS", 816, 262, 416, 268);
             for (int i = 0; i < mod::morphSlots; ++i)
@@ -1773,6 +1773,7 @@ namespace hama
     public:
         PlayPage (Hamamatsu108Processor& p, EditView& o) : EditPage (p, o)
         {
+            // only what the main page does not have (the switches, strokes, envelope and mix live there)
             auto h = panel ("Hand", 0, 0, 470, 276);
             choice ("motionType", "Motion", { h.getX(), h.getY(), 140, 40 });
             choice ("gridRate", "Rate", { h.getX() + 148, h.getY(), 140, 40 });
@@ -1780,44 +1781,47 @@ namespace hama
             choice ("strumZone", "Strum keys", { h.getX(), h.getY() + 50, 140, 40 });
             choice ("keysPlay", "Your keys", { h.getX() + 148, h.getY() + 50, 140, 40 });
             toggle ("gridOn", "Motion", { h.getX() + 296, h.getY() + 64, 142, 26 });
-            const char* strokes[] = { "strokeDown", "strokeHalf", "strokeBounce", "strokeWaver", "strokeMiddle", "strokeSlow" };
-            const char* names[]   = { "Down", "Half", "Bounce", "Waver", "Middle", "Half time" };
-            for (int i = 0; i < 6; ++i)
-                toggle (strokes[i], names[i], { h.getX() + (i % 3) * 148, h.getY() + 100 + (i / 3) * 30, 142, 24 });
-            knobAt ("gridLen", "Steps", 28, h.getX(), h.getY() + 158, 74);
-            knobAt ("strumRate", "Speed", 28, h.getX() + 74, h.getY() + 158, 74);
-            knobAt ("arpSwing", "Swing", 28, h.getX() + 148, h.getY() + 158, 74);
-            knobAt ("arpChance", "Chance", 28, h.getX() + 222, h.getY() + 158, 74);
-            knobAt ("arpVelScale", "Dynamics", 28, h.getX() + 296, h.getY() + 158, 74);
-            knobAt ("arpGate", "Length", 28, h.getX() + 370, h.getY() + 158, 68);
+            const char* hk[] = { "gridLen", "strumRate", "arpSwing", "arpChance", "arpVelScale", "arpGate" };
+            const char* hn[] = { "Steps", "Speed", "Swing", "Chance", "Dynamics", "Length" };
+            for (int i = 0; i < 6; ++i) knobAt (hk[i], hn[i], 34, h.getX() + i * 73, h.getY() + 112, 73);
 
-            auto l = panel ("Chord and bass", 480, 0, 300, 276);
-            choice ("chordType", "Chord layer", { l.getX(), l.getY(), 128, 40 });
-            choice ("bassType", "Bass", { l.getX() + 138, l.getY(), 130, 40 });
-            choice ("bassMode", "Bass pattern", { l.getX(), l.getY() + 50, 268, 40 });
-            knobAt ("bLevel", "Layer B", 28, l.getX(), l.getY() + 104, 67);
-            knobAt ("bDetune", "Detune", 28, l.getX() + 67, l.getY() + 104, 67);
-            knobAt ("bOctave", "B octave", 28, l.getX() + 134, l.getY() + 104, 67);
-            knobAt ("harpRange", "Range", 28, l.getX() + 201, l.getY() + 104, 67);
+            auto f = panel ("Stroke feel", 480, 0, 360, 276);
+            choice ("strumShape", "Stroke shape", { f.getX(), f.getY(), 160, 40 });
+            choice ("strumPattern", "Pattern", { f.getX() + 168, f.getY(), 160, 40 });
+            const char* fk[] = { "strumFeel", "strumSpeed", "strumSwing", "strumVary" };
+            const char* fn[] = { "Feel", "Speed", "Swing", "Variation" };
+            for (int i = 0; i < 4; ++i) knobAt (fk[i], fn[i], 34, f.getX() + i * 82, f.getY() + 62, 82);
 
-            auto m = panel ("Mix", 790, 0, 442, 276);
-            const char* mix[]  = { "master", "width", "spread", "polish", "drive", "filterCutoff", "filterReso", "harpTone",
-                                   "harpAttack", "harpDecay", "harpSustain", "harpRelease" };
-            const char* mixN[] = { "Volume", "Width", "Spread", "Polish", "Drive", "Cutoff", "Reso", "Tone",
-                                   "Attack", "Decay", "Sustain", "Release" };
-            for (int i = 0; i < 12; ++i)
-                knobAt (mix[i], mixN[i], 28, m.getX() + (i % 6) * 68, m.getY() + (i / 6) * 96, 68);
+            auto k = panel ("Key", 850, 0, 382, 276);
+            choice ("keyRoot", "Key", { k.getX(), k.getY(), 170, 40 });
+            choice ("keyMode", "Scale", { k.getX() + 180, k.getY(), 170, 40 });
+            knobAt ("harpRange", "Range", 34, k.getX(), k.getY() + 62, 88);
+            knobAt ("bOctave", "B octave", 34, k.getX() + 88, k.getY() + 62, 88);
+            knobAt ("bDetune", "B detune", 34, k.getX() + 176, k.getY() + 62, 88);
+            knobAt ("bLevel", "B level", 34, k.getX() + 264, k.getY() + 62, 88);
 
-            auto sw = panel ("Switches", 0, 286, 1232, 244);
-            const auto& sn = Hamamatsu108Processor::switchNames();
-            for (int i = 0; i < Hamamatsu108Processor::numSwitches; ++i)
-            {
-                const int cx = sw.getX() + (i % 12) * 100, cy = sw.getY() + (i / 12) * 98;
-                auto name = sn[i].substring (0, 1).toUpperCase() + sn[i].substring (1).toLowerCase();
-                toggle ("sw" + juce::String (i) + "On", name, { cx, cy, 94, 26 });
-                knobAt ("sw" + juce::String (i) + "Amt", {}, 26, cx, cy + 32, 94);
-            }
+            auto c = panel ("Chord layer", 0, 286, 610, 244);
+            choice ("chordType", "Chord", { c.getX(), c.getY(), 180, 40 });
+            knobAt ("chordLevel", "Level", 40, c.getX() + 200, c.getY() - 6, 100);
+            knobAt ("chordFilter", "Filter", 40, c.getX() + 300, c.getY() - 6, 100);
+            chordHelp = { c.getX(), c.getY() + 110, c.getWidth(), 40 };
+
+            auto bs = panel ("Bass", 622, 286, 610, 244);
+            choice ("bassType", "Bass", { bs.getX(), bs.getY(), 180, 40 });
+            choice ("bassMode", "Pattern", { bs.getX(), bs.getY() + 50, 180, 40 });
+            knobAt ("bassLevel", "Level", 40, bs.getX() + 200, bs.getY() - 6, 100);
+            knobAt ("bassTone", "Tone", 40, bs.getX() + 300, bs.getY() - 6, 100);
+            bassHelp = { bs.getX(), bs.getY() + 110, bs.getWidth(), 40 };
         }
+
+        void paintExtras (juce::Graphics& g) override
+        {
+            text (g, "A soft pad of the same chord under the harp, follows every chord you play.", chordHelp);
+            text (g, "A bass note under the harp, on the chord root, in the pattern you pick.", bassHelp);
+        }
+
+    private:
+        juce::Rectangle<int> chordHelp, bassHelp;
     };
 
     //==========================================================================

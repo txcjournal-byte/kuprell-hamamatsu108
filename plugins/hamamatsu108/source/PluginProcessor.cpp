@@ -165,7 +165,6 @@ void Hamamatsu108Processor::updateModulation (int numSamples, bool hostPlaying, 
     for (auto& v : bassVoices)  active = active || v.isActive();
     if (! active)
     {
-        for (auto& l : lfos) l.phase = 0.0;
         func.trigger();
         randomSrc.reset();
     }
@@ -178,9 +177,8 @@ void Hamamatsu108Processor::updateModulation (int numSamples, bool hostPlaying, 
         const int shape = juce::roundToInt (P (id + "Shape"));
         const int sync = juce::roundToInt (P (id + "Sync"));
         auto& l = lfos[(size_t) i];
-        if (! active)
-            src[(size_t) (mod::lfo1 + i)] = l.advance (0.0, shape);
-        else if (sync > 0 && hostPlaying)
+        // the LFOs run free, whatever plays or not (a sound that starts lands somewhere in the wave, like hardware)
+        if (sync > 0 && hostPlaying)
         {
             const double q = mod::syncQuarters (sync);
             l.phase = std::fmod (ppq / q, 1.0);
@@ -1101,6 +1099,47 @@ void Hamamatsu108Processor::sweep (int offset, bool down, int first, int count, 
 {
     const int n = (int) tones.size();
     if (n == 0 || count <= 0) return;
+    // the STROKE switches shape every stroke, whatever plays it (keys, strum keys, mouse, motion, left hand)
+    if (! inStroke && count >= 3)
+    {
+        auto on = [this] (const char* id) { return param (apvts, id) > 0.5f; };
+        const bool sDown = on ("strokeDown"), sHalf = on ("strokeHalf"), sBounce = on ("strokeBounce"),
+                   sWaver = on ("strokeWaver"), sMiddle = on ("strokeMiddle"), sSlow = on ("strokeSlow");
+        if (sDown || sHalf || sBounce || sWaver || sMiddle || sSlow)
+        {
+            inStroke = true;
+            // the strings this stroke covers
+            const int lo = juce::jlimit (0, n - 1, down ? first : first - count + 1);
+            const int hi = juce::jlimit (0, n - 1, down ? first + count - 1 : first);
+            int len = hi - lo + 1;
+            bool up = down;                                     // up = from the low strings to the high ones
+            if (sDown) up = false;                              // DOWN: from the top
+            if (sBounce) { up = sideToSideUp; sideToSideUp = ! sideToSideUp; }   // BOUNCE: every stroke the other way
+            if (sHalf) len = (len + 1) / 2;                     // HALF: half of the strings
+            const float speed = speedMul * (sSlow ? 2.2f : 1.0f);   // HALF TIME: slow and wide
+            const int repeats = sWaver ? 6 : 1;                 // WAVER: quick strokes up and down that fade
+            const double bpmNow = juce::jmax (40.0, lastBpm);
+            const int every = juce::jmax (64, (int) (60.0 / bpmNow / (sSlow ? 3.0 : 6.0) * sr));
+            for (int k = 0; k < repeats; ++k)
+            {
+                const bool u = (k % 2) == 0 ? up : ! up;
+                const float vk = vel * (1.0f - 0.12f * (float) k);
+                const int at = offset + k * every;
+                const float sp = repeats > 1 ? speed * 0.4f : speed;
+                if (sMiddle)
+                {
+                    const int mid = lo + (hi - lo + 1) / 2;
+                    const int half = juce::jmax (1, len / 2 + (len & 1));
+                    sweep (at, true, mid, juce::jmin (half, hi - mid + 1), vk, sp);
+                    sweep (at, false, mid - 1, juce::jmin (half, mid - lo), vk * 0.9f, sp);
+                }
+                else if (u) sweep (at, true, lo, len, vk, sp);
+                else        sweep (at, false, hi, len, vk, sp);
+            }
+            inStroke = false;
+            return;
+        }
+    }
     const float feel = mp ("strumFeel");
     const float speedMs = mp ("strumSpeed") * speedMul;
     auto rnd = [this] { return rng.nextFloat(); };
@@ -1671,6 +1710,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             if (pos->getIsPlaying())
                 if (auto p = pos->getPpqPosition()) { hostPlaying = true; ppq = *p; }
         }
+    lastBpm = bpm;
 
     // dual voice
     dualOn = param (apvts, "dual") > 0.5f;
@@ -1912,28 +1952,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             if (! lastProgPlaying && (param (apvts, "gridOn") < 0.5f || juce::roundToInt (param (apvts, "motionType")) == 4))
             {
                 const float vv = juce::jlimit (0.2f, 0.95f, 0.3f + 0.65f * v);
-                // the STROKE switches combine: DOWN, HALF, BOUNCE, WAVER, MIDDLE, HALF TIME
-                auto on = [this] (const char* id) { return param (apvts, id) > 0.5f; };
-                bool up = ! on ("strokeDown");
-                if (on ("strokeBounce")) { up = up == sideToSideUp; sideToSideUp = ! sideToSideUp; }   // every chord the other way
-                const float speed = on ("strokeSlow") ? 2.4f : 1.2f;                                    // HALF TIME: a slow, wide stroke
-                const int count = on ("strokeHalf") ? (nt + 1) / 2 : nt;
-                const int repeats = on ("strokeWaver") ? 6 : 1;
-                const int every = juce::jmax (64, (int) (60.0 / bpm / (on ("strokeSlow") ? 3.0 : 6.0) * sr));
-                for (int k = 0; k < repeats; ++k)
-                {
-                    const bool u = (k % 2) == 0 ? up : ! up;
-                    const float vk = vv * (1.0f - 0.12f * (float) k);
-                    const int at = h.pos + k * every;
-                    if (on ("strokeMiddle"))
-                    {
-                        const int mid = nt / 2;
-                        sweep (at, true, mid, juce::jmin (count, nt - mid), vk, speed);
-                        sweep (at, false, mid - 1, juce::jmin (count, mid), vk * 0.9f, speed);
-                    }
-                    else
-                        sweep (at, u, u ? 0 : nt - 1, count, vk, repeats > 1 ? 0.4f : speed);
-                }
+                sweep (h.pos, true, 0, nt, vv, 1.2f);   // the STROKE switches shape it inside sweep()
             }
             continue;
         }
@@ -1985,7 +2004,9 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         while (tremoloLeft < numSamples)
         {
             const float v = juce::jlimit (0.2f, 1.0f, 0.3f + 0.55f * tremoloVel);
+            inStroke = true;   // a tremolo is its own stroke
             sweep (juce::jmax (0, tremoloLeft), tremoloUp, tremoloUp ? 0 : nt - 1, nt, v, 0.35f);
+            inStroke = false;
             tremoloUp = ! tremoloUp;
             tremoloLeft += every;
         }

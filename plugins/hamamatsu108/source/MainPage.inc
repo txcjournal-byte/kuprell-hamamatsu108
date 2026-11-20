@@ -487,7 +487,14 @@
             depth->setBounds (62, 6, 60, 66);
         }
 
-        void update() { const int sig = juce::roundToInt (plain (processor.apvts, (id + "QDst").toRawUTF8())) * 16 + juce::roundToInt (plain (processor.apvts, (id + "Shape").toRawUTF8())); if (sig != lastSig) { lastSig = sig; repaint(); } }
+        void update()
+        {
+            const int sig = juce::roundToInt (plain (processor.apvts, (id + "QDst").toRawUTF8())) * 16 + juce::roundToInt (plain (processor.apvts, (id + "Shape").toRawUTF8()));
+            if (sig != lastSig) { lastSig = sig; repaint(); }
+            // the lamp follows the wave, so you see it run
+            const float v = processor.modSources[(size_t) (mod::lfo1 + (id == "lfo2" ? 1 : 0))].load();
+            if (std::abs (v - lampValue) > 0.02f) { lampValue = v; repaint (lamp().toNearestInt().expanded (2)); }
+        }
 
         void paint (juce::Graphics& g) override
         {
@@ -497,6 +504,8 @@
             g.setFont (LookAndFeel::uiFont (11.5f));
             g.setColour (page::dim());
             g.drawText (title, juce::Rectangle<float> (126.0f, (float) getHeight() - 16.0f, 80.0f, 12.0f), juce::Justification::centredLeft, false);
+            g.setColour (page::led().withAlpha (0.15f + 0.85f * (0.5f + 0.5f * lampValue)));
+            g.fillEllipse (lamp());
             chip (g, targetChip(), "To " + mod::targetNames()[juce::roundToInt (plain (processor.apvts, (id + "QDst").toRawUTF8()))]);
             chip (g, shapeChip(), mod::lfoShapeNames()[juce::roundToInt (plain (processor.apvts, (id + "Shape").toRawUTF8()))]);
         }
@@ -524,7 +533,18 @@
         {
             juce::Component::SafePointer<LfoPanel> safe (this);
             m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (r.toNearestInt())),
-                             [safe, pid] (int res) { if (safe != nullptr && res > 0) { setParam (safe->processor.apvts, pid, (float) (res - 1)); safe->repaint(); } });
+                             [safe, pid] (int res)
+                             {
+                                 if (safe == nullptr || res <= 0) return;
+                                 setParam (safe->processor.apvts, pid, (float) (res - 1));
+                                 // a new target with no depth would do nothing: give it a clear amount
+                                 if (pid.endsWith ("QDst") && res > 1)
+                                 {
+                                     const auto amt = pid.dropLastCharacters (3) + "Amt";
+                                     if (std::abs (plain (safe->processor.apvts, amt.toRawUTF8())) < 0.05f) setParam (safe->processor.apvts, amt, 0.4f);
+                                 }
+                                 safe->repaint();
+                             });
         }
         void chip (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& text) const
         {
@@ -534,6 +554,8 @@
             g.setColour (page::phosphor());
             g.drawFittedText (text + juce::String::fromUTF8 ("  \xe2\x96\xbe"), r.toNearestInt().reduced (4, 0), juce::Justification::centredLeft, 1, 0.8f);
         }
+        juce::Rectangle<float> lamp() const { return { 172.0f, (float) getHeight() - 13.0f, 6.0f, 6.0f }; }
+        float lampValue = 0.0f;
         juce::Rectangle<float> targetChip() const { return { 126.0f, 8.0f, (float) getWidth() - 134.0f, 20.0f }; }
         juce::Rectangle<float> shapeChip() const  { return { 126.0f, 32.0f, (float) getWidth() - 134.0f, 20.0f }; }
 
