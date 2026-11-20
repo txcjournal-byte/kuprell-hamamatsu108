@@ -19,7 +19,7 @@ public:
     void paint (juce::Graphics&) override;
 
 private:
-    juce::String name { "Click a chord button to start" }, value;
+    juce::String name, value;
     int voices = 0, zoom = 100;
 };
 

@@ -101,6 +101,16 @@ namespace hama
                 paintRear (g);
                 drawWell (g, page::strumArea().toFloat(), 0.0f);
                 drawWell (g, page::deckArea2().toFloat().expanded (0.0f, 2.0f), 0.0f);
+                // the maker's mark, cast into the slab: pressed-in letters (light edge below, shadow above)
+                {
+                    static const auto michroma = juce::Typeface::createSystemTypefaceFor (KuprellBrand::michroma_ttf, (size_t) KuprellBrand::michroma_ttfSize);
+                    g.setFont (juce::Font (juce::FontOptions (michroma).withHeight (13.0f)).withExtraKerningFactor (0.3f));
+                    const juce::Rectangle<float> mark ((float) page::x0, (float) geo::deckBottom + 8.0f, 300.0f, 16.0f);
+                    g.setColour (juce::Colour (0xffa9a7a1));
+                    g.drawText ("ALTRUISTI", mark.translated (0.0f, 1.0f), juce::Justification::centredLeft, false);
+                    g.setColour (juce::Colour (0xff1f1e1c));
+                    g.drawText ("ALTRUISTI", mark, juce::Justification::centredLeft, false);
+                }
                 return;
             }
             paintCheek (g, { (float) bodyX, (float) bodyY, (float) cheekW, (float) panelH }, true);
