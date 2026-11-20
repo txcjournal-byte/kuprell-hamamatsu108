@@ -48,7 +48,7 @@ namespace hama
     {
         // stage geometry of the main page
         constexpr int x0 = geo::innerX, w0 = geo::innerW;
-        constexpr int bankY = 40, bankH = 22, tabsX = 236;   // the bank tabs sit up in the top row, next to the name
+        constexpr int bankY = 40, bankH = 22, tabsX = 300;   // the bank tabs sit up in the top row, next to the name
         constexpr int presetY = bankY + 32, presetRows = 10, presetRowH = 13, presetH = presetRows * presetRowH + 8;
         constexpr int switchY = presetY + presetH + 10, switchH = 68;
         constexpr int strumY = switchY + switchH + 10, strumBarH = 22, strumH = 184;

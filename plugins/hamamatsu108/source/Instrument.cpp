@@ -328,9 +328,9 @@ namespace hama
             const float tx = (float) innerX + 6.0f;
             // product wordmark (the company mark joins when the brand is settled)
             static const auto michroma = juce::Typeface::createSystemTypefaceFor (KuprellBrand::michroma_ttf, (size_t) KuprellBrand::michroma_ttfSize);
-            g.setFont (juce::Font (juce::FontOptions (michroma).withHeight (21.0f)).withExtraKerningFactor (0.04f));
+            g.setFont (juce::Font (juce::FontOptions (michroma).withHeight (25.0f)).withExtraKerningFactor (0.04f));
             g.setColour (th().concrete ? juce::Colour (0xffeceae4) : sk.panelMid.getPerceivedBrightness() > 0.6f ? juce::Colour (0xff1c1d22) : juce::Colour (0xfff1e2cc));
-            g.drawText ("Harpology", juce::Rectangle<float> (tx - 1.0f, (float) rearY + 8.0f, 260.0f, 26.0f), juce::Justification::centredLeft, false);
+            g.drawText ("Harpology", juce::Rectangle<float> (tx - 1.0f, (float) rearY + 10.0f, 300.0f, 30.0f), juce::Justification::centredLeft, false);
             g.setFont (spaced (11.0f, false, 0.45f));
             g.setColour (sk.engrave);
             if (juce::String (sk.edition).isNotEmpty())
@@ -348,8 +348,8 @@ namespace hama
                 g.drawText (badgeText, badge, juce::Justification::centred, false);
             }
             else
-            if (th().concrete) { g.setFont (LookAndFeel::uiFont (11.0f, false)); g.setColour (juce::Colour (0xffcfccc4)); }
-            g.drawText (th().concrete ? "Strum harp" : "STRUM HARP", juce::Rectangle<float> (tx, (float) rearY + 30.0f, 180.0f, 14.0f), juce::Justification::centredLeft, false);
+            if (! th().concrete)
+                g.drawText ("STRUM HARP", juce::Rectangle<float> (tx, (float) rearY + 30.0f, 180.0f, 14.0f), juce::Justification::centredLeft, false);
 
 
 

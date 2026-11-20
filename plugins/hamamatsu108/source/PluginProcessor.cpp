@@ -607,7 +607,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumShape", 1 }, "Stroke Shape", StringArray { "Linear", "Natural", "Fast start", "Fast finish" }, 1));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumSpeedMul", 1 }, "Pattern Speed", StringArray { "Half", "Normal", "Double" }, 1));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumRestart", 1 }, "Pattern Start", StringArray { "Follow the bar", "Restart on chord" }, 0));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "keysPlay", 1 }, "Keys Play", keysPlayNames(), 6));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "keysPlay", 1 }, "Keys Play", keysPlayNames(), 0));   // Notes: every key is exactly one note
 
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "hold", 1 }, "Hold", true));
     // STRUM KEYS: one octave of the keyboard plays hand gestures (any keyboard size: pick the octave you can reach)
@@ -1800,13 +1800,13 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     // preset preview: ONE stroke of the key chord (plus its chord layer and bass) so the sound can be heard.
     // It never changes the play mode, never repeats, never records, and a real chord always wins.
-    const bool previewAsked = previewRequest.exchange (false);
-    if (previewAsked && chord >= 0) audition();   // a chord is on: hear the new sound on it right away (as the window plays it)
-    if (previewAsked && chord < 0)
+    // picking a sound: ONE note (the key's root, around middle C), never a strum
+    if (previewRequest.exchange (false))
     {
-        previewSamplesLeft = (int) (2.2 * sr);
-        previewStroke = true;
-        previewMute = true;
+        const int n = 60 + juce::roundToInt (param (apvts, "keyRoot"));
+        schedulePitch (0, n, 0.75f);
+        if (numReleases < (int) releases.size())
+            releases[(size_t) numReleases++] = { (int) (1.4 * sr), n + 12 * juce::roundToInt (param (apvts, "harpOctave")), 0.4f };
     }
     bool previewing = false;
     if (chord >= 0) previewSamplesLeft = 0;
@@ -1849,6 +1849,13 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         int strings = chord;
         if (strings < 0 && splitOn)
             strings = splitChord >= 0 ? splitChord : chords::index (juce::roundToInt (param (apvts, "keyRoot")), param (apvts, "keyMode") > 0.5f ? 1 : 0);
+        // NOTES: the strings follow the notes you hold; let go and the last chord stays (the key chord at the start),
+        // so the strum keys and the mouse always have something to strum
+        if (strings < 0)
+        {
+            if (heldMelodicCount > 0) { const int c = chordFromHeldNotes(); if (c >= 0) lastHeldChord = c; }
+            strings = lastHeldChord >= 0 ? lastHeldChord : chords::index (juce::roundToInt (param (apvts, "keyRoot")), param (apvts, "keyMode") > 0.5f ? 1 : 0);
+        }
         updateTones (strings, transpose, range);
     }
     activeChord.store (previewing ? -1 : chord);   // a preview does not light a chord button
@@ -2730,6 +2737,7 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
     state.setProperty ("uiWidth2", editorWidth.load(), nullptr);   // 2 = the compact window (1156 wide at 100 %)
+    state.setProperty ("keysV2", 1, nullptr);
     state.setProperty ("captureMode", captureMode.load(), nullptr);
     state.setProperty ("captureQuant", captureQuant.load(), nullptr);
     state.setProperty ("gateMask", (juce::int64) gateMask.load(), nullptr);
@@ -2876,6 +2884,8 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
             const auto presetKey = state.getProperty ("preset").toString();
             const bool presetModified = (bool) state.getProperty ("presetModified", false);
             apvts.replaceState (state);
+            if (! state.hasProperty ("keysV2"))   // older sessions: keys play single notes now (Split made some keys strum)
+                if (auto* kp = apvts.getParameter ("keysPlay")) kp->setValueNotifyingHost (kp->convertTo0to1 (0.0f));
             presetManager->restoreCurrent (presetKey, presetModified);
             undoManager.clearUndoHistory();
         }

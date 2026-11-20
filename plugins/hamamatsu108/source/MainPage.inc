@@ -38,6 +38,18 @@
                 g.setColour (on ? page::litInk() : page::onSlab());
                 g.drawText (banks()[i], t, juce::Justification::centred, false);
             }
+            // previous / next sound: two hairline chevrons after the tabs
+            for (int k = 0; k < 2; ++k)
+            {
+                const auto a = stepArrow (k);
+                juce::Path p;
+                const float dx = k == 0 ? -3.0f : 3.0f;   // k 0 = back (‹), 1 = forward (›)
+                p.startNewSubPath (a.getCentreX() - dx, a.getCentreY() - 6.0f);
+                p.lineTo (a.getCentreX() + dx, a.getCentreY());
+                p.lineTo (a.getCentreX() - dx, a.getCentreY() + 6.0f);
+                g.setColour (k == hoverArrow ? page::lit() : page::onSlab());
+                g.strokePath (p, juce::PathStrokeType (1.6f));
+            }
             // pages
             const int pages = numPages();
             if (pages > 1)
@@ -87,13 +99,34 @@
             juce::ignoreUnused (r);
         }
 
-        void mouseMove (const juce::MouseEvent& e) override { const int h = cellAt (e.position); if (h != hover) { hover = h; repaint(); } }
-        void mouseExit (const juce::MouseEvent&) override { hover = -1; repaint(); }
+        void mouseMove (const juce::MouseEvent& e) override
+        {
+            const int h = cellAt (e.position);
+            const int ha = stepArrow (0).contains (e.position) ? 0 : stepArrow (1).contains (e.position) ? 1 : -1;
+            if (h != hover || ha != hoverArrow) { hover = h; hoverArrow = ha; repaint(); }
+        }
+        void mouseExit (const juce::MouseEvent&) override { hover = -1; hoverArrow = -1; repaint(); }
+
+        // the next / previous sound of the bank (wraps around), heard right away
+        void step (int delta)
+        {
+            const auto shown = list();
+            if (shown.empty()) return;
+            int k = 0;
+            for (size_t i = 0; i < shown.size(); ++i) if (shown[i] == processor.presetManager->getCurrent()) k = (int) i;
+            k = (k + delta + (int) shown.size()) % (int) shown.size();
+            processor.presetManager->load (shown[(size_t) k]);
+            processor.previewPreset();
+            if (onStatus) onStatus ("Sound", processor.presetManager->currentName());
+            repaint();
+        }
 
         void mouseDown (const juce::MouseEvent& e) override
         {
             for (int i = 0; i < banks().size(); ++i)
                 if (tab (i).contains (e.position)) { bank = i; pageIndex = 0; fitColumns(); repaint(); if (onStatus) onStatus ("Bank", banks()[i]); return; }
+            for (int k = 0; k < 2; ++k)
+                if (stepArrow (k).contains (e.position)) { step (k == 0 ? -1 : 1); return; }
             if (numPages() > 1)
             {
                 if (prevArrow().expanded (4.0f).contains (e.position)) { pageIndex = (pageIndex + numPages() - 1) % numPages(); repaint(); return; }
@@ -151,10 +184,10 @@
         juce::Rectangle<float> tab (int i) const
         {
             float x = (float) page::tabsX;
-            for (int k = 0; k < i; ++k) x += tabW (k) + 4.0f;
+            for (int k = 0; k < i; ++k) x += tabW (k) + 2.0f;
             return { x, 0.0f, tabW (i), (float) page::bankH };
         }
-        static float tabW (int i) { return 16.0f + 6.4f * (float) banks()[i].length(); }
+        static float tabW (int i) { return 12.0f + 6.2f * (float) banks()[i].length(); }
         // pages: small, at the bottom-right corner of the screen
         juce::Rectangle<float> pageText() const { const auto g = gridArea(); return { g.getRight() - 74.0f, g.getBottom() - 15.0f, 48.0f, 12.0f }; }
         juce::Rectangle<float> prevArrow() const { const auto t = pageText(); return { t.getX() - 10.0f, t.getY() + 2.0f, 8.0f, 8.0f }; }
@@ -166,6 +199,11 @@
             else      p.addTriangle (r.getX(), r.getY(), r.getX(), r.getBottom(), r.getRight(), r.getCentreY());
             g.setColour (page::phosphor());
             g.fillPath (p);
+        }
+        juce::Rectangle<float> stepArrow (int k) const
+        {
+            // between the name and the tabs: ‹ ›
+            return { (float) page::tabsX - 56.0f + (float) k * 24.0f, 0.0f, 22.0f, (float) page::bankH };
         }
         juce::Rectangle<float> gridArea() const { return { 0.0f, (float) (page::presetY - page::bankY), (float) getWidth(), (float) page::presetH }; }
         juce::Rectangle<float> cellRect (int c) const
@@ -182,7 +220,7 @@
         }
 
         Hamamatsu108Processor& processor;
-        int bank = 1, pageIndex = 0, hover = -1, shownCurrent = -2;
+        int bank = 1, pageIndex = 0, hover = -1, hoverArrow = -1, shownCurrent = -2;
     };
 
     // SWITCHES: one touch changes the sound or the playing; the small knob sets how much

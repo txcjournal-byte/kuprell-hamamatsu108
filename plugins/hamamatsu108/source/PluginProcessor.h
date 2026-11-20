@@ -371,6 +371,7 @@ private:
     bool motionRestart = false, tremoloHeld = false, tremoloUp = true, dampNow = false;
     float tremoloVel = 0.8f;
     bool sideToSideUp = true;
+    int lastHeldChord = -1;
     float widthNow = 1.0f, widthTarget = 1.0f, sideLow = 0.0f, sideLowCoef = 0.02f;
     float polishNow = 0.4f, compEnv = 0.0f, compAtt = 0.01f, compRel = 0.001f, airLpL = 0.0f, airLpR = 0.0f, airCoef = 0.5f;
     // harp bus modulation (filter / volume / pan / pitch), smoothed per sample
