@@ -116,6 +116,7 @@ namespace hama
     class BankPresets;
     class SwitchRow;
     class StrumBar;
+    class NotesStrip;
     class LfoPanel;
 
     class InstrumentView : public juce::Component, private juce::Timer
@@ -158,6 +159,10 @@ namespace hama
         std::unique_ptr<BankPresets> bankPresets;
         std::unique_ptr<SwitchRow> switches;
         std::unique_ptr<StrumBar> strumBar;
+    public:
+        void showNotes (bool on);   // the NOTES strip in the strum window
+    private:
+        std::unique_ptr<NotesStrip> notesStrip;
         std::unique_ptr<LfoPanel> lfo1, lfo2;
         juce::OwnedArray<DeckSlider> mainSliders;
         juce::OwnedArray<kuprell::Knob> mainKnobs;

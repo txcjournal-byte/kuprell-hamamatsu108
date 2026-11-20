@@ -3080,10 +3080,13 @@ namespace hama
         bankPresets = std::make_unique<BankPresets> (p);
         switches = std::make_unique<SwitchRow> (p);
         strumBar = std::make_unique<StrumBar> (p);
+        notesStrip = std::make_unique<NotesStrip> (p);
+        addChildComponent (*notesStrip);
+        strumBar->onNotes = [this] (bool on) { showNotes (on); };
         lfo1 = std::make_unique<LfoPanel> (p, 0);
         lfo2 = std::make_unique<LfoPanel> (p, 1);
         auto status = [this] (const juce::String& a, const juce::String& b) { if (onStatus) onStatus (a, b); };
-        bankPresets->onStatus = status; switches->onStatus = status; strumBar->onStatus = status;
+        bankPresets->onStatus = status; switches->onStatus = status; strumBar->onStatus = status; notesStrip->onStatus = status;
         for (auto* c : std::initializer_list<juce::Component*> { bankPresets.get(), switches.get(), strumBar.get(), lfo1.get(), lfo2.get() }) addAndMakeVisible (c);
         const char* env[] = { "harpAttack", "harpDecay", "harpSustain", "harpRelease", "harpShape", "spread", "width", "polish" };
         const char* envL[] = { "A", "D", "S", "R", "Sh", "Sp", "W", "P" };
@@ -3155,6 +3158,7 @@ namespace hama
         motionControls->setVisible (false);   // MOTION patterns live in EDIT
         motion->plateOnly = true;
         motion->setBounds (page::strumArea().reduced (10, 0).withTrimmedTop (page::strumBarH + 8).withTrimmedBottom (8));
+        notesStrip->setBounds (motion->getBounds().reduced (18, 10).removeFromBottom (48));
         {
             const auto d = page::deckArea2();
             for (int i = 0; i < 8; ++i) mainSliders[i]->setBounds (d.getX() + 8 + i * 21 + (i >= 4 ? 6 : 0), d.getY() + 4, 20, d.getHeight() - 6);
@@ -3266,6 +3270,7 @@ namespace hama
         bankPresets->update();
         switches->update();
         strumBar->update();
+        if (notesStrip->isVisible()) notesStrip->update();
         lfo1->update();
         lfo2->update();
         patternChoice->update();
@@ -3280,5 +3285,12 @@ namespace hama
             }
         chordSel->update();
         bassSel->update();
+    }
+    void InstrumentView::showNotes (bool on)
+    {
+        strumBar->notesOpen = on;
+        strumBar->repaint();
+        notesStrip->setVisible (on);
+        if (on) { notesStrip->toFront (false); notesStrip->update(); }
     }
 }

@@ -1855,7 +1855,10 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         {
             if (heldMelodicCount > 0) { const int c = chordFromHeldNotes(); if (c >= 0) lastHeldChord = c; }
             strings = lastHeldChord >= 0 ? lastHeldChord : chords::index (juce::roundToInt (param (apvts, "keyRoot")), param (apvts, "keyMode") > 0.5f ? 1 : 0);
+            // NOTES panel: the player picked the notes for the strings
+            if (const int pick = stringsPick.load(); chords::isValid (pick)) strings = pick;
         }
+        stringsNow.store (strings);
         updateTones (strings, transpose, range);
     }
     activeChord.store (previewing ? -1 : chord);   // a preview does not light a chord button
@@ -2738,6 +2741,7 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
     auto state = apvts.copyState();
     state.setProperty ("uiWidth2", editorWidth.load(), nullptr);   // 2 = the compact window (1156 wide at 100 %)
     state.setProperty ("keysV2", 1, nullptr);
+    state.setProperty ("stringsPick", stringsPick.load(), nullptr);
     state.setProperty ("captureMode", captureMode.load(), nullptr);
     state.setProperty ("captureQuant", captureQuant.load(), nullptr);
     state.setProperty ("gateMask", (juce::int64) gateMask.load(), nullptr);
@@ -2884,6 +2888,7 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
             const auto presetKey = state.getProperty ("preset").toString();
             const bool presetModified = (bool) state.getProperty ("presetModified", false);
             apvts.replaceState (state);
+            stringsPick.store ((int) state.getProperty ("stringsPick", -1));
             if (! state.hasProperty ("keysV2"))   // older sessions: keys play single notes now (Split made some keys strum)
                 if (auto* kp = apvts.getParameter ("keysPlay")) kp->setValueNotifyingHost (kp->convertTo0to1 (0.0f));
             presetManager->restoreCurrent (presetKey, presetModified);

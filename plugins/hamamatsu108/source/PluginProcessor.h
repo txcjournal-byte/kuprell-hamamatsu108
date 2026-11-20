@@ -104,6 +104,8 @@ public:
     // MOTION is on and plays a pattern (GRID / LINES / RHYTHM / STRINGS, not PLATE)
     bool motionActive() const { return *apvts.getRawParameterValue ("gridOn") > 0.5f && juce::roundToInt (apvts.getRawParameterValue ("motionType")->load()) != 4; }
     // hear the chord once: one bar of the MOTION pattern if MOTION is on, otherwise one stroke
+    // the chord on the strings right now, and the player's own pick of notes for them (-1 = follow the keys)
+    std::atomic<int> stringsNow { -1 }, stringsPick { -1 };
     void audition() { if (motionActive()) { auditionBar.store (true); } else pendingStrum.store (1); }
     std::atomic<bool> auditionBar { false };
 

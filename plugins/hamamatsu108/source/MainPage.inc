@@ -343,6 +343,8 @@
     public:
         explicit StrumBar (Hamamatsu108Processor& p) : processor (p) {}
         std::function<void (const juce::String&, const juce::String&)> onStatus;
+        std::function<void (bool)> onNotes;
+        bool notesOpen = false;
 
         void update()
         {
@@ -359,13 +361,20 @@
             const char* names[] = { "Arp", "Gate", "Flourish" };
             const bool st[] = { arpOn(), gateOn(), flourishOn() };
             for (int i = 0; i < 3; ++i) chip (g, button (i), names[i], st[i], true);
+            chip (g, notesChip(), "Notes", notesOpen, true);
             for (int i = 0; i < numMoves; ++i) chip (g, moveChip (i), moveNames()[i], plain (processor.apvts, moveIds()[i]) > 0.5f, true);
         }
 
         void mouseDown (const juce::MouseEvent& e) override
         {
             auto& s = processor.apvts;
-            if (button (0).contains (e.position))
+            if (notesChip().contains (e.position))
+            {
+                notesOpen = ! notesOpen;
+                if (onNotes) onNotes (notesOpen);
+                if (onStatus) onStatus ("Notes", notesOpen ? "click a note to add it or take it out, right-click = root" : "off");
+            }
+            else if (button (0).contains (e.position))
             {
                 const bool on = ! arpOn();
                 setParam (s, "strumMode", on ? 1.0f : 3.0f);
@@ -440,6 +449,7 @@
             g.drawText (text, tr, juce::Justification::centred, false);
         }
         juce::Rectangle<float> button (int i) const { const float w[] = { 52.0f, 56.0f, 78.0f }, x[] = { 62.0f, 118.0f, 178.0f }; return { x[i], 2.0f, w[i], (float) getHeight() - 4.0f }; }
+        juce::Rectangle<float> notesChip() const { return { 270.0f, 2.0f, 64.0f, (float) getHeight() - 4.0f }; }
         juce::Rectangle<float> moveChip (int i) const
         {
             float x = (float) getWidth();
@@ -531,4 +541,127 @@
         juce::String id, title;
         std::unique_ptr<Knob> rate, depth;
         int lastSig = -1;
+    };
+
+    //==========================================================================
+    // NOTES: a strip at the bottom of the strum window. The chord on the strings, every note around it:
+    // click to add or take out a note (the strum plays it at once), right-click = root.
+    class NotesStrip : public juce::Component
+    {
+    public:
+        explicit NotesStrip (Hamamatsu108Processor& p) : processor (p) {}
+        std::function<void (const juce::String&, const juce::String&)> onStatus;
+
+        void update()
+        {
+            const int sig = processor.stringsNow.load() * 2 + (processor.stringsPick.load() >= 0 ? 1 : 0);
+            if (sig != lastSig) { lastSig = sig; repaint(); }
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat();
+            g.setColour (juce::Colour (0xf20a0f0c));
+            g.fillRect (r);
+            g.setColour (page::phosphorDim().withAlpha (0.6f));
+            g.fillRect (r.withHeight (1.0f));
+            const int chord = processor.stringsNow.load();
+            const int mask = chord >= 0 ? chords::pitchClassMask (chord) : 0;
+            const int root = chord >= 0 ? chords::rootOf (chord) : -1;
+            const int key = chords::scaleMask (juce::roundToInt (plain (processor.apvts, "keyRoot")), plain (processor.apvts, "keyMode") > 0.5f);
+
+            g.setFont (LookAndFeel::monoFont (20.0f));
+            page::phosphorText (g, chords::shortName (chord), juce::Rectangle<float> (14.0f, 0.0f, 120.0f, r.getHeight() - 10.0f), juce::Justification::centredLeft, page::phosphor());
+            g.setFont (LookAndFeel::monoFont (9.5f));
+            g.setColour (page::phosphorDim());
+            g.drawText (processor.stringsPick.load() >= 0 ? "your pick" : "from your keys", juce::Rectangle<float> (14.0f, r.getHeight() - 16.0f, 120.0f, 12.0f), juce::Justification::centredLeft, false);
+
+            for (int i = 0; i < 12; ++i)
+            {
+                auto c = cell (i);
+                const int pc = i;   // fixed C..B, so a note stays where it is while you edit
+                const bool on = (mask >> pc) & 1, inKey = (key >> pc) & 1;
+                if (on) { g.setColour (page::phosphor()); g.fillRect (c); }
+                else    { g.setColour (inKey ? juce::Colour (0xff17241d) : juce::Colour (0xff0f1512)); g.fillRect (c); }
+                g.setFont (LookAndFeel::monoFont (13.0f));
+                g.setColour (on ? juce::Colour (0xff07120c) : inKey ? page::phosphor().withAlpha (0.75f) : page::phosphorDim());
+                g.drawText (chords::rootName (pc), c, juce::Justification::centred, false);
+                if (pc == root) { g.setColour (on ? juce::Colour (0xff07120c) : page::phosphor()); g.fillRect (c.getX() + 8.0f, c.getBottom() - 4.0f, c.getWidth() - 16.0f, 2.0f); }
+            }
+            const char* acts[] = { "Strum", "Another", "Keys" };
+            for (int i = 0; i < 3; ++i)
+            {
+                auto b = action (i);
+                g.setColour (page::phosphorDim());
+                g.drawRect (b, 1.0f);
+                g.setFont (LookAndFeel::uiFont (11.0f));
+                g.setColour (page::phosphor());
+                g.drawText (acts[i], b, juce::Justification::centred, false);
+            }
+        }
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            const int chord = processor.stringsNow.load();
+            if (chord < 0) return;
+            int mask = chords::pitchClassMask (chord), root = chords::rootOf (chord);
+            for (int i = 0; i < 12; ++i)
+                if (cell (i).contains (e.position))
+                {
+                    const int pc = i;
+                    if (e.mods.isPopupMenu()) { mask |= 1 << pc; root = pc; }
+                    else if ((mask >> pc) & 1)
+                    {
+                        if (juce::countNumberOfBits ((uint32_t) mask) <= 2) return;   // a strum needs two notes at least
+                        mask &= ~(1 << pc);
+                        if (pc == root) for (int k = 1; k < 12; ++k) if ((mask >> ((root + k) % 12)) & 1) { root = (root + k) % 12; break; }
+                    }
+                    else mask |= 1 << pc;
+                    pick (root, mask);
+                    return;
+                }
+            if (action (0).contains (e.position)) processor.strumNow (true);
+            else if (action (1).contains (e.position))
+            {
+                // another colour: one note (not the root) moves to a free note of the key
+                const int key = chords::scaleMask (juce::roundToInt (plain (processor.apvts, "keyRoot")), plain (processor.apvts, "keyMode") > 0.5f);
+                std::vector<int> out, in;
+                for (int pc = 0; pc < 12; ++pc)
+                {
+                    if (((mask >> pc) & 1) && pc != root) out.push_back (pc);
+                    if (! ((mask >> pc) & 1) && ((key >> pc) & 1)) in.push_back (pc);
+                }
+                if (out.empty() || in.empty()) return;
+                mask &= ~(1 << out[(size_t) rnd.nextInt ((int) out.size())]);
+                mask |= 1 << in[(size_t) rnd.nextInt ((int) in.size())];
+                pick (root, mask);
+            }
+            else if (action (2).contains (e.position))
+            {
+                processor.stringsPick.store (-1);
+                if (onStatus) onStatus ("Notes", "the strings follow your keys again");
+                repaint();
+            }
+        }
+
+    private:
+        void pick (int root, int mask)
+        {
+            int rel = 0;
+            for (int i = 0; i < 12; ++i) if ((mask >> ((root + i) % 12)) & 1) rel |= 1 << i;
+            int chord = chords::customOf (root, rel);
+            for (int t = 0; t < chords::numTypes; ++t)
+                if (chords::pitchClassMask (chords::index (root, t)) == mask) { chord = chords::index (root, t); break; }
+            processor.stringsPick.store (chord);
+            processor.stringsNow.store (chord);
+            processor.strumNow (true);   // hear it at once
+            if (onStatus) onStatus ("Notes", chords::shortName (chord));
+            repaint();
+        }
+        juce::Rectangle<float> cell (int i) const { return { 150.0f + (float) i * 46.0f, 8.0f, 42.0f, (float) getHeight() - 16.0f }; }
+        juce::Rectangle<float> action (int i) const { return { (float) getWidth() - 3.0f * 78.0f + (float) i * 78.0f - 8.0f, 10.0f, 72.0f, (float) getHeight() - 20.0f }; }
+
+        Hamamatsu108Processor& processor;
+        juce::Random rnd;
+        int lastSig = -99;
     };
