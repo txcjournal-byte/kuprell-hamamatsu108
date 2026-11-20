@@ -1,4 +1,4 @@
-# Kuprell Hamamatsu 144: Windows build (VST3 + Standalone) + installer, published as a GitHub Release.
+# Harpology: Windows build (VST3 + Standalone) + installer, published as a GitHub Release.
 name: build
 on:
   push:
@@ -23,9 +23,9 @@ jobs:
         run: |
           $r = "build/plugins/hamamatsu108/Hamamatsu108_artefacts/Release"
           New-Item -ItemType Directory -Force -Path pkg | Out-Null
-          Copy-Item -Recurse "$r/VST3/Hamamatsu 144.vst3" pkg/
-          Copy-Item "$r/Standalone/Hamamatsu 144.exe" pkg/
-          Compress-Archive -Path pkg/* -DestinationPath Kuprell-Hamamatsu144-Windows.zip -Force
+          Copy-Item -Recurse "$r/VST3/Harpology.vst3" pkg/
+          Copy-Item "$r/Standalone/Harpology.exe" pkg/
+          Compress-Archive -Path pkg/* -DestinationPath Harpology-Windows.zip -Force
           if (-not (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=0.2.${{ github.run_number }}" installer\Hamamatsu108_win.iss
           Copy-Item installer/Output/*.exe .
@@ -33,11 +33,11 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v0.2.${{ github.run_number }}
-          name: Kuprell Hamamatsu 144 v0.2.${{ github.run_number }}
+          name: Harpology v0.2.${{ github.run_number }}
           prerelease: true
           body: |
             Test build from commit ${{ github.sha }}.
-            Install: run Kuprell_Hamamatsu144_*_Windows.exe, then rescan plugins in FL Studio.
+            Install: run Harpology_*_Windows.exe, then rescan plugins in FL Studio.
           files: |
-            Kuprell-Hamamatsu144-Windows.zip
-            Kuprell_Hamamatsu144_*_Windows.exe
+            Harpology-Windows.zip
+            Harpology_*_Windows.exe

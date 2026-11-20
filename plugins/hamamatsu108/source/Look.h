@@ -32,6 +32,18 @@ namespace hama::look
     // recessed area with an inner shadow
     inline void drawWell (juce::Graphics& g, juce::Rectangle<float> r, float radius)
     {
+        if (th().concrete)
+        {
+            // a cut into the concrete: flat dark void, one hard edge of shadow on top, one of light below
+            g.setColour (juce::Colour (0xff1d1d1c));
+            g.fillRect (r);
+            g.setColour (juce::Colour (0xff0e0e0d));
+            g.fillRect (r.withHeight (3.0f));
+            g.fillRect (r.withWidth (2.0f));
+            g.setColour (juce::Colour (0xff6f6d68));
+            g.fillRect (r.withTop (r.getBottom() - 1.0f));
+            return;
+        }
         g.setGradientFill (juce::ColourGradient (wellTop, r.getX(), r.getY(), wellBottom, r.getX(), r.getBottom(), false));
         g.fillRoundedRectangle (r, radius);
 

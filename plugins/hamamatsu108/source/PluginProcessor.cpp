@@ -66,6 +66,27 @@ const juce::StringArray& Hamamatsu108Processor::keysPlayNames()
     return n;
 }
 
+const juce::StringArray& Hamamatsu108Processor::switchNames()
+{
+    static const juce::StringArray n { "SPARKLE", "SUB", "SWELL", "FREEZE", "DRIVE", "CRUSH", "FILTER", "TAPE",
+                                       "DREAM", "WOBBLE", "WIDE", "DELAY", "REVERB", "SHIMMER", "HALFTIME", "HUMAN" };
+    return n;
+}
+
+const juce::StringArray& Hamamatsu108Processor::switchHelp()
+{
+    static const juce::StringArray n { "an octave above every note", "an octave below every note", "the strings swell in slowly",
+                                       "the strings ring on and on", "warm saturation", "lo-fi bits", "a low-pass that closes",
+                                       "worn tape", "a huge soft reverb", "pitch wobble", "a wider stereo image", "ping-pong delay",
+                                       "a big hall", "an octave-up shimmer tail", "MOTION plays at half speed", "loose timing and touch" };
+    return n;
+}
+
+float Hamamatsu108Processor::sw (int i) const
+{
+    return *apvts.getRawParameterValue ("sw" + juce::String (i) + "On") > 0.5f ? apvts.getRawParameterValue ("sw" + juce::String (i) + "Amt")->load() : 0.0f;
+}
+
 const juce::StringArray& Hamamatsu108Processor::strumZoneNames()
 {
     static const juce::StringArray n { "C0 (piano roll)", "C1", "C2", "C3", "Off" };
@@ -178,9 +199,9 @@ void Hamamatsu108Processor::updateModulation (int numSamples, bool hostPlaying, 
     src[mod::modWheel] = modWheel;
     src[mod::aftertouch] = aftertouch;
     src[mod::morph] = P ("morph");
-    src[mod::age] = P ("macroAge");
-    src[mod::dream] = P ("macroDream");
-    src[mod::wobble] = P ("macroWobble");
+    src[mod::age] = juce::jmin (1.0f, P ("macroAge") + sw (swTape));
+    src[mod::dream] = juce::jmin (1.0f, P ("macroDream") + sw (swDream));
+    src[mod::wobble] = juce::jmin (1.0f, P ("macroWobble") + sw (swWobble));
     for (size_t i = 0; i < src.size(); ++i) modSources[i].store (src[i]);
 
     modOffset.fill (0.0f);
@@ -433,7 +454,7 @@ void Hamamatsu108Processor::saveUserDefaults() const
     xml.setAttribute ("skin", skin.load());
     xml.setAttribute ("zoneOctave", zoneOctave.load());
     xml.setAttribute ("chordZones", chordZones.load());
-    xml.setAttribute ("version", 6);
+    xml.setAttribute ("version", 8);
     xml.setAttribute ("tuning", tuningA4.load());
     xml.setAttribute ("voices", maxVoices.load());
     xml.setAttribute ("mts", mtsEnabled.load());
@@ -450,7 +471,7 @@ void Hamamatsu108Processor::loadUserDefaults()
     {
         // from settings version 3 the default look is Graphite
         // from settings version 5 the default look is Ivory 84 (the 80s instrument)
-        skin.store (xml->getIntAttribute ("version", 1) >= 6 ? juce::jlimit (0, skins::numSkins - 1, xml->getIntAttribute ("skin", 12)) : 12);   // v6: Studio is the default
+        skin.store (xml->getIntAttribute ("version", 1) >= 8 ? juce::jlimit (0, skins::numSkins - 1, xml->getIntAttribute ("skin", 14)) : 14);   // v8: Concrete is the default
         zoneOctave.store (juce::jlimit (0, 3, xml->getIntAttribute ("zoneOctave", 1)));
         // from settings version 2 every key plays by default (chord zones are an option): piano-roll notes in
         // octave 2-3 used to fall into the zones and stay silent
@@ -589,6 +610,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     // STRUM KEYS: one octave of the keyboard plays hand gestures (any keyboard size: pick the octave you can reach)
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumZone", 1 }, "Strum Keys", strumZoneNames(), 0));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "motionGate", 1 }, "Motion Notes", StringArray { "Ring", "Long", "Medium", "Tight" }, 2));
+    // SWITCHES: 16 one-touch moves on the main page, each with its own amount
+    for (int i = 0; i < numSwitches; ++i)
+    {
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { "sw" + String (i) + "On", 1 }, switchNames()[i] + " On", false));
+        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "sw" + String (i) + "Amt", 1 }, switchNames()[i] + " Amount",
+                                                           NormalisableRange<float> (0.0f, 1.0f), 0.6f,
+                                                           AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return String (roundToInt (v * 100.0f)) + " %"; })));
+    }
 
     // step 3: arpeggio, dual, chord layer, bass, memory
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "arpPattern", 1 }, "Arp Pattern", arpPatternNames(), 0));
@@ -598,7 +627,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "gridOn", 1 }, "Motion", true));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "gridRate", 1 }, "Motion Rate", strumRateNames(), 4));
     layout.add (std::make_unique<AudioParameterInt> (ParameterID { "gridLen", 1 }, "Motion Steps", 2, 16, 16));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "motionType", 1 }, "Motion Type", juce::StringArray { "Grid", "Lines", "Rhythm", "Strings", "Plate" }, 0));   // the whole harp an octave down (bass) or up
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "motionType", 1 }, "Motion Type", juce::StringArray { "Grid", "Lines", "Rhythm", "Strings", "Plate" }, 4));
+    // STROKE switches (main page, combine freely): how a chord is strummed when you play it
+    for (auto* id : { "strokeDown", "strokeHalf", "strokeBounce", "strokeWaver", "strokeMiddle", "strokeSlow" })
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { id, 1 }, String (id).fromFirstOccurrenceOf ("stroke", false, false), false));   // the whole harp an octave down (bass) or up
     fl ("arpGate", "Arp Gate", 0.05f, 1.0f, 1.0f, pct);
     fl ("arpSwing", "Arp Swing", 0.0f, 1.0f, 0.0f, pct);
     fl ("arpVelScale", "Arp Dynamics", 0.0f, 1.0f, 1.0f, pct);
@@ -651,6 +683,7 @@ void Hamamatsu108Processor::prepareToPlay (double sampleRate, int samplesPerBloc
     setLatencySamples (limLook);
 
     for (auto& u : fxUnits) u.prepare (sampleRate, juce::jmax (32, samplesPerBlock));
+    for (auto& u : switchFx) u.prepare (sampleRate, juce::jmax (32, samplesPerBlock));
     modelChorusL.prepare ((int) (sampleRate * 0.03)); modelChorusR.prepare ((int) (sampleRate * 0.03));
     dreamReverb.prepare (sampleRate);
     dreamL.assign ((size_t) juce::jmax (32, samplesPerBlock), 0.0f);
@@ -950,7 +983,7 @@ prog::Settings Hamamatsu108Processor::progSettings()
     st.bpm = hostBpm.load() > 1.0 ? hostBpm.load() : 120.0;
     for (int i = 0; i < prog::gridSteps; ++i) st.gridCells[(size_t) i] = gridCells[(size_t) i].load();
     st.gridLen = juce::roundToInt (param (apvts, "gridLen"));
-    st.gridStepBeats = rateInQuarters (juce::roundToInt (param (apvts, "gridRate")));
+    st.gridStepBeats = rateInQuarters (juce::roundToInt (param (apvts, "gridRate"))) * (sw (swHalftime) > 0.0f ? 2.0 : 1.0);
     st.motionType = juce::roundToInt (param (apvts, "motionType"));
     for (int i = 0; i < prog::linePoints; ++i) st.line[(size_t) i] = motionLine[(size_t) i].load();
     for (int r = 0; r < prog::gridRows; ++r)
@@ -1022,6 +1055,12 @@ void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity, 
     }
     else
         visual = juce::jlimit (0, numStrings - 1, (note - 48) * (numStrings - 1) / 48);
+    // HUMAN: a little looseness in time and touch
+    if (const float h = sw (swHuman); h > 0.0f)
+    {
+        delay += humanRng.nextInt (juce::jmax (1, (int) (h * 0.025 * getSampleRate())));
+        velocity *= 1.0f - h * 0.35f * humanRng.nextFloat();
+    }
     events[(size_t) numEvents++] = { juce::jmax (0, delay), juce::jlimit (0, 127, note + 12 * juce::roundToInt (param (apvts, "harpOctave"))), juce::jlimit (0.05f, 1.0f, velocity), visual, record && ! eventsFromHost };
 }
 
@@ -1211,12 +1250,20 @@ void Hamamatsu108Processor::patternStep (int offset, juce::int64 k)
 
 void Hamamatsu108Processor::startVoice (int note, float velocity)
 {
-    if (! dualOn) { startHarp (voiceSettings, note, velocity); return; }
+    if (! dualOn) { startHarp (voiceSettings, note, velocity); startSwitchVoices (note, velocity); return; }
     // MORPH blends layer A and layer B (equal power)
     const float m = juce::jlimit (0.0f, 1.0f, morphNow);
     const float gA = std::cos (m * juce::MathConstants<float>::halfPi), gB = std::sin (m * juce::MathConstants<float>::halfPi);
     if (gA > 0.05f) startHarp (voiceSettings, note, velocity * gA);
     if (gB > 0.05f) startHarp (voiceSettings2, note, velocity * gB, true);
+    startSwitchVoices (note, velocity);
+}
+
+// SPARKLE / SUB: the same string an octave up / down, softer
+void Hamamatsu108Processor::startSwitchVoices (int note, float velocity)
+{
+    if (const float a = sw (swSparkle); a > 0.0f && note + 12 <= 120) startHarp (voiceSettings, note + 12, velocity * (0.25f + 0.45f * a));
+    if (const float a = sw (swSub); a > 0.0f && note - 12 >= 12) startHarp (voiceSettings, note - 12, velocity * (0.3f + 0.5f * a));
 }
 
 void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note, float velocity, bool layerB)
@@ -1582,13 +1629,15 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         updateModulation (numSamples, playing, pq);
     }
     const auto& model = modelSpec (juce::roundToInt (param (apvts, "model")));
-    const float age = param (apvts, "macroAge"), dream = param (apvts, "macroDream"), wobble = param (apvts, "macroWobble");
+    const float age = juce::jmin (1.0f, param (apvts, "macroAge") + sw (swTape)), dream = juce::jmin (1.0f, param (apvts, "macroDream") + sw (swDream)),
+                wobble = juce::jmin (1.0f, param (apvts, "macroWobble") + sw (swWobble));
     morphNow = mp ("morph");
     voiceSettings.model = (harp::Model) juce::roundToInt (param (apvts, "harpVoice"));
     voiceSettings.tone = juce::jlimit (0.0f, 1.0f, mp ("harpTone") * model.tone * (1.0f - 0.35f * age));
     voiceSettings.decay = mp ("harpDecay") * model.decay * (1.0f + 1.2f * dream);
-    voiceSettings.attack = param (apvts, "harpAttack");
-    voiceSettings.sustain = param (apvts, "harpSustain");
+    voiceSettings.attack = juce::jmin (3.0f, param (apvts, "harpAttack") + 1.6f * sw (swSwell) * sw (swSwell) + (sw (swSwell) > 0.0f ? 0.03f : 0.0f));
+    voiceSettings.sustain = juce::jmax (param (apvts, "harpSustain"), sw (swFreeze));
+    if (sw (swFreeze) > 0.0f) voiceSettings.decay *= 1.0f + 3.0f * sw (swFreeze);
     voiceSettings.shape = mp ("harpShape");
     voiceSettings.stereo = juce::jmin (1.5f, 2.0f * param (apvts, "spread"));
     // long ringing strings pile up under dense strum patterns: trim the harp bus a little for long decays
@@ -1840,7 +1889,32 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         if (h.strum == 2)
         {
             // left-hand chord: a soft down stroke so you hear what you picked
-            if (! lastProgPlaying && (param (apvts, "gridOn") < 0.5f || juce::roundToInt (param (apvts, "motionType")) == 4)) sweep (h.pos, true, 0, nt, juce::jlimit (0.2f, 0.9f, 0.3f + 0.6f * v), 1.2f);
+            if (! lastProgPlaying && (param (apvts, "gridOn") < 0.5f || juce::roundToInt (param (apvts, "motionType")) == 4))
+            {
+                const float vv = juce::jlimit (0.2f, 0.95f, 0.3f + 0.65f * v);
+                // the STROKE switches combine: DOWN, HALF, BOUNCE, WAVER, MIDDLE, HALF TIME
+                auto on = [this] (const char* id) { return param (apvts, id) > 0.5f; };
+                bool up = ! on ("strokeDown");
+                if (on ("strokeBounce")) { up = up == sideToSideUp; sideToSideUp = ! sideToSideUp; }   // every chord the other way
+                const float speed = on ("strokeSlow") ? 2.4f : 1.2f;                                    // HALF TIME: a slow, wide stroke
+                const int count = on ("strokeHalf") ? (nt + 1) / 2 : nt;
+                const int repeats = on ("strokeWaver") ? 6 : 1;
+                const int every = juce::jmax (64, (int) (60.0 / bpm / (on ("strokeSlow") ? 3.0 : 6.0) * sr));
+                for (int k = 0; k < repeats; ++k)
+                {
+                    const bool u = (k % 2) == 0 ? up : ! up;
+                    const float vk = vv * (1.0f - 0.12f * (float) k);
+                    const int at = h.pos + k * every;
+                    if (on ("strokeMiddle"))
+                    {
+                        const int mid = nt / 2;
+                        sweep (at, true, mid, juce::jmin (count, nt - mid), vk, speed);
+                        sweep (at, false, mid - 1, juce::jmin (count, mid), vk * 0.9f, speed);
+                    }
+                    else
+                        sweep (at, u, u ? 0 : nt - 1, count, vk, repeats > 1 ? 0.4f : speed);
+                }
+            }
             continue;
         }
         if (h.strum == 0)
@@ -2440,7 +2514,9 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     // FILTER (low-pass with resonance) and SATURATION on the whole instrument, before the FX chain
     {
-        const float cut = mp ("filterCutoff"), reso = mp ("filterReso"), drv = mp ("drive");
+        const float swF = sw (swFilter);
+        const float cut = mp ("filterCutoff") * std::pow (0.04f, swF), reso = juce::jmin (1.0f, mp ("filterReso") + 0.35f * swF),
+                    drv = juce::jmin (1.0f, mp ("drive") + 0.7f * sw (swDrive));
         const bool filt = cut < 19500.0f;
         if (filt || drv > 0.001f)
         {
@@ -2507,6 +2583,20 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         fxUnits[(size_t) i].process (type, a, b, mixv, left, right, numSamples, bpm);
     }
 
+    // SWITCH effects after the chain: CRUSH, DELAY, REVERB, SHIMMER
+    {
+        struct S { int sw, type; float a, b, mix; };
+        const S list[] = { { swCrush, 4, 0.0f, 0.5f, 1.0f }, { swDelay, 13, 0.55f, 0.4f, 0.38f }, { swReverb, 14, 0.8f, 0.5f, 0.5f }, { swShimmer, 15, 0.85f, 0.55f, 0.45f } };
+        for (int k = 0; k < 4; ++k)
+        {
+            const float amt = sw (list[k].sw);
+            if (amt <= 0.0f && ! switchFxActive[(size_t) k]) continue;
+            switchFxActive[(size_t) k] = amt > 0.0f;
+            const float a = list[k].sw == swCrush ? 0.25f + 0.7f * amt : list[k].a;
+            switchFx[(size_t) k].process (list[k].type, a, list[k].b, list[k].mix * amt, left, right, numSamples, bpm);
+        }
+    }
+
     // DREAM: a huge soft reverb on top
     if (dream > 0.001f)
     {
@@ -2520,7 +2610,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     PROBE (12, left);
     // master + soft limit + meters
     masterGain.setTargetValue (juce::Decibels::decibelsToGain (mp ("master")));
-    widthTarget = param (apvts, "width");
+    widthTarget = juce::jmin (2.0f, param (apvts, "width") + 0.9f * sw (swWide));
     polishNow = param (apvts, "polish");
     compAtt = 1.0f - std::exp (-1.0f / (0.012f * (float) sr));
     compRel = 1.0f - std::exp (-1.0f / (0.2f * (float) sr));

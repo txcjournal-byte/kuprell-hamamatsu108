@@ -15,6 +15,7 @@ namespace hama
         juce::Colour accent { 0xff3fe0d0 }, soft { 0xffa6f7ef }, deep { 0xff139488 };
         bool lcd = false;     // skin has backlit LCD screens (Graphite)
         bool lcdNow = false;  // the display being painted right now is one of those screens
+        bool concrete = false; // Concrete skin: flat surfaces, hard edges, light instead of colour
     };
     inline Theme& th() { static Theme t; return t; }
     // paints the displays inside it as backlit LCD screens (only on skins that have them)
@@ -43,6 +44,58 @@ namespace hama
         inline juce::Rectangle<int> deckArea()   { return { innerX, deckY, innerW, deckBottom - deckY }; }
     }
 
+    namespace page
+    {
+        // stage geometry of the main page
+        constexpr int x0 = geo::innerX, w0 = geo::innerW;
+        constexpr int bankY = 94, bankH = 20;
+        constexpr int presetY = bankY + bankH + 4, presetRows = 11, presetRowH = 13, presetH = presetRows * presetRowH + 8;
+        constexpr int switchY = presetY + presetH + 10, switchH = 58;
+        constexpr int strumY = switchY + switchH + 10, strumBarH = 22, strumH = 140;
+        constexpr int deckY2 = strumY + strumH + 8;
+        inline juce::Rectangle<int> bankArea()   { return { x0, bankY, w0, bankH + 4 + presetH }; }
+        inline juce::Rectangle<int> switchArea() { return { x0, switchY, w0, switchH }; }
+        inline juce::Rectangle<int> strumArea()  { return { x0, strumY, w0, strumH }; }
+        inline juce::Rectangle<int> strumBar()   { return { x0 + 10, strumY + 6, w0 - 20, strumBarH }; }
+        inline juce::Rectangle<int> motionCtl()  { return { x0 + 10, strumY + 8 + strumBarH, 124, 128 }; }
+        inline juce::Rectangle<int> motionWin()  { return { x0 + 142, strumY + 8 + strumBarH, w0 - 152, strumH - strumBarH - 14 }; }
+        inline juce::Rectangle<int> deckArea2()  { return { x0, deckY2, w0, geo::deckBottom - deckY2 }; }
+        inline juce::Colour led() { return juce::Colour (0xffc8321e); }
+        inline juce::Colour lit() { return juce::Colour (0xffe8e6df); }      // something in the light: chosen, on
+        inline juce::Colour litInk() { return juce::Colour (0xff1f1e1c); }   // text on a lit block
+        inline juce::Colour onSlab() { return juce::Colour (0xffd8d5cd); }   // text straight on the concrete
+        // phosphor screens set into the concrete (old green CRT)
+        inline juce::Colour phosphor()    { return juce::Colour (0xff74f5b8); }
+        inline juce::Colour phosphorDim() { return juce::Colour (0xff2c7a58); }
+        inline void paintScreen (juce::Graphics& g, juce::Rectangle<float> r)
+        {
+            g.setColour (juce::Colour (0xff1d1d1c));             // the cut in the concrete
+            g.fillRect (r);
+            const auto s = r.reduced (4.0f);
+            g.setColour (juce::Colour (0xff03100b));
+            g.fillRect (s);
+            g.setColour (juce::Colour (0xff0b2a1d));               // the graticule
+            for (float x = s.getX() + 24.0f; x < s.getRight(); x += 24.0f) g.fillRect (x, s.getY(), 1.0f, s.getHeight());
+            for (float y = s.getY() + 24.0f; y < s.getBottom(); y += 24.0f) g.fillRect (s.getX(), y, s.getWidth(), 1.0f);
+            g.setColour (juce::Colours::black.withAlpha (0.22f)); // scan lines
+            for (float y = s.getY(); y < s.getBottom(); y += 3.0f) g.fillRect (s.getX(), y, s.getWidth(), 1.0f);
+            juce::ColourGradient tube (juce::Colours::transparentBlack, s.getCentreX(), s.getCentreY(), juce::Colours::black.withAlpha (0.45f), s.getX(), s.getY(), true);
+            g.setGradientFill (tube);                               // the curved glass falls off at the edges
+            g.fillRect (s);
+        }
+        // phosphor text: the trace, and its faint bloom
+        inline void phosphorText (juce::Graphics& g, const juce::String& t, juce::Rectangle<float> r, juce::Justification j, juce::Colour c)
+        {
+            g.setColour (c.withAlpha (0.22f));
+            g.drawText (t, r.translated (0.0f, 1.0f).expanded (0.5f, 0.0f), j, true);
+            g.setColour (c);
+            g.drawText (t, r, j, true);
+        }
+        inline juce::Colour ink() { return juce::Colour (0xffd6d3cb); }
+        inline juce::Colour dim() { return juce::Colour (0xff8b8882); }
+    }
+
+
     class ChordPad;
     class StrumPlate;
     class VoiceModule;
@@ -56,6 +109,10 @@ namespace hama
     class MotionControls;
     class DeckSlider;
     class RearChoice;
+    class BankPresets;
+    class SwitchRow;
+    class StrumBar;
+    class LfoPanel;
 
     class InstrumentView : public juce::Component, private juce::Timer
     {
@@ -94,6 +151,12 @@ namespace hama
         juce::OwnedArray<DeckSlider> deckSliders;
         juce::Array<juce::Rectangle<int>> groupBounds;
         int currentSkin = -1;
+        std::unique_ptr<BankPresets> bankPresets;
+        std::unique_ptr<SwitchRow> switches;
+        std::unique_ptr<StrumBar> strumBar;
+        std::unique_ptr<LfoPanel> lfo1, lfo2;
+        juce::OwnedArray<DeckSlider> mainSliders;
+        juce::OwnedArray<kuprell::Knob> mainKnobs;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (InstrumentView)
     };

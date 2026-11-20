@@ -45,7 +45,7 @@ public:
     int typeZoneHigh() const { return rootZoneLow() + 20; }
 
     //== Settings (saved with the project and as the user's defaults)
-    std::atomic<int> skin { 12 };   // Studio
+    std::atomic<int> skin { 14 };   // Concrete
     std::atomic<float> tuningA4 { 440.0f };
     std::atomic<int> maxVoices { 64 };
     std::atomic<bool> mtsEnabled { true };
@@ -149,6 +149,12 @@ public:
     static const juce::StringArray& strumPatternNames();
     static const juce::StringArray& keysPlayNames();
     static const juce::StringArray& strumZoneNames();
+    // SWITCHES on the main page
+    static constexpr int numSwitches = 16;
+    enum { swSparkle, swSub, swSwell, swFreeze, swDrive, swCrush, swFilter, swTape, swDream, swWobble, swWide, swDelay, swReverb, swShimmer, swHalftime, swHuman };
+    static const juce::StringArray& switchNames();
+    static const juce::StringArray& switchHelp();
+    float sw (int i) const;   // amount of a switch, 0 when it is off
     static const juce::StringArray& strumGestureNames();
     static const char* strumPatternSteps (int index);   // one bar, 1/16 per step (see stroke())
     static const juce::StringArray& strumRateNames();
@@ -333,6 +339,10 @@ private:
     // model, FX, modulation
     juce::AudioBuffer<float> work;
     std::array<fx::FxUnit, fx::numSlots> fxUnits;
+    std::array<fx::FxUnit, 4> switchFx;   // CRUSH, DELAY, REVERB, SHIMMER switches
+    std::array<bool, 4> switchFxActive {};
+    juce::Random humanRng;
+    void startSwitchVoices (int note, float velocity);
     hama::FdnReverb dreamReverb;
     std::vector<float> dreamL, dreamR;
     juce::SmoothedValue<float> masterGain;
@@ -359,6 +369,7 @@ private:
     int motionKeysHeld = 0, motionOneShot = 0, tremoloLeft = 0;
     bool motionRestart = false, tremoloHeld = false, tremoloUp = true, dampNow = false;
     float tremoloVel = 0.8f;
+    bool sideToSideUp = true;
     float widthNow = 1.0f, widthTarget = 1.0f, sideLow = 0.0f, sideLowCoef = 0.02f;
     float polishNow = 0.4f, compEnv = 0.0f, compAtt = 0.01f, compRel = 0.001f, airLpL = 0.0f, airLpR = 0.0f, airCoef = 0.5f;
     // harp bus modulation (filter / volume / pan / pitch), smoothed per sample

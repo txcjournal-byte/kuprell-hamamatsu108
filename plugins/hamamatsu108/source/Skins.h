@@ -21,6 +21,8 @@ namespace skins
     #define ACC_DEEP 0xff0bb8b3   // the same teal, only dimmer
    #endif
     inline Accent amber()     { return { juce::Colour (0xffffa53c), juce::Colour (0xffffd59a), juce::Colour (0xffd9781e) }; }   // 80s amber display light
+    inline Accent concreteLight() { return { juce::Colour (0xffe8e6df), juce::Colour (0xffffffff), juce::Colour (0xff9c9a94) }; }
+    inline Accent nightViolet() { return { juce::Colour (0xffe8823a), juce::Colour (0xfff4cfa6), juce::Colour (0xffa4521f) }; }   // orange haze
     inline Accent studioAmber() { return { juce::Colour (0xffe2a35a), juce::Colour (0xfff2d2a6), juce::Colour (0xffa9733a) }; }   // calm amber, not neon
     inline Accent mint()      { return { juce::Colour (ACC_MAIN), juce::Colour (ACC_SOFT), juce::Colour (ACC_DEEP) }; }   // bright backlight
 
@@ -44,7 +46,7 @@ namespace skins
         bool lcd = false;                     // Graphite: light LCD displays
     };
 
-    constexpr int numSkins = 13;
+    constexpr int numSkins = 15;
     inline const std::array<Skin, numSkins>& all()
     {
         using C = juce::Colour;
@@ -90,7 +92,16 @@ namespace skins
             // Studio (default): matte graphite, anodised cheeks, one restrained amber light. Calm, professional, the sound in front.
             { "Studio", C (0xff2e3034), C (0xff26282b), C (0xff1f2124), Cheek::flat, C (0xff18191b), C (0xff0f1011), Pattern::none, Grille::holes,
               C (0xff2a2c30), C (0xff1c1d20), C (0xff2c2e32), C (0xff26282c), C (0xff202226), C (0xff1b1c1f), C (0xff111214), C (0xff8e939b),
-              "", C (0x00000000), C (0x00000000), "ELECTRONIC STRUM HARP", studioAmber() }
+              "", C (0x00000000), C (0x00000000), "ELECTRONIC STRUM HARP", studioAmber() },
+            // Night City (default, Harpology): blue-black night, one violet light, red LEDs. Quiet, cinematic, no glow everywhere.
+            // Dust (default, Harpology): a city in orange haze. Dusty brown metal, sand text, burnt-orange light.
+            { "Dust", C (0xff2e2219), C (0xff251b14), C (0xff1c140f), Cheek::flat, C (0xff241a13), C (0xff140e0a), Pattern::none, Grille::holes,
+              C (0xff2a1f17), C (0xff1f1712), C (0xff2c2119), C (0xff261c15), C (0xff201712), C (0xff1b130e), C (0xff110c08), C (0xffb39a7e),
+              "", C (0x00000000), C (0x00000000), "FUTURISTIC STRUM HARP", nightViolet() },
+            // Concrete (default, Harpology): raw cast concrete, one shaft of light. Active = lit, not coloured.
+            { "Concrete", C (0xff6a6864), C (0xff5e5d5a), C (0xff4f4e4b), Cheek::flat, C (0xff3a3937), C (0xff30302e), Pattern::none, Grille::holes,
+              C (0xff5b5a57), C (0xff4c4b48), C (0xff5e5d5a), C (0xff565552), C (0xff4d4c49), C (0xff45443f), C (0xff30302e), C (0xff2a2927),
+              "", C (0x00000000), C (0x00000000), "STRUM HARP", concreteLight() }
         }};
         return s;
     }

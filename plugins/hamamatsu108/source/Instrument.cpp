@@ -73,6 +73,12 @@ namespace hama
             juce::ColourGradient desk (juce::Colour (0xff3a4048), bounds.getCentreX(), bounds.getHeight() * 0.22f,
                                        juce::Colour (0xff0b0c0e), bounds.getCentreX(), bounds.getHeight() * 1.25f, true);
             desk.addColour (0.48, juce::Colour (0xff1c2025));
+            if (juce::String (skins::get (skin).name) == "Dust" && false)   // the instrument stands in orange haze
+            {
+                desk = juce::ColourGradient (juce::Colour (0xffb8622a), bounds.getCentreX(), bounds.getHeight() * 0.1f,
+                                             juce::Colour (0xff1a0e07), bounds.getCentreX(), bounds.getHeight() * 1.2f, true);
+                desk.addColour (0.5, juce::Colour (0xff5a3018));
+            }
             if (paintDesk())
             {
                 g.setGradientFill (desk);
@@ -89,17 +95,88 @@ namespace hama
             g.setGradientFill (shadow);
             g.fillEllipse ((float) bodyX + 20.0f, bottom - 30.0f, (float) bodyW - 40.0f, 80.0f);
 
+            if (juce::String (skins::get (skin).name) == "Concrete")
+            {
+                paintConcrete (g, bounds);
+                paintRear (g);
+                drawWell (g, page::strumArea().toFloat(), 0.0f);
+                drawWell (g, page::deckArea2().toFloat().expanded (0.0f, 2.0f), 0.0f);
+                return;
+            }
             paintCheek (g, { (float) bodyX, (float) bodyY, (float) cheekW, (float) panelH }, true);
             paintCheek (g, { (float) (bodyX + bodyW - cheekW), (float) bodyY, (float) cheekW, (float) panelH }, false);
             paintPanel (g, { (float) (bodyX + cheekW), (float) bodyY, (float) (bodyW - 2 * cheekW), (float) panelH });
             paintFront (g, { (float) bodyX, (float) (bodyY + panelH), (float) bodyW, (float) frontH });
 
             paintRear (g);
-            paintLabels (g);
-            drawWell (g, padArea().toFloat().withHeight (128.0f), 16.0f);
-            drawWell (g, plateArea().toFloat().withHeight (128.0f), 14.0f);
-            drawWell (g, moduleArea().toFloat(), 16.0f);
-            paintDeck (g);
+            // HARPOLOGY main page: quiet wells, small engraved titles
+            drawWell (g, page::strumArea().toFloat(), 14.0f);
+            drawWell (g, page::deckArea2().toFloat().expanded (0.0f, 2.0f), 12.0f);
+
+        }
+
+        // CONCRETE: one cast slab in a dark hall, cut by a single hard shaft of light
+        void paintConcrete (juce::Graphics& g, juce::Rectangle<float> bounds)
+        {
+            using namespace geo;
+            g.fillAll (juce::Colour (0xff141413));
+            // the shaft in the hall behind the slab (a hard-edged wedge, no blur)
+            {
+                juce::Path wedge;
+                wedge.startNewSubPath (bounds.getWidth() * 0.58f, 0.0f);
+                wedge.lineTo (bounds.getWidth() * 0.80f, 0.0f);
+                wedge.lineTo (bounds.getWidth() * 0.46f, bounds.getBottom());
+                wedge.lineTo (bounds.getWidth() * 0.12f, bounds.getBottom());
+                wedge.closeSubPath();
+                g.setColour (juce::Colour (0xff2a2a28));
+                g.fillPath (wedge);
+            }
+            const juce::Rectangle<float> slab ((float) bodyX, (float) bodyY, (float) bodyW, (float) (panelH + frontH));
+            // drop shadow: one hard offset block, like a heavy object on the floor
+            g.setColour (juce::Colours::black.withAlpha (0.55f));
+            g.fillRect (slab.translated (10.0f, 12.0f));
+            g.setColour (juce::Colour (0xff595854));
+            g.fillRect (slab);
+            // cast concrete: fine grain and the odd pore, fixed seed so it never changes
+            {
+                juce::Random rnd (2049);
+                for (int i = 0; i < 26000; ++i)
+                {
+                    const float x = slab.getX() + rnd.nextFloat() * slab.getWidth(), y = slab.getY() + rnd.nextFloat() * slab.getHeight();
+                    const bool dark = rnd.nextBool();
+                    g.setColour ((dark ? juce::Colours::black : juce::Colours::white).withAlpha (0.02f + rnd.nextFloat() * 0.05f));
+                    g.fillRect (x, y, 1.0f, 1.0f);
+                }
+                for (int i = 0; i < 260; ++i)
+                {
+                    const float x = slab.getX() + rnd.nextFloat() * slab.getWidth(), y = slab.getY() + rnd.nextFloat() * slab.getHeight();
+                    const float d = 1.0f + rnd.nextFloat() * 2.2f;
+                    g.setColour (juce::Colours::black.withAlpha (0.18f + rnd.nextFloat() * 0.2f));
+                    g.fillEllipse (x, y, d, d);
+                }
+                // formwork joints: the slab was cast in panels
+                g.setColour (juce::Colours::black.withAlpha (0.22f));
+                for (float x = slab.getX() + 280.0f; x < slab.getRight() - 40.0f; x += 280.0f) g.fillRect (x, slab.getY(), 1.0f, slab.getHeight());
+                g.fillRect (slab.getX(), slab.getY() + 300.0f, slab.getWidth(), 1.0f);
+            }
+            // the light falls across the slab: the same wedge, lighter where it hits
+            {
+                juce::Graphics::ScopedSaveState save (g);
+                g.reduceClipRegion (slab.toNearestInt());
+                juce::Path lit;
+                lit.startNewSubPath (bounds.getWidth() * 0.58f, 0.0f);
+                lit.lineTo (bounds.getWidth() * 0.80f, 0.0f);
+                lit.lineTo (bounds.getWidth() * 0.46f, bounds.getBottom());
+                lit.lineTo (bounds.getWidth() * 0.12f, bounds.getBottom());
+                lit.closeSubPath();
+                g.setColour (juce::Colour (0xffe8e6df).withAlpha (0.13f));
+                g.fillPath (lit);
+            }
+            // hard edges: light on top, shadow at the bottom
+            g.setColour (juce::Colour (0xff8a8883));
+            g.fillRect (slab.withHeight (2.0f));
+            g.setColour (juce::Colour (0xff2c2b29));
+            g.fillRect (slab.withTop (slab.getBottom() - 3.0f));
         }
 
         void paintCheek (juce::Graphics& g, juce::Rectangle<float> r, bool left)
@@ -239,13 +316,10 @@ namespace hama
             const auto& sk = skins::get (skin);
             // logo (approved SVG, drawn as vector, never altered) and engraved model line
             const float tx = (float) innerX + 6.0f;
-            auto* lg = (sk.panelMid.getPerceivedBrightness() > 0.6f && logoInk != nullptr) ? logoInk.get() : logo.get();
-            if (lg != nullptr)
-            {
-                const auto lb = lg->getDrawableBounds();
-                const float h = 22.0f, w = lb.getHeight() > 0 ? lb.getWidth() * h / lb.getHeight() : 96.0f;
-                lg->drawWithin (g, { tx, (float) rearY + 8.0f, w, h }, juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yTop, 1.0f);
-            }
+            // product wordmark (the company mark joins when the brand is settled)
+            g.setFont (juce::Font (juce::FontOptions (26.0f, juce::Font::bold)).withExtraKerningFactor (0.06f));
+            g.setColour (th().concrete ? juce::Colour (0xffeceae4) : sk.panelMid.getPerceivedBrightness() > 0.6f ? juce::Colour (0xff1c1d22) : juce::Colour (0xfff1e2cc));
+            g.drawText ("Harpology", juce::Rectangle<float> (tx - 1.0f, (float) rearY + 4.0f, 200.0f, 30.0f), juce::Justification::centredLeft, false);
             g.setFont (spaced (11.0f, false, 0.45f));
             g.setColour (sk.engrave);
             if (juce::String (sk.edition).isNotEmpty())
@@ -263,7 +337,8 @@ namespace hama
                 g.drawText (badgeText, badge, juce::Justification::centred, false);
             }
             else
-            g.drawText ("HAMAMATSU 144", juce::Rectangle<float> (tx, (float) rearY + 36.0f, 240.0f, 14.0f), juce::Justification::centredLeft, false);
+            if (th().concrete) { g.setFont (LookAndFeel::uiFont (11.0f, false)); g.setColour (juce::Colour (0xffcfccc4)); }
+            g.drawText (th().concrete ? "Strum harp" : "STRUM HARP", juce::Rectangle<float> (tx, (float) rearY + 36.0f, 180.0f, 14.0f), juce::Justification::centredLeft, false);
 
 
 
@@ -1601,6 +1676,7 @@ namespace hama
             setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
         }
         std::function<void (const juce::String&, const juce::String&)> onInteract;
+        juce::Colour capColour { juce::Colours::transparentBlack };
 
         juce::Rectangle<float> track() const { return getLocalBounds().toFloat().withTrimmedTop (4.0f).withTrimmedBottom (26.0f).withSizeKeepingCentre (6.0f, (float) getHeight() - 30.0f); }
 
@@ -1615,7 +1691,10 @@ namespace hama
             auto cap = juce::Rectangle<float> (20.0f, 9.0f).withCentre ({ t.getCentreX(), t.getBottom() - t.getHeight() * v });
             g.setColour (juce::Colours::black.withAlpha (0.4f));
             g.fillRoundedRectangle (cap.translated (0.0f, 1.5f), 2.5f);
-            g.setGradientFill (juce::ColourGradient (juce::Colour (0xfff2f4f6), 0.0f, cap.getY(), juce::Colour (0xff9aa1a9), 0.0f, cap.getBottom(), false));
+            if (capColour.isTransparent())
+                g.setGradientFill (juce::ColourGradient (juce::Colour (0xfff2f4f6), 0.0f, cap.getY(), juce::Colour (0xff9aa1a9), 0.0f, cap.getBottom(), false));
+            else   // colour-coded cap, like the lever sliders of an 80s polysynth
+                g.setGradientFill (juce::ColourGradient (capColour.brighter (0.25f), 0.0f, cap.getY(), capColour.darker (0.35f), 0.0f, cap.getBottom(), false));
             g.fillRoundedRectangle (cap, 2.5f);
             g.setColour (th().lcd ? juce::Colour (0xff3a4048) : th().deep);
             g.fillRect (cap.withSizeKeepingCentre (14.0f, 1.5f));
@@ -2100,12 +2179,19 @@ namespace hama
     class MotionGrid : public juce::Component, public juce::SettableTooltipClient
     {
     public:
+        bool plateOnly = false;   // main page: the window is only the strum plate
+        float phase = 0.0f;       // the scope trace moves
+        int curType() const { return plateOnly ? 4 : juce::roundToInt (plain (processor.apvts, "motionType")); }
         explicit MotionGrid (Hamamatsu108Processor& p) : processor (p)
         {
             setTooltip ("MOTION: click or drag to light cells. Rows = strings of the chord (low to high), columns = steps. Hold a chord and it plays.");
         }
 
-        juce::Rectangle<float> gridArea() const { return getLocalBounds().toFloat().reduced (12.0f, 8.0f).withTrimmedLeft (34.0f).withTrimmedTop (16.0f); }
+        juce::Rectangle<float> gridArea() const
+        {
+            if (plateOnly) return getLocalBounds().toFloat().reduced (18.0f, 10.0f).withTrimmedTop (14.0f);
+            return getLocalBounds().toFloat().reduced (12.0f, 8.0f).withTrimmedLeft (34.0f).withTrimmedTop (16.0f);
+        }
         juce::Rectangle<float> cell (int row, int step) const
         {
             auto g = gridArea();
@@ -2127,17 +2213,17 @@ namespace hama
         void paint (juce::Graphics& g) override
         {
             auto r = getLocalBounds().toFloat();
-            drawWell (g, r, 14.0f);
+            if (plateOnly && th().concrete) page::paintScreen (g, r); else drawWell (g, r, 14.0f);
             g.setFont (spaced (8.5f, true, 0.18f));
-            g.setColour (juce::Colour (0xff9aa0a7));
-            const int type = juce::roundToInt (plain (processor.apvts, "motionType"));
+            g.setColour (plateOnly && th().concrete ? page::phosphorDim() : juce::Colour (0xff9aa0a7));
+            const int type = curType();
             g.drawText (type == 0 ? "CLICK / DRAG = LIGHT CELLS  /  HOLD A CHORD OR KEY G0 TO PLAY"
                         : type == 1 ? "DRAW A LINE = A FINGER OVER THE STRINGS  /  RIGHT-DRAG = ERASE"
                         : type == 2 ? "CLICK A STEP = CHANGE THE STROKE  /  IDEAS = 3-3-2, HALF-TIME ..."
                         : type == 3 ? "CLICK = START, DRAG = LEVEL  /  RIGHT-CLICK = OCTAVE, CHANCE, REPEATS"
-                                    : "THE PLATE: DRAG = YOUR HAND  /  STRUM KEYS C0..B0: BOTTOM, TOP, MIDDLE, SHORT, TREMOLO ...",
-                        r.reduced (14.0f, 6.0f).withHeight (12.0f).withTrimmedLeft (346.0f), juce::Justification::centredLeft, false);
-            for (int t = 0; t < 5; ++t)
+                                    : "DRAG ACROSS THE STRINGS = YOUR HAND  /  LEFT HAND = CHORD + STROKE  /  KEYS C0..B0 = 12 STROKES",
+                        r.reduced (14.0f, 6.0f).withHeight (12.0f).withTrimmedLeft (plateOnly ? 0.0f : 346.0f), juce::Justification::centredLeft, false);
+            for (int t = 0; t < (plateOnly ? 0 : 5); ++t)
             {
                 auto tb = typeTab (t);
                 g.setColour (t == type ? th().accent.withAlpha (0.18f) : juce::Colour (0xff202226));
@@ -2378,8 +2464,30 @@ namespace hama
             for (int s = 0; s < Hamamatsu108Processor::numStrings; ++s)
             {
                 const float y = plateY (s), v = glow[(size_t) s];
-                g.setColour (th().accent.withAlpha (0.18f + 0.82f * v));
-                g.fillRect (juce::Rectangle<float> (a.getX(), y - 0.6f - v, a.getWidth(), 1.2f + 2.0f * v));
+                const float th0 = 1.0f + 1.6f * (1.0f - (float) s / (float) (Hamamatsu108Processor::numStrings - 1));   // low strings are thicker
+                if (th().concrete)
+                {
+                    // the trace of a string on the scope: flat at rest, a decaying wave when it is plucked
+                    juce::Path trace;
+                    const float amp = v * v * juce::jmin (9.0f, a.getHeight() / (float) Hamamatsu108Processor::numStrings * 0.9f);
+                    const float k = juce::MathConstants<float>::twoPi * (2.0f + (float) (s % 5)) / a.getWidth();
+                    trace.startNewSubPath (a.getX(), y);
+                    for (float x = a.getX(); x <= a.getRight(); x += 3.0f)
+                    {
+                        const float u = (x - a.getX()) / a.getWidth();
+                        trace.lineTo (x, y + amp * std::sin (u * juce::MathConstants<float>::pi) * std::sin (x * k + phase * (3.0f + (float) s)));
+                    }
+                    if (v > 0.02f)
+                    {
+                        g.setColour (page::phosphor().withAlpha (0.3f * v));
+                        g.strokePath (trace, juce::PathStrokeType (th0 + 3.0f));
+                    }
+                    g.setColour (page::phosphor().withAlpha (0.16f + 0.84f * v));
+                    g.strokePath (trace, juce::PathStrokeType (v > 0.02f ? juce::jmax (1.0f, th0 * 0.7f) : 0.8f));
+                    continue;
+                }
+                g.setColour (juce::Colour (0xffd9c3a3).withAlpha (0.22f).interpolatedWith (th().accent, v));
+                g.fillRect (juce::Rectangle<float> (a.getX(), y - th0 * 0.5f - v, a.getWidth(), th0 + 2.0f * v));
                 if (v > 0.05f)
                 {
                     g.setColour (th().accent.withAlpha (0.25f * v));
@@ -2394,9 +2502,10 @@ namespace hama
             for (int s = 0; s < Hamamatsu108Processor::numStrings; ++s)
             {
                 if (bits & (1u << s)) glow[(size_t) s] = 1.0f;
-                if (glow[(size_t) s] > 0.0f) { glow[(size_t) s] = juce::jmax (0.0f, glow[(size_t) s] - 0.08f); any = true; }
+                if (glow[(size_t) s] > 0.0f) { glow[(size_t) s] = juce::jmax (0.0f, glow[(size_t) s] - 0.035f); any = true; }
             }
-            if (any && juce::roundToInt (plain (processor.apvts, "motionType")) == 4) repaint();
+            phase += 0.9f;
+            if (any && curType() == 4) repaint();
         }
     private:
         void plateMove (juce::Point<float> p)
@@ -2554,10 +2663,10 @@ namespace hama
         void mouseDown (const juce::MouseEvent& e) override
         {
             for (int t = 0; t < 5; ++t)
-                if (typeTab (t).contains (e.position)) { setParam (processor.apvts, "motionType", (float) t); drawValue = -1; repaint(); return; }
-            if (juce::roundToInt (plain (processor.apvts, "motionType")) == 2) { rhythmClick (e.position); drawValue = -1; return; }
-            if (juce::roundToInt (plain (processor.apvts, "motionType")) == 3) { levelRow = -1; stringsMouseDown (e); drawValue = 3; return; }
-            if (juce::roundToInt (plain (processor.apvts, "motionType")) == 4)
+                if (! plateOnly && typeTab (t).contains (e.position)) { setParam (processor.apvts, "motionType", (float) t); drawValue = -1; repaint(); return; }
+            if (curType() == 2) { rhythmClick (e.position); drawValue = -1; return; }
+            if (curType() == 3) { levelRow = -1; stringsMouseDown (e); drawValue = 3; return; }
+            if (curType() == 4)
             {
                 plateLast = -1.0f;
                 plateMove (e.position);
@@ -2566,7 +2675,7 @@ namespace hama
                 drawValue = 4;
                 return;
             }
-            if (juce::roundToInt (plain (processor.apvts, "motionType")) == 1)
+            if (curType() == 1)
             {
                 lastLineIndex = -1;
                 lineErase = e.mods.isPopupMenu();
@@ -2850,6 +2959,8 @@ namespace hama
     };
 
     //==========================================================================
+#include "MainPage.inc"
+
     InstrumentView::InstrumentView (Hamamatsu108Processor& p) : processor (p)
     {
         backdrop = std::make_unique<Backdrop>();
@@ -2923,6 +3034,39 @@ namespace hama
                     addKnob (std::make_unique<Knob> (k.label, k.size, st, k.soon));
             }
 
+        // HARPOLOGY main page
+        bankPresets = std::make_unique<BankPresets> (p);
+        switches = std::make_unique<SwitchRow> (p);
+        strumBar = std::make_unique<StrumBar> (p);
+        lfo1 = std::make_unique<LfoPanel> (p, 0);
+        lfo2 = std::make_unique<LfoPanel> (p, 1);
+        auto status = [this] (const juce::String& a, const juce::String& b) { if (onStatus) onStatus (a, b); };
+        bankPresets->onStatus = status; switches->onStatus = status; strumBar->onStatus = status;
+        for (auto* c : std::initializer_list<juce::Component*> { bankPresets.get(), switches.get(), strumBar.get(), lfo1.get(), lfo2.get() }) addAndMakeVisible (c);
+        const char* env[] = { "harpAttack", "harpDecay", "harpSustain", "harpRelease" };
+        const char* envL[] = { "A", "D", "S", "R" };
+        const juce::uint32 caps[] = { 0xffd8d4cc, 0xffe0a040, 0xffd8d4cc, 0xffd94a3a };   // ivory / amber / ivory / red, the old lever colours
+        for (int i = 0; i < 4; ++i)
+        {
+            auto* sl = mainSliders.add (new DeckSlider (p.apvts, env[i], envL[i]));
+            sl->capColour = juce::Colour (caps[i]);
+            sl->onInteract = status;
+            addAndMakeVisible (sl);
+        }
+        Knob::Style ks;
+        ks.ring = page::lit(); ks.themed = 0; ks.pointer = page::lit();
+        ks.track = juce::Colours::white.withAlpha (0.08f);
+        ks.label = page::dim(); ks.value = page::ink();
+        ks.labelHeight = 10.0f;
+        const char* kid[] = { "harpTone", "filterCutoff", "master", "morph" };
+        const char* kl[] = { "Tone", "Cutoff", "Volume", "MORPH" };
+        for (int i = 0; i < 4; ++i)
+        {
+            auto* k = mainKnobs.add (new Knob (p.apvts, kid[i], kl[i], i == 3 ? 46 : 26, ks));
+            k->onInteract = [this] (const Knob& kn) { if (onStatus) onStatus (kn.getDisplayName(), kn.getValueText()); };
+            addAndMakeVisible (k);
+        }
+
         startTimerHz (30);
     }
 
@@ -2958,6 +3102,29 @@ namespace hama
         rail->setBounds (MemoryRail::area());
         modelDisplay->setBounds (ModelDisplay::area());
 
+        // HARPOLOGY main page: everything else is hidden (it lives in EDIT)
+        pad->setVisible (false);
+        module->setVisible (false);
+        capture->setVisible (false);
+        for (auto* c : deckKnobs) c->setVisible (false);
+        for (auto* c : deckSliders) c->setVisible (false);
+        bankPresets->setBounds (page::bankArea());
+        switches->setBounds (page::switchArea());
+        strumBar->setBounds (page::strumBar());
+        motionControls->setVisible (false);   // MOTION patterns live in EDIT
+        motion->plateOnly = true;
+        motion->setBounds (page::strumArea().reduced (10, 0).withTrimmedTop (page::strumBarH + 8).withTrimmedBottom (8));
+        {
+            const auto d = page::deckArea2();
+            for (int i = 0; i < 4; ++i) mainSliders[i]->setBounds (d.getX() + 8 + i * 42, d.getY() + 2, 40, d.getHeight() - 2);
+            lfo1->setBounds (d.getX() + 184, d.getY() + 4, 280, d.getHeight() - 8);
+            lfo2->setBounds (d.getX() + 470, d.getY() + 4, 280, d.getHeight() - 8);
+            const int kx = d.getX() + 760;
+            for (int i = 0; i < 3; ++i) mainKnobs[i]->setBounds (kx + i * 50, d.getY() + 10, 50, d.getHeight() - 10);
+            mainKnobs[3]->setBounds (kx + 152, d.getY() - 2, d.getRight() - kx - 156, d.getHeight() + 2);   // MORPH: the big one, A to B
+        }
+        return;
+
         const auto groups = deckGroupBounds();
         int k = 0, sl = 0;
         for (int gi = 0; gi < groups.size(); ++gi)
@@ -2991,6 +3158,7 @@ namespace hama
         currentSkin = skinIndex;
         skins::currentIndex() = skinIndex;
         th().lcd = sk.lcd;
+        th().concrete = juce::String (sk.name) == "Concrete";
         th().accent = sk.accent.main;
         th().soft = sk.accent.soft;
         th().deep = sk.accent.deep;
@@ -3051,6 +3219,11 @@ namespace hama
         progression->update();
         motion->update();
         motionControls->update();
+        bankPresets->update();
+        switches->update();
+        strumBar->update();
+        lfo1->update();
+        lfo2->update();
         patternChoice->update();
         keysChoice->update();
         modelDisplay->update();

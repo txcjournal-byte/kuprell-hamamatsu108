@@ -1,9 +1,9 @@
 juce_add_plugin(Hamamatsu108
     COMPANY_NAME                "Kuprell"
-    BUNDLE_ID                   com.kuprell.hamamatsu108
+    BUNDLE_ID                   com.kuprell.harpology
     PLUGIN_MANUFACTURER_CODE    Kprl
-    PLUGIN_CODE                 Hm08
-    PRODUCT_NAME                "Hamamatsu 144"
+    PLUGIN_CODE                 Hrpl
+    PRODUCT_NAME                "Harpology"
     FORMATS                     VST3 Standalone
     IS_SYNTH                    TRUE
     NEEDS_MIDI_INPUT            TRUE
