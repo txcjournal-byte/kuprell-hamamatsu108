@@ -166,7 +166,7 @@ namespace hama::look
     {
         if (th().concrete)
         {
-            g.setColour (juce::Colour (0xff0a0f0c));
+            g.setColour (page::screen());
             g.fillRect (r);
             g.setColour (juce::Colour (0xff070807));
             g.fillRect (r.withHeight (1.5f));

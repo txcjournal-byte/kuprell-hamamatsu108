@@ -46,158 +46,135 @@ namespace hama
     SettingsView::~SettingsView() { stopTimer(); }
     void SettingsView::timerCallback() { if (isVisible()) repaint(); }
 
-    juce::Rectangle<float> SettingsView::swatch (int i) const
+    // HARPOLOGY settings: only what a player changes. Theme, window, tuning, voices, computer keys, MIDI learn.
+    juce::Rectangle<float> SettingsView::swatch (int i) const { return { 44.0f + (float) i * 124.0f, 68.0f, 112.0f, 190.0f }; }
+    juce::Rectangle<float> SettingsView::zoomButton (int i) const { return { 830.0f + (i % 3) * 136.0f, 68.0f + (i / 3) * 42.0f, 126.0f, 34.0f }; }
+    juce::Rectangle<float> SettingsView::rowButton (int row, int i) const { return { 180.0f + i * 92.0f, 384.0f + row * 50.0f, 86.0f, 34.0f }; }
+
+    namespace
     {
-        return { 36.0f + (i % 6) * 125.0f, 60.0f + (i / 6) * 132.0f, 117.0f, 120.0f };
-    }
-    juce::Rectangle<float> SettingsView::zoomButton (int i) const { return { 830.0f + (i % 3) * 136.0f, 70.0f + (i / 3) * 44.0f, 126.0f, 36.0f }; }
-    juce::Rectangle<float> SettingsView::rowButton (int row, int i) const
-    {
-        return { 180.0f + i * 92.0f, 404.0f + row * 48.0f, 86.0f, 34.0f };
+        void box (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& title)
+        {
+            drawWell (g, r, 0.0f);
+            g.setFont (LookAndFeel::uiFont (13.0f));
+            g.setColour (page::ink());
+            g.drawText (title, r.reduced (16.0f, 0.0f).withHeight (34.0f), juce::Justification::centredLeft, false);
+        }
+        void tile (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& t, bool on)
+        {
+            g.setColour (juce::Colours::black.withAlpha (0.5f));
+            g.fillRect (r.translated (1.5f, 2.0f));
+            g.setColour (on ? page::lit() : juce::Colour (0xff4b4a46));
+            g.fillRect (r);
+            g.setColour (juce::Colours::white.withAlpha (on ? 0.5f : 0.12f));
+            g.fillRect (r.withHeight (1.0f));
+            g.setFont (LookAndFeel::uiFont (12.5f));
+            g.setColour (on ? page::litInk() : page::ink());
+            g.drawText (t, r, juce::Justification::centred, false);
+        }
+        void rowLabel (juce::Graphics& g, const juce::String& t, juce::Rectangle<float> r)
+        {
+            g.setFont (LookAndFeel::uiFont (12.5f));
+            g.setColour (page::dim().brighter (0.3f));
+            g.drawText (t, r, juce::Justification::centredLeft, false);
+        }
+        constexpr int firstTheme = 14;   // skins 14..19 are the Harpology themes
     }
 
     void SettingsView::paint (juce::Graphics& g)
     {
-        g.fillAll (juce::Colour (0xff0b0c0d));
+        g.fillAll (page::theme().hall);
+        g.setColour (page::theme().slab);
+        g.fillRect (getLocalBounds().toFloat().reduced (8.0f));
+        g.setColour (page::theme().slab.brighter (0.45f));
+        g.fillRect (getLocalBounds().toFloat().reduced (8.0f).withHeight (2.0f));
 
-        // skins
-        panelBox (g, { 24.0f, 20.0f, 770.0f, 330.0f }, juce::String::fromUTF8 ("SKIN  \xc2\xb7  THEMED EDITIONS"));
-        const int cur = processor.skin.load();
-        for (int i = 0; i < skins::numSkins; ++i)
+        // themes: each one a small cast block with its screen and lamp
+        box (g, { 24.0f, 20.0f, 770.0f, 270.0f }, "Theme");
+        const int cur = processor.skin.load() - firstTheme;
+        for (int i = 0; i < (int) page::themes().size(); ++i)
         {
-            const auto& sk = skins::get (i);
+            const auto& t = page::themes()[(size_t) i];
             auto r = swatch (i);
-            if (i == cur) { g.setColour (sk.accent.main.withAlpha (0.35f)); g.fillRoundedRectangle (r.expanded (3.0f), 12.0f); }
-            auto body = r.withTrimmedBottom (26.0f).reduced (6.0f);
-            // mini instrument: cheeks, panel, deck, light
-            auto cheekL = body.removeFromLeft (12.0f), cheekR = body.removeFromRight (12.0f);
-            for (auto c : { cheekL, cheekR })
+            auto block = r.withTrimmedBottom (30.0f);
+            g.setColour (juce::Colours::black.withAlpha (0.55f));
+            g.fillRect (block.translated (3.0f, 4.0f));
+            g.setColour (t.slab);
+            g.fillRect (block);
+            g.setColour (t.slab.brighter (0.45f));
+            g.fillRect (block.withHeight (1.5f));
+            auto scr = block.reduced (12.0f).withHeight (64.0f);
+            g.setColour (t.screenGlass);
+            g.fillRect (scr);
+            g.setColour (t.phosphor);
+            juce::Path wave;
+            for (int k = 0; k <= 40; ++k)
             {
-                g.setColour (sk.cheek == skins::Cheek::walnut ? juce::Colour (0xff6a3f22) : sk.cheekA);
-                g.fillRect (c);
+                const float x = scr.getX() + 6.0f + (scr.getWidth() - 12.0f) * (float) k / 40.0f;
+                const float y = scr.getCentreY() + std::sin ((float) k * 0.45f) * 14.0f * std::exp (-(float) k * 0.03f);
+                if (k == 0) wave.startNewSubPath (x, y); else wave.lineTo (x, y);
             }
-            g.setGradientFill (juce::ColourGradient (sk.panelTop, 0.0f, body.getY(), sk.panelBottom, 0.0f, body.getBottom(), false));
-            g.fillRect (body);
-            skins::paintPattern (g, body, sk.pattern);
-            auto deck = body.removeFromBottom (18.0f).reduced (4.0f, 2.0f);
-            g.setGradientFill (juce::ColourGradient (sk.deckTop, 0.0f, deck.getY(), sk.deckBottom, 0.0f, deck.getBottom(), false));
-            g.fillRoundedRectangle (deck, 3.0f);
-            g.setColour (sk.accent.main);
-            g.fillEllipse (body.getRight() - 14.0f, body.getY() + 6.0f, 7.0f, 7.0f);
-            auto well = body.reduced (8.0f, 14.0f).withTrimmedRight (20.0f);
-            g.setColour (juce::Colour (0xff0d0f11));
-            g.fillRoundedRectangle (well, 3.0f);
-            g.setColour (i == cur ? juce::Colours::white : juce::Colour (0xffc9ccd1));
-            g.setFont (LookAndFeel::uiFont (12.0f, i == cur));
-            g.drawText (sk.name, r.withTop (r.getBottom() - 24.0f), juce::Justification::centred, false);
+            g.strokePath (wave, juce::PathStrokeType (1.2f));
+            g.setColour (t.led);
+            g.fillEllipse (block.getX() + 12.0f, block.getBottom() - 22.0f, 7.0f, 7.0f);
+            g.setColour (t.wordmark);
+            g.setFont (LookAndFeel::uiFont (10.0f));
+            g.drawText ("Harpology", block.withTrimmedLeft (26.0f).withTop (block.getBottom() - 30.0f).withHeight (24.0f), juce::Justification::centredLeft, false);
+            if (i == cur) { g.setColour (page::lit()); g.drawRect (block.expanded (4.0f), 2.0f); }
+            g.setFont (LookAndFeel::uiFont (13.0f));
+            g.setColour (i == cur ? page::lit() : page::ink().withAlpha (0.75f));
+            g.drawText (t.name, r.withTop (r.getBottom() - 24.0f), juce::Justification::centred, false);
         }
 
-        // window size
-        panelBox (g, { 806.0f, 20.0f, 450.0f, 180.0f }, "WINDOW SIZE");
+        box (g, { 806.0f, 20.0f, 450.0f, 170.0f }, "Window size");
         const int z = currentZoom ? currentZoom() : 100;
-        for (int i = 0; i < 6; ++i) choiceButton (g, zoomButton (i), juce::String (zooms[i]) + " %", std::abs (z - zooms[i]) <= 2);
-        choiceButton (g, { 830.0f, 158.0f, 398.0f, 32.0f }, "Fit to screen", false);
+        for (int i = 0; i < 6; ++i) tile (g, zoomButton (i), juce::String (zooms[i]) + " %", std::abs (z - zooms[i]) <= 2);
+        tile (g, { 830.0f, 152.0f, 398.0f, 28.0f }, "Fit to screen", false);
 
-        // about the plugin version / tuning
-        panelBox (g, { 806.0f, 212.0f, 450.0f, 138.0f }, "TUNING");
-        label (g, "A4 REFERENCE", { 830.0f, 250.0f, 120.0f, 34.0f });
-        choiceButton (g, { 960.0f, 250.0f, 40.0f, 34.0f }, juce::String::fromUTF8 ("\xe2\x88\x92"), false);
-        auto tv = juce::Rectangle<float> (1006.0f, 250.0f, 110.0f, 34.0f);
-        drawDisplay (g, tv, 5.0f);
+        box (g, { 806.0f, 202.0f, 450.0f, 88.0f }, "Tuning");
+        tile (g, { 960.0f, 240.0f, 40.0f, 34.0f }, juce::String::fromUTF8 ("\xe2\x88\x92"), false);
+        auto tv = juce::Rectangle<float> (1006.0f, 240.0f, 110.0f, 34.0f);
+        drawDisplay (g, tv, 0.0f);
         g.setFont (LookAndFeel::monoFont (14.0f));
         glowText (g, juce::String (processor.tuningA4.load(), 1) + " Hz", tv, juce::Justification::centred);
-        choiceButton (g, { 1122.0f, 250.0f, 40.0f, 34.0f }, "+", false);
-        choiceButton (g, { 1168.0f, 250.0f, 66.0f, 34.0f }, "440", false);
-        label (g, "MTS-ESP", { 830.0f, 298.0f, 120.0f, 34.0f });
-        choiceButton (g, { 960.0f, 298.0f, 80.0f, 34.0f }, processor.mtsEnabled.load() ? "On" : "Off", processor.mtsEnabled.load());
-        g.setFont (LookAndFeel::uiFont (11.5f));
-        g.setColour (juce::Colour (0xff9aa0a7));
-        g.drawText (processor.mtsConnected() ? "Connected to a microtuning master" : "No MTS-ESP master running", 1050, 298, 200, 34, juce::Justification::centredLeft, false);
+        tile (g, { 1122.0f, 240.0f, 40.0f, 34.0f }, "+", false);
+        tile (g, { 1168.0f, 240.0f, 66.0f, 34.0f }, "440", false);
+        rowLabel (g, "A4", { 830.0f, 240.0f, 120.0f, 34.0f });
 
-        // MIDI
-        panelBox (g, { 24.0f, 362.0f, 770.0f, 300.0f }, "MIDI AND VOICES");
-        label (g, "CHORD ZONES", { 40.0f, 404.0f, 130.0f, 34.0f });
-        choiceButton (g, rowButton (0, 0), "On", processor.chordZones.load());
-        choiceButton (g, rowButton (0, 1), "Off", ! processor.chordZones.load());
-        g.setFont (LookAndFeel::uiFont (11.5f));
-        g.setColour (juce::Colour (0xff9aa0a7));
-        g.drawText ("On: C2-B2 (FL) = chord root, C3-B3 = chord type. Off (default): every key plays", 380, 404, 300, 34, juce::Justification::centredLeft, false);
-
-        label (g, "ZONES START AT", { 40.0f, 452.0f, 130.0f, 34.0f });
-        for (int i = 0; i < 4; ++i)
-            choiceButton (g, rowButton (1, i), "C" + juce::String (i + 1) + " (FL)", processor.zoneOctave.load() == i);
-
-        label (g, "VOICES", { 40.0f, 500.0f, 130.0f, 34.0f });
-        for (int i = 0; i < 4; ++i)
-            choiceButton (g, rowButton (2, i), juce::String (voiceOptions[i]), processor.maxVoices.load() == voiceOptions[i]);
-
-        label (g, "MIDI LEARN", { 40.0f, 552.0f, 130.0f, 34.0f });
-        juce::StringArray learned;
-        const auto& params = processor.getParameters();
-        for (int cc = 0; cc < 128; ++cc)
-        {
-            const int idx = processor.ccMap[(size_t) cc].load();
-            if (idx >= 0 && idx < params.size()) learned.add ("CC " + juce::String (cc) + juce::String::fromUTF8 (" \xe2\x86\x92 ") + params[idx]->getName (32));
-        }
+        box (g, { 24.0f, 302.0f, 770.0f, 220.0f }, "Playing");
+        rowLabel (g, "Voices", { 40.0f, 384.0f, 130.0f, 34.0f });
+        for (int i = 0; i < 4; ++i) tile (g, rowButton (0, i), juce::String (voiceOptions[i]), processor.maxVoices.load() == voiceOptions[i]);
+        rowLabel (g, "Computer keys", { 40.0f, 434.0f, 130.0f, 34.0f });
+        tile (g, rowButton (1, 0), "On", processor.pcKeys.load());
+        tile (g, rowButton (1, 1), "Off", ! processor.pcKeys.load());
+        rowLabel (g, "MIDI learn", { 40.0f, 340.0f, 130.0f, 34.0f });
+        int learnedCount = 0;
+        for (auto& c : processor.ccMap) if (c.load() >= 0) ++learnedCount;
         g.setFont (LookAndFeel::uiFont (12.0f));
-        g.setColour (learned.isEmpty() ? juce::Colour (0xff6e737a) : th().soft);
-        g.drawFittedText (learned.isEmpty() ? juce::String ("Nothing learned yet. Right-click any knob and choose MIDI Learn, then move a knob on your controller.")
-                                            : learned.joinIntoString ("    "),
-                          juce::Rectangle<int> (180, 552, 460, 60), juce::Justification::topLeft, 4);
-        choiceButton (g, { 650.0f, 552.0f, 128.0f, 34.0f }, "Clear all", false);
-        if (processor.learnParam.load() >= 0)
-        {
-            g.setColour (th().accent);
-            g.drawText ("Waiting for a controller...", 180, 620, 400, 24, juce::Justification::centredLeft, false);
-        }
+        g.setColour (page::ink().withAlpha (0.7f));
+        g.drawText (processor.learnParam.load() >= 0 ? juce::String ("Move a knob on your controller")
+                    : learnedCount == 0 ? juce::String ("Right-click a knob > MIDI Learn") : juce::String (learnedCount) + " controls learned",
+                    180, 340, 360, 34, juce::Justification::centredLeft, false);
+        tile (g, { 550.0f, 340.0f, 128.0f, 34.0f }, "Clear", false);
 
-        // back
-        panelBox (g, { 806.0f, 362.0f, 450.0f, 300.0f }, "PLAYING");
-        label (g, "KEYSWITCHES", { 830.0f, 400.0f, 120.0f, 34.0f });
-        choiceButton (g, { 960.0f, 400.0f, 80.0f, 34.0f }, "On", processor.keyswitches.load());
-        choiceButton (g, { 1046.0f, 400.0f, 80.0f, 34.0f }, "Off", ! processor.keyswitches.load());
-        label (g, "PC KEYBOARD", { 830.0f, 448.0f, 120.0f, 34.0f });
-        choiceButton (g, { 960.0f, 448.0f, 80.0f, 34.0f }, "On", processor.pcKeys.load());
-        choiceButton (g, { 1046.0f, 448.0f, 80.0f, 34.0f }, "Off", ! processor.pcKeys.load());
-        g.setFont (LookAndFeel::uiFont (11.5f));
-        g.setColour (juce::Colour (0xff9aa0a7));
-        label (g, "MIDI OUT", { 830.0f, 496.0f, 120.0f, 34.0f });
-        choiceButton (g, { 960.0f, 496.0f, 80.0f, 34.0f }, "On", processor.midiOut.load());
-        choiceButton (g, { 1046.0f, 496.0f, 80.0f, 34.0f }, "Off", ! processor.midiOut.load());
-        g.setFont (LookAndFeel::uiFont (11.0f));
-        g.drawFittedText ("Keyswitches (FL note names): C0..D#0 = LIVE / ARP / MEMO / OFF, C1..B1 = the LIVE pattern - write them in the piano roll. "
-                          "PC keyboard (while the plugin window has focus): Q-row major, A-row minor, Z-row 7th chords, Shift = stack, "
-                          "number row = strings, - / = strum down / up. YOUR KEYS = Split: left hand chord, right hand (from C5, middle C) white keys = strings, black keys = strum. Pitch wheel and mod wheel strum the strings. MIDI OUT: harp ch 1, chord layer ch 2, bass ch 3 - "
-                          "in FL set this plugin's MIDI output port and another instrument's input port to the same number.", juce::Rectangle<int> (830, 536, 410, 62), juce::Justification::topLeft, 6);
-        drawHardButton (g, { 830.0f, 600.0f, 398.0f, 40.0f }, "BACK TO PLAY", true, true, false);
+        tile (g, { 806.0f, 302.0f, 450.0f, 40.0f }, "Back to play", true);
     }
 
     void SettingsView::mouseDown (const juce::MouseEvent& e)
     {
         const auto p = e.position;
         bool changed = false;
-        for (int i = 0; i < skins::numSkins; ++i) if (swatch (i).contains (p)) { processor.skin.store (i); changed = true; }
+        for (int i = 0; i < (int) page::themes().size(); ++i) if (swatch (i).contains (p)) { processor.skin.store (firstTheme + i); changed = true; }
         for (int i = 0; i < 6; ++i) if (zoomButton (i).contains (p) && onZoom) onZoom (zooms[i] / 100.0);
-        if (juce::Rectangle<float> (830.0f, 158.0f, 398.0f, 32.0f).contains (p) && onFit) onFit();
-        if (juce::Rectangle<float> (960.0f, 250.0f, 40.0f, 34.0f).contains (p)) { processor.tuningA4.store (juce::jmax (400.0f, processor.tuningA4.load() - 0.5f)); changed = true; }
-        if (juce::Rectangle<float> (1122.0f, 250.0f, 40.0f, 34.0f).contains (p)) { processor.tuningA4.store (juce::jmin (480.0f, processor.tuningA4.load() + 0.5f)); changed = true; }
-        if (juce::Rectangle<float> (1168.0f, 250.0f, 66.0f, 34.0f).contains (p)) { processor.tuningA4.store (440.0f); changed = true; }
-        if (juce::Rectangle<float> (960.0f, 298.0f, 80.0f, 34.0f).contains (p)) { processor.mtsEnabled.store (! processor.mtsEnabled.load()); changed = true; }
-        if (juce::Rectangle<float> (960.0f, 400.0f, 80.0f, 34.0f).contains (p))  { processor.keyswitches.store (true); changed = true; }
-        if (juce::Rectangle<float> (1046.0f, 400.0f, 80.0f, 34.0f).contains (p)) { processor.keyswitches.store (false); changed = true; }
-        if (juce::Rectangle<float> (960.0f, 496.0f, 80.0f, 34.0f).contains (p))  { processor.midiOut.store (true); changed = true; }
-        if (juce::Rectangle<float> (1046.0f, 496.0f, 80.0f, 34.0f).contains (p)) { processor.midiOut.store (false); changed = true; }
-        if (juce::Rectangle<float> (960.0f, 448.0f, 80.0f, 34.0f).contains (p))  { processor.pcKeys.store (true); changed = true; if (onPcKeys) onPcKeys(); }
-        if (juce::Rectangle<float> (1046.0f, 448.0f, 80.0f, 34.0f).contains (p)) { processor.pcKeys.store (false); changed = true; if (onPcKeys) onPcKeys(); }
-        if (rowButton (0, 0).contains (p)) { processor.chordZones.store (true); changed = true; }
-        if (rowButton (0, 1).contains (p)) { processor.chordZones.store (false); changed = true; }
-        for (int i = 0; i < 4; ++i)
-        {
-            if (rowButton (1, i).contains (p)) { processor.zoneOctave.store (i); changed = true; }
-            if (rowButton (2, i).contains (p)) { processor.maxVoices.store (voiceOptions[i]); changed = true; }
-        }
-        if (juce::Rectangle<float> (650.0f, 552.0f, 128.0f, 34.0f).contains (p)) for (auto& c : processor.ccMap) c.store (-1);
-        if (juce::Rectangle<float> (830.0f, 600.0f, 398.0f, 40.0f).contains (p) && onClose) onClose();
+        if (juce::Rectangle<float> (830.0f, 152.0f, 398.0f, 28.0f).contains (p) && onFit) onFit();
+        if (juce::Rectangle<float> (960.0f, 240.0f, 40.0f, 34.0f).contains (p)) { processor.tuningA4.store (juce::jmax (400.0f, processor.tuningA4.load() - 0.5f)); changed = true; }
+        if (juce::Rectangle<float> (1122.0f, 240.0f, 40.0f, 34.0f).contains (p)) { processor.tuningA4.store (juce::jmin (480.0f, processor.tuningA4.load() + 0.5f)); changed = true; }
+        if (juce::Rectangle<float> (1168.0f, 240.0f, 66.0f, 34.0f).contains (p)) { processor.tuningA4.store (440.0f); changed = true; }
+        for (int i = 0; i < 4; ++i) if (rowButton (0, i).contains (p)) { processor.maxVoices.store (voiceOptions[i]); changed = true; }
+        if (rowButton (1, 0).contains (p)) { processor.pcKeys.store (true); changed = true; if (onPcKeys) onPcKeys(); }
+        if (rowButton (1, 1).contains (p)) { processor.pcKeys.store (false); changed = true; if (onPcKeys) onPcKeys(); }
+        if (juce::Rectangle<float> (550.0f, 340.0f, 128.0f, 34.0f).contains (p)) for (auto& c : processor.ccMap) c.store (-1);
+        if (juce::Rectangle<float> (806.0f, 302.0f, 450.0f, 40.0f).contains (p) && onClose) onClose();
         if (changed) processor.saveUserDefaults();
         repaint();
     }

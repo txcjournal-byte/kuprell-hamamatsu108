@@ -548,7 +548,7 @@
         }
         void chip (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& text) const
         {
-            g.setColour (juce::Colour (0xff0a0f0c));
+            g.setColour (page::screen());
             g.fillRect (r);
             g.setFont (LookAndFeel::monoFont (11.0f));
             g.setColour (page::phosphor());
@@ -583,7 +583,7 @@
         void paint (juce::Graphics& g) override
         {
             auto r = getLocalBounds().toFloat();
-            g.setColour (juce::Colour (0xf20a0f0c));
+            g.setColour (page::screen().withAlpha (0.95f));
             g.fillRect (r);
             g.setColour (page::phosphorDim().withAlpha (0.6f));
             g.fillRect (r.withHeight (1.0f));
@@ -604,11 +604,11 @@
                 const int pc = i;   // fixed C..B, so a note stays where it is while you edit
                 const bool on = (mask >> pc) & 1, inKey = (key >> pc) & 1;
                 if (on) { g.setColour (page::phosphor()); g.fillRect (c); }
-                else    { g.setColour (inKey ? juce::Colour (0xff17241d) : juce::Colour (0xff0f1512)); g.fillRect (c); }
+                else    { g.setColour (inKey ? page::phosphor().withAlpha (0.12f) : page::phosphor().withAlpha (0.05f)); g.fillRect (c); }
                 g.setFont (LookAndFeel::monoFont (13.0f));
-                g.setColour (on ? juce::Colour (0xff07120c) : inKey ? page::phosphor().withAlpha (0.75f) : page::phosphorDim());
+                g.setColour (on ? page::screen() : inKey ? page::phosphor().withAlpha (0.75f) : page::phosphorDim());
                 g.drawText (chords::rootName (pc), c, juce::Justification::centred, false);
-                if (pc == root) { g.setColour (on ? juce::Colour (0xff07120c) : page::phosphor()); g.fillRect (c.getX() + 8.0f, c.getBottom() - 4.0f, c.getWidth() - 16.0f, 2.0f); }
+                if (pc == root) { g.setColour (on ? page::screen() : page::phosphor()); g.fillRect (c.getX() + 8.0f, c.getBottom() - 4.0f, c.getWidth() - 16.0f, 2.0f); }
             }
             const char* acts[] = { "Strum", "Another", "Keys" };
             for (int i = 0; i < 3; ++i)

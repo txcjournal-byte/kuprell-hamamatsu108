@@ -46,7 +46,7 @@ namespace skins
         bool lcd = false;                     // Graphite: light LCD displays
     };
 
-    constexpr int numSkins = 15;
+    constexpr int numSkins = 20;   // 14..19: the Harpology themes (cast material, light, screen)
     inline const std::array<Skin, numSkins>& all()
     {
         using C = juce::Colour;
@@ -100,6 +100,21 @@ namespace skins
               "", C (0x00000000), C (0x00000000), "FUTURISTIC STRUM HARP", nightViolet() },
             // Concrete (default, Harpology): raw cast concrete, one shaft of light. Active = lit, not coloured.
             { "Concrete", C (0xff6a6864), C (0xff5e5d5a), C (0xff4f4e4b), Cheek::flat, C (0xff3a3937), C (0xff30302e), Pattern::none, Grille::holes,
+              C (0xff5b5a57), C (0xff4c4b48), C (0xff5e5d5a), C (0xff565552), C (0xff4d4c49), C (0xff45443f), C (0xff30302e), C (0xff2a2927),
+              "", C (0x00000000), C (0x00000000), "STRUM HARP", concreteLight() },
+            { "Sandstone", C (0xff6a6864), C (0xff5e5d5a), C (0xff4f4e4b), Cheek::flat, C (0xff3a3937), C (0xff30302e), Pattern::none, Grille::holes,
+              C (0xff5b5a57), C (0xff4c4b48), C (0xff5e5d5a), C (0xff565552), C (0xff4d4c49), C (0xff45443f), C (0xff30302e), C (0xff2a2927),
+              "", C (0x00000000), C (0x00000000), "STRUM HARP", concreteLight() },
+            { "Basalt", C (0xff6a6864), C (0xff5e5d5a), C (0xff4f4e4b), Cheek::flat, C (0xff3a3937), C (0xff30302e), Pattern::none, Grille::holes,
+              C (0xff5b5a57), C (0xff4c4b48), C (0xff5e5d5a), C (0xff565552), C (0xff4d4c49), C (0xff45443f), C (0xff30302e), C (0xff2a2927),
+              "", C (0x00000000), C (0x00000000), "STRUM HARP", concreteLight() },
+            { "Corten", C (0xff6a6864), C (0xff5e5d5a), C (0xff4f4e4b), Cheek::flat, C (0xff3a3937), C (0xff30302e), Pattern::none, Grille::holes,
+              C (0xff5b5a57), C (0xff4c4b48), C (0xff5e5d5a), C (0xff565552), C (0xff4d4c49), C (0xff45443f), C (0xff30302e), C (0xff2a2927),
+              "", C (0x00000000), C (0x00000000), "STRUM HARP", concreteLight() },
+            { "Night", C (0xff6a6864), C (0xff5e5d5a), C (0xff4f4e4b), Cheek::flat, C (0xff3a3937), C (0xff30302e), Pattern::none, Grille::holes,
+              C (0xff5b5a57), C (0xff4c4b48), C (0xff5e5d5a), C (0xff565552), C (0xff4d4c49), C (0xff45443f), C (0xff30302e), C (0xff2a2927),
+              "", C (0x00000000), C (0x00000000), "STRUM HARP", concreteLight() },
+            { "Bone", C (0xff6a6864), C (0xff5e5d5a), C (0xff4f4e4b), Cheek::flat, C (0xff3a3937), C (0xff30302e), Pattern::none, Grille::holes,
               C (0xff5b5a57), C (0xff4c4b48), C (0xff5e5d5a), C (0xff565552), C (0xff4d4c49), C (0xff45443f), C (0xff30302e), C (0xff2a2927),
               "", C (0x00000000), C (0x00000000), "STRUM HARP", concreteLight() }
         }};

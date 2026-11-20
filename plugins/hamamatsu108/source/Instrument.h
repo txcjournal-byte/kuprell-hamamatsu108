@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "PluginProcessor.h"
@@ -64,21 +65,43 @@ namespace hama
         inline juce::Rectangle<int> motionCtl()  { return { x0 + 10, strumY + 8 + strumBarH, 124, 128 }; }
         inline juce::Rectangle<int> motionWin()  { return { x0 + 142, strumY + 8 + strumBarH, w0 - 152, strumH - strumBarH - 14 }; }
         inline juce::Rectangle<int> deckArea2()  { return { x0, deckY2, w0, geo::deckBottom - deckY2 }; }
-        inline juce::Colour led() { return juce::Colour (0xffc8321e); }
+        // HARPOLOGY themes: one cast material, one light, one screen colour, one lamp
+        struct Theme
+        {
+            const char* name;
+            juce::Colour slab, hall, shaft, wordmark, screen, screenGlass, grid, phosphor, phosphorDim, led;
+        };
+        inline const std::array<Theme, 6>& themes()
+        {
+            using C = juce::Colour;
+            static const std::array<Theme, 6> t {{
+                { "Concrete",  C (0xff595854), C (0xff141413), C (0xff2a2a28), C (0xffeceae4), C (0xff0a0f0c), C (0xff03100b), C (0xff0b2a1d), C (0xff74f5b8), C (0xff2c7a58), C (0xffc8321e) },
+                { "Sandstone", C (0xff86705a), C (0xff1a140f), C (0xff3a2c20), C (0xfff3e7d3), C (0xff120c06), C (0xff0f0903), C (0xff2e1f0c), C (0xffffb45a), C (0xff8a5a22), C (0xffb52a1a) },
+                { "Basalt",    C (0xff313133), C (0xff0c0c0d), C (0xff1e1f22), C (0xffdedfe2), C (0xff060a0d), C (0xff02070b), C (0xff0b2230), C (0xff9fe3ff), C (0xff2f6a82), C (0xffe0412c) },
+                { "Corten",    C (0xff6b4130), C (0xff150d09), C (0xff33201a), C (0xfff0dccd), C (0xff0f0905), C (0xff0b0603), C (0xff33200f), C (0xffffa25c), C (0xff8c4c22), C (0xfff2d06b) },
+                { "Night",     C (0xff262a31), C (0xff0a0b0e), C (0xff1a1d24), C (0xffd9dde6), C (0xff070912), C (0xff04060e), C (0xff141c38), C (0xff9db6ff), C (0xff3a4c8c), C (0xffff4a3a) },
+                { "Bone",      C (0xffaaa394), C (0xff1c1a17), C (0xff4a4640), C (0xff26231f), C (0xff0a0f0c), C (0xff03100b), C (0xff0b2a1d), C (0xff74f5b8), C (0xff2c7a58), C (0xffc8321e) },
+            }};
+            return t;
+        }
+        inline int& themeIndex() { static int i = 0; return i; }
+        inline const Theme& theme() { return themes()[(size_t) juce::jlimit (0, 5, themeIndex())]; }
+        inline juce::Colour led() { return theme().led; }
         inline juce::Colour lit() { return juce::Colour (0xffe8e6df); }      // something in the light: chosen, on
         inline juce::Colour litInk() { return juce::Colour (0xff1f1e1c); }   // text on a lit block
         inline juce::Colour onSlab() { return juce::Colour (0xffd8d5cd); }   // text straight on the concrete
         // phosphor screens set into the concrete (old green CRT)
-        inline juce::Colour phosphor()    { return juce::Colour (0xff74f5b8); }
-        inline juce::Colour phosphorDim() { return juce::Colour (0xff2c7a58); }
+        inline juce::Colour phosphor()    { return theme().phosphor; }
+        inline juce::Colour phosphorDim() { return theme().phosphorDim; }
+        inline juce::Colour screen()      { return theme().screen; }
         inline void paintScreen (juce::Graphics& g, juce::Rectangle<float> r)
         {
             g.setColour (juce::Colour (0xff1d1d1c));             // the cut in the concrete
             g.fillRect (r);
             const auto s = r.reduced (4.0f);
-            g.setColour (juce::Colour (0xff03100b));
+            g.setColour (theme().screenGlass);
             g.fillRect (s);
-            g.setColour (juce::Colour (0xff0b2a1d));               // the graticule
+            g.setColour (theme().grid);                            // the graticule
             for (float x = s.getX() + 24.0f; x < s.getRight(); x += 24.0f) g.fillRect (x, s.getY(), 1.0f, s.getHeight());
             for (float y = s.getY() + 24.0f; y < s.getBottom(); y += 24.0f) g.fillRect (s.getX(), y, s.getWidth(), 1.0f);
             g.setColour (juce::Colours::black.withAlpha (0.22f)); // scan lines

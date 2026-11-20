@@ -225,7 +225,7 @@ namespace kuprell
         auto r = presetArea.toFloat();
         if (concrete)
         {
-            g.setColour (juce::Colour (0xff0a0f0c));
+            g.setColour (screen);
             g.fillRect (r);
             g.setColour (juce::Colour (0xff0e0e0d));
             g.fillRect (r.withHeight (2.0f));
@@ -235,13 +235,13 @@ namespace kuprell
             g.setFont (LookAndFeel::monoFont (10.0f));
             const auto cat = presetCategory.substring (0, 1) + presetCategory.substring (1).toLowerCase();
             const float cw = g.getCurrentFont().getStringWidthFloat (cat) + 12.0f;
-            g.setColour (juce::Colour (0xff2c7a58));
+            g.setColour (screenDim);
             g.drawText (cat, in.removeFromLeft (cw), juce::Justification::centredLeft);
             g.setFont (LookAndFeel::monoFont (13.0f));
             const auto label = presetName + (presetModified ? " *" : "");
-            g.setColour (juce::Colour (0xff74f5b8).withAlpha (0.18f));
+            g.setColour (screenInk.withAlpha (0.18f));
             g.drawText (label, in.translated (0.0f, 1.0f), juce::Justification::centredLeft);
-            g.setColour (juce::Colour (0xff74f5b8));
+            g.setColour (screenInk);
             g.drawText (label, in, juce::Justification::centredLeft);
             return;
         }

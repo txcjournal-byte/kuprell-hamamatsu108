@@ -1701,7 +1701,7 @@ namespace hama
                 if (th().concrete)
                 {
                     // a phosphor screen per character, the chosen one in the light
-                    g.setColour (on ? page::lit() : juce::Colour (0xff0a0f0c));
+                    g.setColour (on ? page::lit() : page::screen());
                     g.fillRect (c);
                     auto in = c.reduced (12.0f);
                     const auto ink = on ? page::litInk() : page::phosphor();
@@ -1722,7 +1722,7 @@ namespace hama
                         g.setColour (on ? page::litInk().withAlpha (0.7f) : page::phosphorDim());
                         g.drawText (names[k], row.removeFromLeft (52.0f), juce::Justification::centredLeft, false);
                         auto bar = row.withSizeKeepingCentre (row.getWidth(), 2.0f);
-                        g.setColour (on ? juce::Colour (0x33000000) : juce::Colour (0xff17241d));
+                        g.setColour (on ? juce::Colour (0x33000000) : page::phosphor().withAlpha (0.12f));
                         g.fillRect (bar);
                         g.setColour (ink);
                         g.fillRect (bar.withWidth (juce::jmax (2.0f, bar.getWidth() * vals[k])));
@@ -1901,7 +1901,7 @@ namespace hama
                 const float s = 1280.0f / 1156.0f;
                 g.addTransform (juce::AffineTransform::scale (s));
                 paintConcreteSlab (g, { 0.0f, 0.0f, 1156.0f, 682.0f / s });
-                paintWordmark (g, { (float) geo::innerX + 5.0f, (float) geo::rearY + 10.0f }, juce::Colour (0xffeceae4));
+                paintWordmark (g, { (float) geo::innerX + 5.0f, (float) geo::rearY + 10.0f }, page::theme().wordmark);
             }
             for (int i = 0; i < tabNames().size(); ++i)
             {

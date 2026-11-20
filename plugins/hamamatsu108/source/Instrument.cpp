@@ -15,7 +15,7 @@ namespace hama
     void paintConcreteSlab (juce::Graphics& g, juce::Rectangle<float> bounds)
         {
             using namespace geo;
-            g.fillAll (juce::Colour (0xff141413));
+            g.fillAll (page::theme().hall);
             // the shaft in the hall behind the slab (a hard-edged wedge, no blur)
             {
                 juce::Path wedge;
@@ -24,14 +24,14 @@ namespace hama
                 wedge.lineTo (bounds.getWidth() * 0.46f, bounds.getBottom());
                 wedge.lineTo (bounds.getWidth() * 0.12f, bounds.getBottom());
                 wedge.closeSubPath();
-                g.setColour (juce::Colour (0xff2a2a28));
+                g.setColour (page::theme().shaft);
                 g.fillPath (wedge);
             }
             const juce::Rectangle<float> slab ((float) bodyX, (float) bodyY, (float) bodyW, (float) (panelH + frontH));
             // drop shadow: one hard offset block, like a heavy object on the floor
             g.setColour (juce::Colours::black.withAlpha (0.55f));
             g.fillRect (slab.translated (10.0f, 12.0f));
-            g.setColour (juce::Colour (0xff595854));
+            g.setColour (page::theme().slab);
             g.fillRect (slab);
             // cast concrete: fine grain and the odd pore, fixed seed so it never changes
             {
@@ -69,9 +69,9 @@ namespace hama
                 g.fillPath (lit);
             }
             // hard edges: light on top, shadow at the bottom
-            g.setColour (juce::Colour (0xff8a8883));
+            g.setColour (page::theme().slab.brighter (0.45f));
             g.fillRect (slab.withHeight (2.0f));
-            g.setColour (juce::Colour (0xff2c2b29));
+            g.setColour (page::theme().slab.darker (1.2f));
             g.fillRect (slab.withTop (slab.getBottom() - 3.0f));
         }
 
@@ -168,7 +168,7 @@ namespace hama
             g.setGradientFill (shadow);
             g.fillEllipse ((float) bodyX + 20.0f, bottom - 30.0f, (float) bodyW - 40.0f, 80.0f);
 
-            if (juce::String (skins::get (skin).name) == "Concrete")
+            if (skin >= 14)
             {
                 paintConcrete (g, bounds);
                 paintRear (g);
@@ -179,9 +179,9 @@ namespace hama
                     static const auto michroma = juce::Typeface::createSystemTypefaceFor (KuprellBrand::michroma_ttf, (size_t) KuprellBrand::michroma_ttfSize);
                     g.setFont (juce::Font (juce::FontOptions (michroma).withHeight (13.0f)).withExtraKerningFactor (0.3f));
                     const juce::Rectangle<float> mark ((float) page::x0, (float) geo::deckBottom + 8.0f, 300.0f, 16.0f);
-                    g.setColour (juce::Colour (0xffa9a7a1));
+                    g.setColour (page::theme().slab.brighter (0.5f));
                     g.drawText ("ALTRUISTI", mark.translated (0.0f, 1.0f), juce::Justification::centredLeft, false);
-                    g.setColour (juce::Colour (0xff1f1e1c));
+                    g.setColour (page::theme().slab.darker (1.3f));
                     g.drawText ("ALTRUISTI", mark, juce::Justification::centredLeft, false);
                 }
                 return;
@@ -340,7 +340,7 @@ namespace hama
             // product wordmark (the company mark joins when the brand is settled)
             static const auto michroma = juce::Typeface::createSystemTypefaceFor (KuprellBrand::michroma_ttf, (size_t) KuprellBrand::michroma_ttfSize);
             g.setFont (juce::Font (juce::FontOptions (michroma).withHeight (25.0f)).withExtraKerningFactor (0.04f));
-            g.setColour (th().concrete ? juce::Colour (0xffeceae4) : sk.panelMid.getPerceivedBrightness() > 0.6f ? juce::Colour (0xff1c1d22) : juce::Colour (0xfff1e2cc));
+            g.setColour (th().concrete ? page::theme().wordmark : sk.panelMid.getPerceivedBrightness() > 0.6f ? juce::Colour (0xff1c1d22) : juce::Colour (0xfff1e2cc));
             g.drawText ("Harpology", juce::Rectangle<float> (tx - 1.0f, (float) rearY + 10.0f, 300.0f, 30.0f), juce::Justification::centredLeft, false);
             g.setFont (spaced (11.0f, false, 0.45f));
             g.setColour (sk.engrave);
@@ -3203,7 +3203,13 @@ namespace hama
         currentSkin = skinIndex;
         skins::currentIndex() = skinIndex;
         th().lcd = sk.lcd;
-        th().concrete = juce::String (sk.name) == "Concrete";
+        th().concrete = skinIndex >= 14;
+        page::themeIndex() = juce::jlimit (0, 5, skinIndex - 14);
+        Knob::screenInk = page::phosphor();
+        Knob::lamp = page::led();
+        kuprell::TopBar::screen = page::screen();
+        kuprell::TopBar::screenInk = page::phosphor();
+        kuprell::TopBar::screenDim = page::phosphorDim();
         th().accent = sk.accent.main;
         th().soft = sk.accent.soft;
         th().deep = sk.accent.deep;

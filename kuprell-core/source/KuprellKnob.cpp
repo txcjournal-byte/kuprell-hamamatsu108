@@ -60,7 +60,7 @@ namespace kuprell
                         juce::Path m;
                         const float mr = ringR - 3.0f;
                         m.addCentredArc (c.x, c.y, mr, mr, 0.0f, juce::jmin (angle, a2), juce::jmax (angle, a2), true);
-                        g.setColour (juce::Colour (0xffc8321e));
+                        g.setColour (Knob::lamp);
                         g.strokePath (m, juce::PathStrokeType (1.5f));
                     }
                 // a cast cylinder: flat, hard offset shadow, one light edge where the shaft hits it
@@ -322,7 +322,7 @@ namespace kuprell
         if (style.showValue)
         {
             g.setFont (LookAndFeel::monoFont (10.5f));
-            const auto valueColour = Knob::concrete ? juce::Colour (0xff74f5b8) : style.themed == 1 ? Knob::themeSoft : style.value;
+            const auto valueColour = Knob::concrete ? Knob::screenInk : style.themed == 1 ? Knob::themeSoft : style.value;
             g.setColour (enabled ? valueColour : valueColour.withAlpha (0.4f));
             g.drawText (enabled ? getValueText() : juce::String::fromUTF8 ("\xe2\x80\x94"), r.removeFromTop (12), juce::Justification::centredTop, false);
         }

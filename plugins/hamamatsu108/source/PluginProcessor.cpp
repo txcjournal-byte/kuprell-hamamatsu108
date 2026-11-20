@@ -472,7 +472,7 @@ void Hamamatsu108Processor::loadUserDefaults()
     {
         // from settings version 3 the default look is Graphite
         // from settings version 5 the default look is Ivory 84 (the 80s instrument)
-        skin.store (xml->getIntAttribute ("version", 1) >= 8 ? juce::jlimit (0, skins::numSkins - 1, xml->getIntAttribute ("skin", 14)) : 14);   // v8: Concrete is the default
+        skin.store (xml->getIntAttribute ("version", 1) >= 8 ? juce::jlimit (14, skins::numSkins - 1, xml->getIntAttribute ("skin", 14)) : 14);   // v8: Concrete is the default
         zoneOctave.store (juce::jlimit (0, 3, xml->getIntAttribute ("zoneOctave", 1)));
         // from settings version 2 every key plays by default (chord zones are an option): piano-roll notes in
         // octave 2-3 used to fall into the zones and stay silent
@@ -2895,7 +2895,7 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
             for (size_t i = 0; i < memLength.size(); ++i)
                 memLength[i].store (i < (size_t) lens.size() ? juce::jlimit (0, memSteps, lens[(int) i].getIntValue()) : 0);
             memBank.store (juce::jlimit (0, memBanks - 1, (int) state.getProperty ("memBank", 0)));
-            skin.store (juce::jlimit (0, skins::numSkins - 1, (int) state.getProperty ("skin", skin.load())));
+            skin.store (juce::jlimit (14, skins::numSkins - 1, (int) state.getProperty ("skin", skin.load())));
             zoneOctave.store (juce::jlimit (0, 3, (int) state.getProperty ("zoneOctave", zoneOctave.load())));
             if ((int) state.getProperty ("zonesVersion", 1) >= 2)   // older projects: zones off (every key plays)
                 chordZones.store ((bool) state.getProperty ("chordZones", chordZones.load()));
