@@ -1678,11 +1678,31 @@ namespace hama
         }
         std::function<void (const juce::String&, const juce::String&)> onInteract;
         juce::Colour capColour { juce::Colours::transparentBlack };
+        bool thin = false;   // main page: a hairline fader
 
         juce::Rectangle<float> track() const { return getLocalBounds().toFloat().withTrimmedTop (4.0f).withTrimmedBottom (26.0f).withSizeKeepingCentre (6.0f, (float) getHeight() - 30.0f); }
 
         void paint (juce::Graphics& g) override
         {
+            if (thin)
+            {
+                // hairline fader: a 2 px slot, the lit part above the zero, a thin flat cap
+                auto b = getLocalBounds().toFloat();
+                const float top = b.getY() + 6.0f, bot = b.getBottom() - 18.0f, cx = b.getCentreX();
+                const float v = param->getValue(), y = bot - (bot - top) * v;
+                g.setColour (juce::Colour (0xff0f0f0e));
+                g.fillRect (cx - 1.0f, top, 2.0f, bot - top);
+                g.setColour (juce::Colour (0xff8e8c86));
+                g.fillRect (cx - 1.0f, y, 2.0f, bot - y);
+                g.setColour (juce::Colour (0xff0f0f0e));
+                g.fillRect (cx - 7.0f, y - 2.5f, 14.0f, 5.0f);
+                g.setColour (juce::Colour (0xffe8e6df));
+                g.fillRect (cx - 6.0f, y - 1.5f, 12.0f, 3.0f);
+                g.setColour (juce::Colour (0xff8b8882));
+                g.setFont (LookAndFeel::uiFont (9.5f, true));
+                g.drawText (label, b.removeFromBottom (14.0f), juce::Justification::centred, false);
+                return;
+            }
             auto t = track();
             const float v = param->getValue();
             g.setColour (juce::Colours::black.withAlpha (0.35f));
@@ -3044,13 +3064,12 @@ namespace hama
         auto status = [this] (const juce::String& a, const juce::String& b) { if (onStatus) onStatus (a, b); };
         bankPresets->onStatus = status; switches->onStatus = status; strumBar->onStatus = status;
         for (auto* c : std::initializer_list<juce::Component*> { bankPresets.get(), switches.get(), strumBar.get(), lfo1.get(), lfo2.get() }) addAndMakeVisible (c);
-        const char* env[] = { "harpAttack", "harpDecay", "harpSustain", "harpRelease" };
-        const char* envL[] = { "A", "D", "S", "R" };
-        const juce::uint32 caps[] = { 0xffd8d4cc, 0xffe0a040, 0xffd8d4cc, 0xffd94a3a };   // ivory / amber / ivory / red, the old lever colours
-        for (int i = 0; i < 4; ++i)
+        const char* env[] = { "harpAttack", "harpDecay", "harpSustain", "harpRelease", "harpShape", "spread", "width", "polish" };
+        const char* envL[] = { "A", "D", "S", "R", "Sh", "Sp", "W", "P" };
+        for (int i = 0; i < 8; ++i)
         {
             auto* sl = mainSliders.add (new DeckSlider (p.apvts, env[i], envL[i]));
-            sl->capColour = juce::Colour (caps[i]);
+            sl->thin = true;
             sl->onInteract = status;
             addAndMakeVisible (sl);
         }
@@ -3117,7 +3136,7 @@ namespace hama
         motion->setBounds (page::strumArea().reduced (10, 0).withTrimmedTop (page::strumBarH + 8).withTrimmedBottom (8));
         {
             const auto d = page::deckArea2();
-            for (int i = 0; i < 4; ++i) mainSliders[i]->setBounds (d.getX() + 8 + i * 42, d.getY() + 2, 40, d.getHeight() - 2);
+            for (int i = 0; i < 8; ++i) mainSliders[i]->setBounds (d.getX() + 8 + i * 21 + (i >= 4 ? 6 : 0), d.getY() + 4, 20, d.getHeight() - 6);
             lfo1->setBounds (d.getX() + 184, d.getY() + 4, 280, d.getHeight() - 8);
             lfo2->setBounds (d.getX() + 470, d.getY() + 4, 280, d.getHeight() - 8);
             const int kx = d.getX() + 760;
