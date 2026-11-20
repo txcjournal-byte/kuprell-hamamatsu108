@@ -145,6 +145,20 @@ namespace kuprell
 
     void TopBar::resized()
     {
+        if (minimal)
+        {
+            for (juce::Component* c : std::initializer_list<juce::Component*> { &prevButton, &nextButton, &randomButton, &undoButton, &redoButton, &helpButton, &saveButton, &compareButton })
+                c->setVisible (false);
+            presetArea = {};
+            const int y = (getHeight() - 26) / 2;
+            editButton.setButtonText ("Edit");
+            editButton.setBounds (getWidth() - 64, y, 64, 26);
+            settingsButton.setBounds (getWidth() - 64 - 32, y, 26, 26);
+            return;
+        }
+        for (juce::Component* c : std::initializer_list<juce::Component*> { &prevButton, &nextButton, &randomButton, &undoButton, &redoButton, &helpButton, &saveButton, &compareButton })
+            c->setVisible (true);
+        editButton.setButtonText ("EDIT");
         constexpr int button = 32, gap = 6;
         const int margin = embedded ? 0 : 16;
         const int y = (getHeight() - button) / 2;
@@ -180,7 +194,7 @@ namespace kuprell
     {
         using namespace colours;
         auto r = getLocalBounds().toFloat();
-        if (embedded) { paintPresetDisplay (g); return; }
+        if (embedded) { if (! minimal) paintPresetDisplay (g); return; }
 
         g.setGradientFill (juce::ColourGradient (barTop, 0.0f, 0.0f, barBottom, 0.0f, r.getBottom(), false));
         g.fillRect (r);

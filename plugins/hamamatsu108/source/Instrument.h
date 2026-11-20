@@ -48,12 +48,12 @@ namespace hama
     {
         // stage geometry of the main page
         constexpr int x0 = geo::innerX, w0 = geo::innerW;
-        constexpr int bankY = 94, bankH = 20;
-        constexpr int presetY = bankY + bankH + 4, presetRows = 11, presetRowH = 13, presetH = presetRows * presetRowH + 8;
-        constexpr int switchY = presetY + presetH + 10, switchH = 58;
-        constexpr int strumY = switchY + switchH + 10, strumBarH = 22, strumH = 140;
+        constexpr int bankY = 40, bankH = 22, tabsX = 236;   // the bank tabs sit up in the top row, next to the name
+        constexpr int presetY = bankY + 32, presetRows = 10, presetRowH = 13, presetH = presetRows * presetRowH + 8;
+        constexpr int switchY = presetY + presetH + 10, switchH = 68;
+        constexpr int strumY = switchY + switchH + 10, strumBarH = 22, strumH = 184;
         constexpr int deckY2 = strumY + strumH + 8;
-        inline juce::Rectangle<int> bankArea()   { return { x0, bankY, w0, bankH + 4 + presetH }; }
+        inline juce::Rectangle<int> bankArea()   { return { x0, bankY, w0, presetY - bankY + presetH }; }
         inline juce::Rectangle<int> switchArea() { return { x0, switchY, w0, switchH }; }
         inline juce::Rectangle<int> strumArea()  { return { x0, strumY, w0, strumH }; }
         inline juce::Rectangle<int> strumBar()   { return { x0 + 10, strumY + 6, w0 - 20, strumBarH }; }

@@ -69,7 +69,8 @@ const juce::StringArray& Hamamatsu108Processor::keysPlayNames()
 const juce::StringArray& Hamamatsu108Processor::switchNames()
 {
     static const juce::StringArray n { "SPARKLE", "SUB", "SWELL", "FREEZE", "DRIVE", "CRUSH", "FILTER", "TAPE",
-                                       "DREAM", "WOBBLE", "WIDE", "DELAY", "REVERB", "SHIMMER", "HALFTIME", "HUMAN" };
+                                       "DREAM", "WOBBLE", "WIDE", "DELAY", "REVERB", "SHIMMER", "HALF", "HUMAN",
+                                       "CHORUS", "PHASE", "FLANGE", "RADIO", "FIFTH", "DETUNE", "STUTTER", "VIBRATO" };
     return n;
 }
 
@@ -78,7 +79,9 @@ const juce::StringArray& Hamamatsu108Processor::switchHelp()
     static const juce::StringArray n { "an octave above every note", "an octave below every note", "the strings swell in slowly",
                                        "the strings ring on and on", "warm saturation", "lo-fi bits", "a low-pass that closes",
                                        "worn tape", "a huge soft reverb", "pitch wobble", "a wider stereo image", "ping-pong delay",
-                                       "a big hall", "an octave-up shimmer tail", "MOTION plays at half speed", "loose timing and touch" };
+                                       "a big hall", "an octave-up shimmer tail", "MOTION plays at half speed", "loose timing and touch",
+                                       "a wide chorus", "a slow phaser", "a jet flanger", "a small old speaker", "a fifth above every note",
+                                       "a second string, slightly out of tune", "the sound chopped in rhythm", "a singing vibrato" };
     return n;
 }
 
@@ -1264,6 +1267,13 @@ void Hamamatsu108Processor::startSwitchVoices (int note, float velocity)
 {
     if (const float a = sw (swSparkle); a > 0.0f && note + 12 <= 120) startHarp (voiceSettings, note + 12, velocity * (0.25f + 0.45f * a));
     if (const float a = sw (swSub); a > 0.0f && note - 12 >= 12) startHarp (voiceSettings, note - 12, velocity * (0.3f + 0.5f * a));
+    if (const float a = sw (swFifth); a > 0.0f && note + 7 <= 120) startHarp (voiceSettings, note + 7, velocity * (0.25f + 0.45f * a));
+    if (const float a = sw (swDetune); a > 0.0f)
+    {
+        auto s2 = voiceSettings;
+        s2.pitchMul *= std::exp2 ((4.0f + 14.0f * a) / 1200.0f);   // 4 .. 18 cents: a second string beating against the first
+        startHarp (s2, note, velocity * 0.7f);
+    }
 }
 
 void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note, float velocity, bool layerB)
@@ -2309,7 +2319,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     std::uint32_t flashes = 0;
 
     // rhythmic gate: one gain per sample, smoothed so the steps never click
-    const bool gateOn = param (apvts, "gateOn") > 0.5f;
+    const bool gateOn = param (apvts, "gateOn") > 0.5f || sw (swStutter) > 0.0f;   // STUTTER switch = the gate
     const bool gateAll = juce::roundToInt (param (apvts, "gateTarget")) == 1;
     if ((int) gateBuf.size() < numSamples) gateBuf.resize ((size_t) numSamples, 1.0f);
     {
@@ -2317,7 +2327,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         const double stepQ = gq[juce::jlimit (0, 9, juce::roundToInt (param (apvts, "gateRate")))];
         const int glen = juce::jlimit (1, gateSteps, gateLen.load());
         const std::uint32_t mask = gateMask.load();
-        const float depth = gateOn ? param (apvts, "gateDepth") : 0.0f;
+        const float depth = gateOn ? juce::jmax (param (apvts, "gateOn") > 0.5f ? param (apvts, "gateDepth") : 0.0f, sw (swStutter)) : 0.0f;
         const float coef = 1.0f - std::exp (-1.0f / (0.001f * param (apvts, "gateSmooth") * (float) sr));
         const double stepsPerSample = bpm / 60.0 / stepQ / sr;
         const double startStep = hostPlaying ? ppq / stepQ : gateClock;
@@ -2586,8 +2596,9 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     // SWITCH effects after the chain: CRUSH, DELAY, REVERB, SHIMMER
     {
         struct S { int sw, type; float a, b, mix; };
-        const S list[] = { { swCrush, 4, 0.0f, 0.5f, 1.0f }, { swDelay, 13, 0.55f, 0.4f, 0.38f }, { swReverb, 14, 0.8f, 0.5f, 0.5f }, { swShimmer, 15, 0.85f, 0.55f, 0.45f } };
-        for (int k = 0; k < 4; ++k)
+        const S list[] = { { swCrush, 4, 0.0f, 0.5f, 1.0f }, { swDelay, 13, 0.55f, 0.4f, 0.38f }, { swReverb, 14, 0.8f, 0.5f, 0.5f }, { swShimmer, 15, 0.85f, 0.55f, 0.45f },
+                           { swChorus, 7, 0.35f, 0.45f, 0.6f }, { swPhaser, 9, 0.25f, 0.6f, 0.7f }, { swFlanger, 8, 0.3f, 0.6f, 0.6f }, { swRadio, 10, 0.6f, 0.5f, 1.0f }, { swVibrato, 6, 0.45f, 0.5f, 1.0f } };
+        for (int k = 0; k < 9; ++k)
         {
             const float amt = sw (list[k].sw);
             if (amt <= 0.0f && ! switchFxActive[(size_t) k]) continue;

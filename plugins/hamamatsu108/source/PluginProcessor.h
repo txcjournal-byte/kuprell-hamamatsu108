@@ -150,8 +150,9 @@ public:
     static const juce::StringArray& keysPlayNames();
     static const juce::StringArray& strumZoneNames();
     // SWITCHES on the main page
-    static constexpr int numSwitches = 16;
-    enum { swSparkle, swSub, swSwell, swFreeze, swDrive, swCrush, swFilter, swTape, swDream, swWobble, swWide, swDelay, swReverb, swShimmer, swHalftime, swHuman };
+    static constexpr int numSwitches = 24;
+    enum { swSparkle, swSub, swSwell, swFreeze, swDrive, swCrush, swFilter, swTape, swDream, swWobble, swWide, swDelay, swReverb, swShimmer, swHalftime, swHuman,
+           swChorus, swPhaser, swFlanger, swRadio, swFifth, swDetune, swStutter, swVibrato };
     static const juce::StringArray& switchNames();
     static const juce::StringArray& switchHelp();
     float sw (int i) const;   // amount of a switch, 0 when it is off
@@ -339,8 +340,8 @@ private:
     // model, FX, modulation
     juce::AudioBuffer<float> work;
     std::array<fx::FxUnit, fx::numSlots> fxUnits;
-    std::array<fx::FxUnit, 4> switchFx;   // CRUSH, DELAY, REVERB, SHIMMER switches
-    std::array<bool, 4> switchFxActive {};
+    std::array<fx::FxUnit, 9> switchFx;   // CRUSH, DELAY, REVERB, SHIMMER, CHORUS, PHASE, FLANGE, RADIO, VIBRATO switches
+    std::array<bool, 9> switchFxActive {};
     juce::Random humanRng;
     void startSwitchVoices (int note, float velocity);
     hama::FdnReverb dreamReverb;

@@ -5,7 +5,7 @@
     class BankPresets : public juce::Component, public juce::SettableTooltipClient
     {
     public:
-        explicit BankPresets (Hamamatsu108Processor& p) : processor (p) { setTooltip ("BANK: pick a bank, click a sound to hear it. Right-click a sound = favourite"); }
+        explicit BankPresets (Hamamatsu108Processor& p) : processor (p) { fitColumns(); setTooltip ("BANK: pick a bank, click a sound to hear it. Right-click a sound = favourite"); }
 
         std::function<void (const juce::String&, const juce::String&)> onStatus;
 
@@ -42,8 +42,8 @@
             const int pages = numPages();
             if (pages > 1)
             {
-                g.setColour (page::onSlab());
-                g.setFont (LookAndFeel::uiFont (11.5f, false));
+                g.setColour (page::phosphorDim());
+                g.setFont (LookAndFeel::monoFont (9.5f));
                 g.drawText (juce::String (pageIndex + 1) + " of " + juce::String (pages), pageText(), juce::Justification::centred, false);
                 drawArrow (g, prevArrow(), true);
                 drawArrow (g, nextArrow(), false);
@@ -93,7 +93,7 @@
         void mouseDown (const juce::MouseEvent& e) override
         {
             for (int i = 0; i < banks().size(); ++i)
-                if (tab (i).contains (e.position)) { bank = i; pageIndex = 0; repaint(); if (onStatus) onStatus ("Bank", banks()[i]); return; }
+                if (tab (i).contains (e.position)) { bank = i; pageIndex = 0; fitColumns(); repaint(); if (onStatus) onStatus ("Bank", banks()[i]); return; }
             if (numPages() > 1)
             {
                 if (prevArrow().expanded (4.0f).contains (e.position)) { pageIndex = (pageIndex + numPages() - 1) % numPages(); repaint(); return; }
@@ -120,7 +120,9 @@
         }
 
     private:
-        static constexpr int cols = 6;   // 6 x 11 = 66 sounds at a glance
+        // columns follow the size of the bank, so the screen is always full: 40 sounds = 4 wide columns, ALL = 6 and pages
+        int cols = 6;
+        void fitColumns() { cols = juce::jlimit (3, 6, ((int) list().size() + page::presetRows - 1) / page::presetRows); }
 
         std::vector<int> list() const
         {
@@ -148,23 +150,24 @@
 
         juce::Rectangle<float> tab (int i) const
         {
-            float x = 0.0f;
+            float x = (float) page::tabsX;
             for (int k = 0; k < i; ++k) x += tabW (k) + 4.0f;
             return { x, 0.0f, tabW (i), (float) page::bankH };
         }
         static float tabW (int i) { return 16.0f + 6.4f * (float) banks()[i].length(); }
-        juce::Rectangle<float> pageText() const { return { (float) getWidth() - 86.0f, 0.0f, 50.0f, (float) page::bankH }; }
-        juce::Rectangle<float> prevArrow() const { return { (float) getWidth() - 96.0f, 5.0f, 10.0f, 10.0f }; }
-        juce::Rectangle<float> nextArrow() const { return { (float) getWidth() - 24.0f, 5.0f, 10.0f, 10.0f }; }
+        // pages: small, at the bottom-right corner of the screen
+        juce::Rectangle<float> pageText() const { const auto g = gridArea(); return { g.getRight() - 74.0f, g.getBottom() - 15.0f, 48.0f, 12.0f }; }
+        juce::Rectangle<float> prevArrow() const { const auto t = pageText(); return { t.getX() - 10.0f, t.getY() + 2.0f, 8.0f, 8.0f }; }
+        juce::Rectangle<float> nextArrow() const { const auto t = pageText(); return { t.getRight() + 2.0f, t.getY() + 2.0f, 8.0f, 8.0f }; }
         void drawArrow (juce::Graphics& g, juce::Rectangle<float> r, bool left) const
         {
             juce::Path p;
             if (left) p.addTriangle (r.getRight(), r.getY(), r.getRight(), r.getBottom(), r.getX(), r.getCentreY());
             else      p.addTriangle (r.getX(), r.getY(), r.getX(), r.getBottom(), r.getRight(), r.getCentreY());
-            g.setColour (page::onSlab());
+            g.setColour (page::phosphor());
             g.fillPath (p);
         }
-        juce::Rectangle<float> gridArea() const { return { 0.0f, (float) page::bankH + 4.0f, (float) getWidth(), (float) page::presetH }; }
+        juce::Rectangle<float> gridArea() const { return { 0.0f, (float) (page::presetY - page::bankY), (float) getWidth(), (float) page::presetH }; }
         juce::Rectangle<float> cellRect (int c) const
         {
             const auto gr = gridArea().reduced (8.0f, 4.0f);
@@ -212,13 +215,13 @@
                 g.setColour (o ? juce::Colours::white : juce::Colour (0xff6c6a66));
                 g.fillRect (t.withHeight (1.0f));
                 // LED
-                const auto ledR = juce::Rectangle<float> (5.0f, 5.0f).withCentre ({ t.getRight() - 7.0f, t.getY() + 7.0f });
+                const auto ledR = juce::Rectangle<float> (5.0f, 5.0f).withCentre ({ t.getCentreX(), t.getY() + 7.0f });
                 g.setColour (o ? page::led() : juce::Colour (0xff2e2d2b));
                 g.fillEllipse (ledR);
                 // name
-                g.setFont (LookAndFeel::uiFont (10.0f, true));
+                g.setFont (LookAndFeel::uiFont (9.0f, true));
                 g.setColour (o ? page::litInk() : page::onSlab());
-                g.drawText (niceName (i), t.withTrimmedTop (8.0f).withHeight (12.0f), juce::Justification::centred, false);
+                g.drawFittedText (niceName (i), t.withTrimmedTop (14.0f).withHeight (12.0f).toNearestInt(), juce::Justification::centred, 1, 0.75f);
                 // amount knob
                 const auto k = knobRect (i);
                 const float a = amt (i);
@@ -285,10 +288,11 @@
         void say (int i) { if (onStatus) onStatus (Hamamatsu108Processor::switchNames()[i] + (on (i) ? juce::String ("  on") : juce::String ("  off")), juce::String (juce::roundToInt (amt (i) * 100.0f)) + " %  " + Hamamatsu108Processor::switchHelp()[i]); }
         juce::Rectangle<float> tile (int i) const
         {
-            const float gap = 6.0f, w = ((float) getWidth() - gap * 15.0f) / 16.0f;
+            const int n = Hamamatsu108Processor::numSwitches;
+            const float gap = 3.0f, w = ((float) getWidth() - gap * (float) (n - 1)) / (float) n;
             return { (float) i * (w + gap), 0.0f, w, (float) getHeight() };
         }
-        juce::Rectangle<float> knobRect (int i) const { const auto t = tile (i); return juce::Rectangle<float> (20.0f, 20.0f).withCentre ({ t.getCentreX(), t.getBottom() - 18.0f }); }
+        juce::Rectangle<float> knobRect (int i) const { const auto t = tile (i); return juce::Rectangle<float> (22.0f, 22.0f).withCentre ({ t.getCentreX(), t.getBottom() - 20.0f }); }
 
         Hamamatsu108Processor& processor;
         int dragging = -1, lastSig = 0;

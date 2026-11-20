@@ -34,6 +34,8 @@ namespace kuprell
         void setEditActive (bool shouldBeActive);
         // embedded: the bar sits inside the plugin's own panel (no background, no logo; the panel shows the logo once)
         void setEmbedded (bool e) { embedded = e; resized(); repaint(); }
+        // minimal: only a small "Edit" and the settings (the main page shows sounds itself; save, A/B, random live in EDIT)
+        void setMinimal (bool m) { if (minimal != m) { minimal = m; setInterceptsMouseClicks (! m, true); resized(); repaint(); } }
 
         void paint (juce::Graphics&) override;
         void resized() override;
@@ -48,7 +50,7 @@ namespace kuprell
         juce::String pluginName;
         juce::String presetCategory { "INIT" }, presetName { "Init" };
         bool presetModified = false;
-        bool embedded = false;
+        bool embedded = false, minimal = false;
 
         std::unique_ptr<juce::Drawable> logo;
         juce::Rectangle<int> logoArea, nameArea, presetArea;

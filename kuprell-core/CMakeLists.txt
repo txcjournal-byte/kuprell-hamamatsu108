@@ -7,7 +7,8 @@ juce_add_binary_data(KuprellBrandAssets
     NAMESPACE   KuprellBrand
     SOURCES
         assets/brand/kuprell-logo-cream.svg
-        assets/brand/kuprell-logo-ink.svg)
+        assets/brand/kuprell-logo-ink.svg
+        assets/fonts/michroma.ttf)
 
 add_library(kuprell_core INTERFACE)
 

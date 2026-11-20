@@ -68,6 +68,7 @@ Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
     content.addAndMakeVisible (instrument);
     content.addAndMakeVisible (topBar);
     topBar.setEmbedded (true);
+    topBar.setMinimal (true);
     content.addChildComponent (editView);
     content.addChildComponent (browser);
     content.addChildComponent (settings);
@@ -200,6 +201,7 @@ void Hamamatsu108Editor::showPage (Page p)
     settings.setVisible (p == Page::settings);
     if (p != Page::play) help.setVisible (false);
     topBar.setEditActive (p == Page::edit);
+    topBar.setMinimal (p != Page::edit);   // the main page is quiet: only Edit and settings up there
 }
 
 void Hamamatsu108Editor::compareAB()
