@@ -33,27 +33,108 @@ namespace hama
             g.fillRect (slab.translated (10.0f, 12.0f));
             g.setColour (page::theme().slab);
             g.fillRect (slab);
-            // cast concrete: fine grain and the odd pore, fixed seed so it never changes
+            // the material: every theme is its own way of building a monument (fixed seeds, it never changes)
             {
+                juce::Graphics::ScopedSaveState clip (g);
+                g.reduceClipRegion (slab.toNearestInt());
                 juce::Random rnd (2049);
-                for (int i = 0; i < 26000; ++i)
+                const int kind = page::themeIndex();
+                const auto dark = juce::Colours::black, light = juce::Colours::white;
+                // fine grain everywhere
+                for (int i = 0; i < 24000; ++i)
                 {
                     const float x = slab.getX() + rnd.nextFloat() * slab.getWidth(), y = slab.getY() + rnd.nextFloat() * slab.getHeight();
-                    const bool dark = rnd.nextBool();
-                    g.setColour ((dark ? juce::Colours::black : juce::Colours::white).withAlpha (0.02f + rnd.nextFloat() * 0.05f));
+                    g.setColour ((rnd.nextBool() ? dark : light).withAlpha (0.02f + rnd.nextFloat() * 0.05f));
                     g.fillRect (x, y, 1.0f, 1.0f);
                 }
-                for (int i = 0; i < 260; ++i)
+                if (kind == 0 || kind == 5)
                 {
-                    const float x = slab.getX() + rnd.nextFloat() * slab.getWidth(), y = slab.getY() + rnd.nextFloat() * slab.getHeight();
-                    const float d = 1.0f + rnd.nextFloat() * 2.2f;
-                    g.setColour (juce::Colours::black.withAlpha (0.18f + rnd.nextFloat() * 0.2f));
-                    g.fillEllipse (x, y, d, d);
+                    // fair-faced concrete: cast panels, tie holes in pairs, pores
+                    g.setColour (dark.withAlpha (0.28f));
+                    for (float x = slab.getX() + 280.0f; x < slab.getRight() - 40.0f; x += 280.0f) g.fillRect (x, slab.getY(), 1.0f, slab.getHeight());
+                    for (float y = slab.getY() + 150.0f; y < slab.getBottom() - 20.0f; y += 150.0f) g.fillRect (slab.getX(), y, slab.getWidth(), 1.0f);
+                    for (float x = slab.getX() + 70.0f; x < slab.getRight(); x += 140.0f)
+                        for (float y = slab.getY() + 37.0f; y < slab.getBottom(); y += 75.0f)
+                        {
+                            g.setColour (dark.withAlpha (0.45f)); g.fillEllipse (x - 4.0f, y - 4.0f, 8.0f, 8.0f);
+                            g.setColour (light.withAlpha (0.10f)); g.drawEllipse (x - 4.0f, y - 3.0f, 8.0f, 8.0f, 1.0f);
+                        }
+                    for (int i = 0; i < 320; ++i)
+                    {
+                        const float d = 1.0f + rnd.nextFloat() * 2.4f;
+                        g.setColour (dark.withAlpha (0.18f + rnd.nextFloat() * 0.22f));
+                        g.fillEllipse (slab.getX() + rnd.nextFloat() * slab.getWidth(), slab.getY() + rnd.nextFloat() * slab.getHeight(), d, d);
+                    }
                 }
-                // formwork joints: the slab was cast in panels
-                g.setColour (juce::Colours::black.withAlpha (0.22f));
-                for (float x = slab.getX() + 280.0f; x < slab.getRight() - 40.0f; x += 280.0f) g.fillRect (x, slab.getY(), 1.0f, slab.getHeight());
-                g.fillRect (slab.getX(), slab.getY() + 300.0f, slab.getWidth(), 1.0f);
+                else if (kind == 1)
+                {
+                    // sandstone: sediment, laid down in bands over ages
+                    float y = slab.getY();
+                    while (y < slab.getBottom())
+                    {
+                        const float h = 6.0f + rnd.nextFloat() * 34.0f;
+                        g.setColour ((rnd.nextBool() ? dark : light).withAlpha (0.03f + rnd.nextFloat() * 0.07f));
+                        juce::Path band;
+                        band.startNewSubPath (slab.getX(), y);
+                        for (float x = slab.getX(); x <= slab.getRight() + 40.0f; x += 40.0f) band.lineTo (x, y + std::sin (x * 0.004f + y) * 3.0f);
+                        band.lineTo (slab.getRight(), y + h); band.lineTo (slab.getX(), y + h); band.closeSubPath();
+                        g.fillPath (band);
+                        y += h;
+                    }
+                    for (int i = 0; i < 900; ++i)
+                    {
+                        g.setColour (dark.withAlpha (0.10f + rnd.nextFloat() * 0.15f));
+                        g.fillRect (slab.getX() + rnd.nextFloat() * slab.getWidth(), slab.getY() + rnd.nextFloat() * slab.getHeight(), 1.0f + rnd.nextFloat() * 2.0f, 1.0f);
+                    }
+                }
+                else if (kind == 2)
+                {
+                    // basalt, board-formed: every plank of the formwork left its grain
+                    for (float y = slab.getY(); y < slab.getBottom(); y += 18.0f)
+                    {
+                        g.setColour ((rnd.nextBool() ? dark : light).withAlpha (0.03f + rnd.nextFloat() * 0.05f));
+                        g.fillRect (slab.getX(), y, slab.getWidth(), 18.0f);
+                        g.setColour (dark.withAlpha (0.35f));
+                        g.fillRect (slab.getX(), y, slab.getWidth(), 1.0f);
+                        for (int k = 0; k < 7; ++k)
+                        {
+                            const float gy = y + 2.0f + rnd.nextFloat() * 14.0f, gx = slab.getX() + rnd.nextFloat() * slab.getWidth();
+                            g.setColour (light.withAlpha (0.04f));
+                            g.fillRect (gx, gy, 60.0f + rnd.nextFloat() * 260.0f, 1.0f);
+                        }
+                    }
+                }
+                else if (kind == 3)
+                {
+                    // corten: weathered steel plates, bolted, rust running down
+                    for (int i = 0; i < 160; ++i)
+                    {
+                        const float x = slab.getX() + rnd.nextFloat() * slab.getWidth(), y = slab.getY() + rnd.nextFloat() * slab.getHeight();
+                        g.setColour ((rnd.nextBool() ? juce::Colour (0xff2a1208) : juce::Colour (0xffb0612e)).withAlpha (0.05f + rnd.nextFloat() * 0.08f));
+                        g.fillRect (x, y, 1.0f + rnd.nextFloat() * 3.0f, 30.0f + rnd.nextFloat() * 160.0f);
+                    }
+                    for (float x = slab.getX() + 280.0f; x < slab.getRight() - 40.0f; x += 280.0f)
+                    {
+                        g.setColour (dark.withAlpha (0.55f)); g.fillRect (x, slab.getY(), 2.0f, slab.getHeight());
+                        g.setColour (light.withAlpha (0.10f)); g.fillRect (x + 2.0f, slab.getY(), 1.0f, slab.getHeight());
+                    }
+                    for (float x = slab.getX() + 12.0f; x < slab.getRight(); x += 280.0f)
+                        for (float y = slab.getY() + 12.0f; y < slab.getBottom(); y += 96.0f)
+                            for (float dx : { 0.0f, 256.0f })
+                            {
+                                g.setColour (dark.withAlpha (0.5f)); g.fillEllipse (x + dx, y + 1.0f, 6.0f, 6.0f);
+                                g.setColour (juce::Colour (0xffc98a5c).withAlpha (0.5f)); g.fillEllipse (x + dx, y, 5.0f, 5.0f);
+                            }
+                }
+                else if (kind == 4)
+                {
+                    // night: a ribbed monolith, vertical flutes catching the last light
+                    for (float x = slab.getX(); x < slab.getRight(); x += 14.0f)
+                    {
+                        g.setColour (dark.withAlpha (0.30f)); g.fillRect (x, slab.getY(), 4.0f, slab.getHeight());
+                        g.setColour (light.withAlpha (0.05f)); g.fillRect (x + 4.0f, slab.getY(), 1.0f, slab.getHeight());
+                    }
+                }
             }
             // the light falls across the slab: the same wedge, lighter where it hits
             {
@@ -67,6 +148,23 @@ namespace hama
                 lit.closeSubPath();
                 g.setColour (juce::Colour (0xffe8e6df).withAlpha (0.13f));
                 g.fillPath (lit);
+                // a second, thin slit of light, like a cut in a monument's roof
+                juce::Path slit;
+                slit.startNewSubPath (bounds.getWidth() * 0.86f, 0.0f);
+                slit.lineTo (bounds.getWidth() * 0.885f, 0.0f);
+                slit.lineTo (bounds.getWidth() * 0.62f, bounds.getBottom());
+                slit.lineTo (bounds.getWidth() * 0.58f, bounds.getBottom());
+                slit.closeSubPath();
+                g.setColour (juce::Colour (0xffe8e6df).withAlpha (0.09f));
+                g.fillPath (slit);
+                // the side away from the light falls into a hard shadow
+                juce::Path shade;
+                shade.startNewSubPath (0.0f, 0.0f);
+                shade.lineTo (bounds.getWidth() * 0.30f, 0.0f);
+                shade.lineTo (0.0f, bounds.getBottom() * 0.75f);
+                shade.closeSubPath();
+                g.setColour (juce::Colours::black.withAlpha (0.16f));
+                g.fillPath (shade);
             }
             // hard edges: light on top, shadow at the bottom
             g.setColour (page::theme().slab.brighter (0.45f));
@@ -1695,7 +1793,7 @@ namespace hama
             attachment = std::make_unique<juce::ParameterAttachment> (*param, [this] (float) { repaint(); });
             attachment->sendInitialUpdate();
             setTooltip (param->getName (64));
-            setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
+            setMouseCursor (juce::MouseCursor::NormalCursor);
         }
         std::function<void (const juce::String&, const juce::String&)> onInteract;
         juce::Colour capColour { juce::Colours::transparentBlack };
