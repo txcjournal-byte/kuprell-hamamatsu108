@@ -58,9 +58,6 @@ namespace hama
         g.setColour (juce::Colours::black.withAlpha (0.7f));
         g.fillRect (face.withTop (face.getBottom() - 1.0f));
         g.drawRect (face.expanded (1.0f), 1.0f);
-        for (auto c : { face.getTopLeft().translated (9.0f, 9.0f), face.getTopRight().translated (-9.0f, 9.0f),
-                        face.getBottomLeft().translated (9.0f, -9.0f), face.getBottomRight().translated (-9.0f, -9.0f) })
-            hw::screw (g, c, c.x * 0.03f);
 
         // the console: dark metal, a lip of light where it meets the face
         g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2b2b2f), 0.0f, console.getY(), juce::Colour (0xff17171a), 0.0f, console.getBottom(), false));
@@ -355,20 +352,18 @@ namespace hama
                         g.fillRect (plate.getX(), y, plate.getWidth(), 1.0f);
                     }
                 }
-                hw::screw (g, { plate.getX() + 7.0f, plate.getCentreY() });
-                hw::screw (g, { plate.getRight() - 7.0f, plate.getCentreY() }, 2.1f);
-                const juce::Rectangle<float> name (plate.getX() + 18.0f, plate.getY() + 3.0f, 200.0f, 26.0f);
+                const juce::Rectangle<float> name (plate.getX() + 14.0f, plate.getY() + 2.0f, 200.0f, 26.0f);
                 g.setFont (juce::Font (juce::FontOptions (michroma).withHeight (23.0f)).withExtraKerningFactor (0.03f));
                 g.setColour (juce::Colours::black.withAlpha (0.85f));
                 g.drawText ("Harpology", name.translated (0.0f, 1.5f), juce::Justification::centredLeft, false);
                 g.setGradientFill (juce::ColourGradient (juce::Colour (0xffffffff), 0.0f, name.getY() + 6.0f, juce::Colour (0xff9a968e), 0.0f, name.getBottom() - 5.0f, false));
                 g.drawText ("Harpology", name, juce::Justification::centredLeft, false);
-                // the maker's mark, struck into the plate in the same wide letters
-                const juce::Rectangle<float> mark (name.getX() + 1.0f, plate.getBottom() - 13.0f, 200.0f, 10.0f);
-                g.setFont (juce::Font (juce::FontOptions (michroma).withHeight (8.0f)).withExtraKerningFactor (0.62f));
-                g.setColour (juce::Colours::black.withAlpha (0.8f));
-                g.drawText ("ALTRUISTI", mark.translated (0.0f, 1.0f), juce::Justification::centredLeft, false);
-                g.setColour (juce::Colour (0xffb8b4ac));
+                // the maker's mark, engraved into the plate: the cut shows bare bright metal, the top edge of the cut throws a shadow
+                const juce::Rectangle<float> mark (name.getX() + 2.0f, plate.getBottom() - 15.0f, 210.0f, 12.0f);
+                g.setFont (juce::Font (juce::FontOptions (michroma).withHeight (10.0f)).withExtraKerningFactor (0.55f));
+                g.setColour (juce::Colour (0xff050506));
+                g.drawText ("ALTRUISTI", mark.translated (0.0f, -1.0f), juce::Justification::centredLeft, false);
+                g.setGradientFill (juce::ColourGradient (juce::Colour (0xffd8d4cb), 0.0f, mark.getY(), juce::Colour (0xff8d8a83), 0.0f, mark.getBottom(), false));
                 g.drawText ("ALTRUISTI", mark, juce::Justification::centredLeft, false);
                 return;
             }

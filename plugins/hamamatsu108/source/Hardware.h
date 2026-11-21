@@ -155,8 +155,6 @@ namespace hama::hw
             g.fillPath (p);
             g.setColour (juce::Colours::black.withAlpha (0.7f));
             g.fillRect (left ? c.getRight() - 1.0f : c.getX(), c.getY() + 10.0f, 1.0f, c.getHeight() - 20.0f);
-            screw (g, { c.getCentreX(), c.getY() + 28.0f });
-            screw (g, { c.getCentreX(), c.getBottom() - 28.0f }, 2.0f);
         }
     }
 
