@@ -42,6 +42,19 @@ namespace hama
                 g.setColour (juce::Colours::black.withAlpha (0.16f + rnd.nextFloat() * 0.18f));
                 g.fillEllipse (face.getX() + rnd.nextFloat() * face.getWidth(), face.getY() + rnd.nextFloat() * face.getHeight(), d, d);
             }
+            // board-formed: the joints of the formwork boards, and the tie holes along them (cast in, not bolted on)
+            for (float y = face.getY() + 58.0f; y < face.getBottom() - 8.0f; y += 58.0f)
+            {
+                g.setColour (juce::Colours::black.withAlpha (0.16f));
+                g.fillRect (face.getX(), y, face.getWidth(), 1.0f);
+                g.setColour (juce::Colours::white.withAlpha (0.10f));
+                g.fillRect (face.getX(), y + 1.0f, face.getWidth(), 1.0f);
+            }
+            for (float x = face.getX() + 6.0f; x < face.getRight(); x += face.getWidth() / 4.0f)
+            {
+                g.setColour (juce::Colours::black.withAlpha (0.25f));
+                g.fillRect (x, face.getY(), 1.0f, face.getHeight());
+            }
             // one shaft of light, hard edged, from the top left
             juce::Path shaft;
             shaft.startNewSubPath (face.getX() + face.getWidth() * 0.30f, face.getY());
@@ -175,7 +188,7 @@ namespace hama
                     const auto d = page::deckArea2().toFloat();
                     const float hy = d.getY() + 2.0f;
                     struct S { float x0, x1; const char* name; };
-                    const S sec[] = { { 0, 82, "Envelope" }, { 86, 160, "Body" }, { 166, 350, "LFO 1" }, { 354, 538, "LFO 2" }, { 542, 668, "Output" }, { 670, (float) page::w0, "Morph" } };
+                    const S sec[] = { { 0, 82, "Envelope" }, { 86, 160, "Body" }, { 166, 350, "LFO 1" }, { 354, 538, "LFO 2" }, { 542, 696, "Output" }, { 700, (float) page::w0, "Morph" } };
                     for (const auto& q : sec)
                     {
                         hw::header (g, { d.getX() + q.x0 + 4.0f, hy, q.x1 - q.x0 - 8.0f, 13.0f }, q.name);
@@ -3141,11 +3154,11 @@ namespace hama
         ks.track = juce::Colours::white.withAlpha (0.08f);
         ks.label = page::dim(); ks.value = page::ink();
         ks.labelHeight = 10.0f;
-        const char* kid[] = { "harpTone", "filterCutoff", "master", "morph" };
-        const char* kl[] = { "Tone", "Cutoff", "Volume", "MORPH" };
-        for (int i = 0; i < 4; ++i)
+        const char* kid[] = { "harpTone", "filterCutoff", "filterReso", "master", "morph" };
+        const char* kl[] = { "Tone", "Cutoff", "Reso", "Volume", "Morph" };
+        for (int i = 0; i < 5; ++i)
         {
-            auto* k = mainKnobs.add (new Knob (p.apvts, kid[i], kl[i], i == 3 ? 46 : 26, ks));
+            auto* k = mainKnobs.add (new Knob (p.apvts, kid[i], kl[i], i == 4 ? 46 : 26, ks));
             k->onInteract = [this] (const Knob& kn) { if (onStatus) onStatus (kn.getDisplayName(), kn.getValueText()); };
             addAndMakeVisible (k);
         }
@@ -3205,10 +3218,10 @@ namespace hama
             lfo1->setBounds (d.getX() + 166, d.getY() + 15, 184, d.getHeight() - 18);
             lfo2->setBounds (d.getX() + 354, d.getY() + 15, 184, d.getHeight() - 18);
             const int kx = d.getX() + 542;
-            for (int i = 0; i < 3; ++i) mainKnobs[i]->setBounds (kx + i * 42, d.getY() + 20, 42, d.getHeight() - 22);
+            for (int i = 0; i < 4; ++i) mainKnobs[i]->setBounds (kx + i * 38, d.getY() + 20, 38, d.getHeight() - 22);
             // MORPH: the big knob, and right beside it what it moves
-            morphInfo->setBounds (kx + 132, d.getY() + 20, d.getRight() - kx - 132 - 92, d.getHeight() - 28);
-            mainKnobs[3]->setBounds (d.getRight() - 88, d.getY() + 14, 88, d.getHeight() - 14);
+            morphInfo->setBounds (kx + 162, d.getY() + 20, d.getRight() - kx - 162 - 92, d.getHeight() - 26);
+            mainKnobs[4]->setBounds (d.getRight() - 88, d.getY() + 14, 88, d.getHeight() - 14);
         }
         return;
 

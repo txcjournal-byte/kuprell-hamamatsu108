@@ -571,7 +571,8 @@
 
         void update()
         {
-            const int sig = juce::roundToInt (plain (processor.apvts, (id + "QDst").toRawUTF8())) * 16 + juce::roundToInt (plain (processor.apvts, (id + "Shape").toRawUTF8()));
+            const int sig = (juce::roundToInt (plain (processor.apvts, (id + "QDst").toRawUTF8())) * 16 + juce::roundToInt (plain (processor.apvts, (id + "Shape").toRawUTF8()))) * 16
+                            + juce::roundToInt (plain (processor.apvts, (id + "Sync").toRawUTF8()));
             if (sig != lastSig) { lastSig = sig; repaint(); }
             // the lamp follows the wave, so you see it run
             const float v = processor.modSources[(size_t) (mod::lfo1 + (id == "lfo2" ? 1 : 0))].load();
@@ -580,16 +581,12 @@
 
         void paint (juce::Graphics& g) override
         {
-            const auto r = getLocalBounds().toFloat();
-            g.setColour (juce::Colour (0xff262624));
-            g.fillRect (r);
-            g.setFont (LookAndFeel::uiFont (11.5f));
-            g.setColour (page::dim());
-            // the title is printed on the console above (section header)
+            // sits straight on the console; the title is printed above it (section header)
             g.setColour (page::led().withAlpha (0.15f + 0.85f * (0.5f + 0.5f * lampValue)));
             g.fillEllipse (lamp());
             chip (g, targetChip(), "To " + mod::targetNames()[juce::roundToInt (plain (processor.apvts, (id + "QDst").toRawUTF8()))]);
             chip (g, shapeChip(), mod::lfoShapeNames()[juce::roundToInt (plain (processor.apvts, (id + "Shape").toRawUTF8()))]);
+            chip (g, syncChip(), "Sync " + mod::lfoSyncNames()[juce::roundToInt (plain (processor.apvts, (id + "Sync").toRawUTF8()))]);
         }
 
         void mouseDown (const juce::MouseEvent& e) override
@@ -600,6 +597,13 @@
                 const int cur = juce::roundToInt (plain (processor.apvts, (id + "QDst").toRawUTF8()));
                 for (int i = 0; i < mod::targetNames().size(); ++i) m.addItem (1 + i, mod::targetNames()[i], true, i == cur);
                 showMenu (m, targetChip(), id + "QDst");
+            }
+            else if (syncChip().contains (e.position))
+            {
+                juce::PopupMenu m;
+                const int cur = juce::roundToInt (plain (processor.apvts, (id + "Sync").toRawUTF8()));
+                for (int i = 0; i < mod::lfoSyncNames().size(); ++i) m.addItem (1 + i, mod::lfoSyncNames()[i], true, i == cur);
+                showMenu (m, syncChip(), id + "Sync");
             }
             else if (shapeChip().contains (e.position))
             {
@@ -630,16 +634,16 @@
         }
         void chip (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& text) const
         {
-            g.setColour (page::screen());
-            g.fillRect (r);
+            page::paintScreen (g, r);
             g.setFont (LookAndFeel::monoFont (10.0f));
             g.setColour (page::phosphor());
             g.drawFittedText (text + juce::String::fromUTF8 ("  \xe2\x96\xbe"), r.toNearestInt().reduced (4, 0), juce::Justification::centredLeft, 1, 0.8f);
         }
-        juce::Rectangle<float> lamp() const { return { 140.0f, (float) getHeight() - 13.0f, 6.0f, 6.0f }; }
+        juce::Rectangle<float> lamp() const { return { 82.0f, 6.0f, 6.0f, 6.0f }; }
         float lampValue = 0.0f;
-        juce::Rectangle<float> targetChip() const { return { 94.0f, 8.0f, (float) getWidth() - 98.0f, 20.0f }; }
-        juce::Rectangle<float> shapeChip() const  { return { 94.0f, 32.0f, (float) getWidth() - 98.0f, 20.0f }; }
+        juce::Rectangle<float> targetChip() const { return { 94.0f, 4.0f, (float) getWidth() - 98.0f, 20.0f }; }
+        juce::Rectangle<float> shapeChip() const  { return { 94.0f, 28.0f, (float) getWidth() - 98.0f, 20.0f }; }
+        juce::Rectangle<float> syncChip() const   { return { 94.0f, 52.0f, (float) getWidth() - 98.0f, 20.0f }; }
 
         Hamamatsu108Processor& processor;
         juce::String id, title;
@@ -965,22 +969,38 @@
 
         void paint (juce::Graphics& g) override
         {
+            // a screen: every target MORPH moves, with a bar for how far
             auto r = getLocalBounds().toFloat();
-            g.setColour (page::screen());
-            g.fillRect (r);
-            g.setColour (juce::Colours::black.withAlpha (0.6f));
-            g.fillRect (r.withHeight (1.5f));
-            auto in = r.reduced (7.0f, 5.0f);
-            g.setFont (LookAndFeel::uiFont (10.0f));
+            page::paintScreen (g, r);
+            auto in = r.reduced (9.0f, 6.0f);
+            g.setFont (LookAndFeel::monoFont (9.5f));
             g.setColour (page::phosphorDim());
-            g.drawText ("Morph moves", in.removeFromTop (14.0f), juce::Justification::centredLeft, false);
-            g.setFont (LookAndFeel::monoFont (10.0f));
-            const auto l = lines();
-            for (int i = 0; i < juce::jmin (5, l.size()); ++i)
+            g.drawText ("MORPH MOVES", in.removeFromTop (13.0f), juce::Justification::centredLeft, false);
+            auto& s = processor.apvts;
+            struct Row { juce::String name; float amt; };
+            std::vector<Row> rows;
+            if (plain (s, "dual") > 0.5f) rows.push_back ({ "Layer A > B", 1.0f });
+            for (int i = 1; i <= mod::morphSlots; ++i)
             {
-                g.setColour (page::phosphor().withAlpha (hover ? 1.0f : 0.85f));
-                g.drawText (i == 4 && l.size() > 5 ? juce::String ("+ ") + juce::String (l.size() - 4) + " more" : l[i],
-                            in.removeFromTop (13.0f), juce::Justification::centredLeft, true);
+                auto* c = dynamic_cast<juce::AudioParameterChoice*> (s.getParameter ("morph" + juce::String (i) + "Dst"));
+                if (c == nullptr || c->getIndex() == 0) continue;
+                rows.push_back ({ c->getCurrentChoiceName(), plain (s, ("morph" + juce::String (i) + "Amt").toRawUTF8()) });
+            }
+            const float rowH = 13.0f;
+            const int maxRows = juce::jmax (1, (int) (in.getHeight() / rowH));
+            if (rows.empty()) { g.setColour (page::phosphor().withAlpha (0.6f)); g.drawText ("click to pick what it moves", in.removeFromTop (rowH), juce::Justification::centredLeft, false); }
+            for (int i = 0; i < juce::jmin ((int) rows.size(), maxRows); ++i)
+            {
+                auto row = in.removeFromTop (rowH);
+                auto bar = row.removeFromRight (juce::jmin (70.0f, row.getWidth() * 0.38f)).reduced (0.0f, 4.5f);
+                g.setColour (page::phosphor().withAlpha (hover ? 1.0f : 0.88f));
+                g.drawText (rows[(size_t) i].name, row, juce::Justification::centredLeft, true);
+                g.setColour (page::phosphor().withAlpha (0.12f));
+                g.fillRect (bar);
+                const float a = juce::jlimit (-1.0f, 1.0f, rows[(size_t) i].amt);
+                g.setColour (page::phosphor());
+                if (a >= 0.0f) g.fillRect (bar.withWidth (bar.getWidth() * a));
+                else g.fillRect (bar.withLeft (bar.getRight() + bar.getWidth() * a));
             }
         }
 
