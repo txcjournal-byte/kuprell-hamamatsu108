@@ -2358,7 +2358,7 @@ namespace hama
             g.setFont (spaced (8.5f, true, 0.18f));
             g.setColour (plateOnly && th().concrete ? page::phosphorDim() : juce::Colour (0xff9aa0a7));
             const int type = curType();
-            g.drawText (type == 0 ? "CLICK / DRAG = LIGHT CELLS  /  HOLD A CHORD OR KEY G0 TO PLAY"
+            if (! plateOnly) g.drawText (type == 0 ? "CLICK / DRAG = LIGHT CELLS  /  HOLD A CHORD OR KEY G0 TO PLAY"
                         : type == 1 ? "DRAW A LINE = A FINGER OVER THE STRINGS  /  RIGHT-DRAG = ERASE"
                         : type == 2 ? "CLICK A STEP = CHANGE THE STROKE  /  IDEAS = 3-3-2, HALF-TIME ..."
                         : type == 3 ? "CLICK = START, DRAG = LEVEL  /  RIGHT-CLICK = OCTAVE, CHANCE, REPEATS"
@@ -3181,6 +3181,8 @@ namespace hama
         strumBar = std::make_unique<StrumBar> (p);
         notesStrip = std::make_unique<NotesStrip> (p);
         modeStrip = std::make_unique<ModeStrip> (p);
+        morphInfo = std::make_unique<MorphInfo> (p);
+        addAndMakeVisible (*morphInfo);
         addChildComponent (*modeStrip);
         addChildComponent (*notesStrip);
         strumBar->onNotes = [this] (bool on) { showNotes (on); };
@@ -3262,12 +3264,14 @@ namespace hama
         layoutStrips();
         {
             const auto d = page::deckArea2();
-            for (int i = 0; i < 8; ++i) mainSliders[i]->setBounds (d.getX() + 8 + i * 21 + (i >= 4 ? 6 : 0), d.getY() + 4, 20, d.getHeight() - 6);
-            lfo1->setBounds (d.getX() + 184, d.getY() + 4, 280, d.getHeight() - 8);
-            lfo2->setBounds (d.getX() + 470, d.getY() + 4, 280, d.getHeight() - 8);
-            const int kx = d.getX() + 760;
-            for (int i = 0; i < 3; ++i) mainKnobs[i]->setBounds (kx + i * 50, d.getY() + 10, 50, d.getHeight() - 10);
-            mainKnobs[3]->setBounds (kx + 152, d.getY() - 2, d.getRight() - kx - 156, d.getHeight() + 2);   // MORPH: the big one, A to B
+            for (int i = 0; i < 8; ++i) mainSliders[i]->setBounds (d.getX() + 6 + i * 19 + (i >= 4 ? 4 : 0), d.getY() + 4, 19, d.getHeight() - 6);
+            lfo1->setBounds (d.getX() + 166, d.getY() + 4, 184, d.getHeight() - 8);
+            lfo2->setBounds (d.getX() + 354, d.getY() + 4, 184, d.getHeight() - 8);
+            const int kx = d.getX() + 542;
+            for (int i = 0; i < 3; ++i) mainKnobs[i]->setBounds (kx + i * 42, d.getY() + 10, 42, d.getHeight() - 10);
+            // MORPH: the big knob, and right beside it what it moves
+            morphInfo->setBounds (kx + 128, d.getY() + 8, 112, d.getHeight() - 16);
+            mainKnobs[3]->setBounds (kx + 244, d.getY() - 2, d.getRight() - kx - 244, d.getHeight() + 2);
         }
         return;
 
@@ -3379,6 +3383,7 @@ namespace hama
         strumBar->update();
         if (notesStrip->isVisible()) notesStrip->update();
         modeStrip->update();
+        morphInfo->update();
         if (modeStrip->anyOn() != modeStrip->isVisible()) { modeStrip->setVisible (modeStrip->anyOn()); layoutStrips(); }
         lfo1->update();
         lfo2->update();

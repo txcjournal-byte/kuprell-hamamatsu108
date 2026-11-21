@@ -152,6 +152,7 @@ namespace harp
         bool isActive() const noexcept { return active || pending; }
         bool isBusy() const noexcept   { return pending || fadeOutLeft > 0; }   // fading out or waiting to restart
         int getNote() const noexcept   { return pending ? pendingArgs.note : note; }
+        int key = -1;   // the key that started this string (layers and switch voices share it)
         juce::int64 getAge() const noexcept { return age; }
         float getLevel() const noexcept { return active ? level : 0.0f; }
 

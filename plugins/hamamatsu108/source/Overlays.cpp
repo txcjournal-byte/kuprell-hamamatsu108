@@ -105,23 +105,15 @@ namespace hama
         juce::ignoreUnused (onOff);
 
         std::vector<std::pair<juce::String, std::vector<Row>>> cols;
-        cols.push_back ({ "Your keys", {
-            paramRow ("A key plays", "keysPlay", { "Notes", "Strum", "Pattern", "Plate", "Run up", "Run down", "Split" }, "Notes: every key is one note"),
+        // only what a producer sets once: how to record it, the strum keys, how many voices
+        cols.push_back ({ "Recording and MIDI", {
+            flag ("MIDI out", p.midiOut, "record what you play (mouse too) in the DAW"),
             paramRow ("Strum keys", "strumZone", {}, "a low octave of keys that strum"),
-            flag ("Keyswitches", p.keyswitches, "C-1..D#-1 pick the mode"),
-            flag ("Chord zones", p.chordZones, "low keys pick the chord"),
-            { "Zones start at", {}, { "C0", "C1", "C2", "C3" }, [&p] { return p.zoneOctave.load(); }, [&p] (int i) { p.zoneOctave.store (i); } },
-            flag ("Computer keys", p.pcKeys, "play from the keyboard"),
-        } });
-        cols.push_back ({ "MIDI", {
-            flag ("MIDI out", p.midiOut, "harp ch 1, chord ch 2, bass ch 3"),
-            { "Dragged MIDI", {}, { "Every note", "Clean" }, [&p] { return p.captureMode.load(); }, [&p] (int i) { p.captureMode.store (i); } },
-            { "Snap to", {}, { "Off", "1/16", "1/8", "1/4", "Bar" }, [&p] { return p.captureQuant.load(); }, [&p] (int i) { p.captureQuant.store (i); } },
             { "Voices", {}, { "16", "32", "48", "64" }, [&p] { const int v = p.maxVoices.load(); return v <= 16 ? 0 : v <= 32 ? 1 : v <= 48 ? 2 : 3; }, [&p] (int i) { p.maxVoices.store (16 * (i + 1)); } },
-            flag ("MTS-ESP", p.mtsEnabled, p.mtsConnected() ? "tuning from the MTS master" : "no MTS master running"),
+            { "MIDI learn", "right-click a knob, then move a knob on your controller", { "Clear all" }, [] { return -1; }, [&p] (int) { for (auto& cc : p.ccMap) cc.store (-1); } },
         } });
 
-        const float colW = 400.0f, x0 = 24.0f, y0 = 20.0f, h = 470.0f;
+        const float colW = 604.0f, x0 = 24.0f, y0 = 20.0f, h = 340.0f;
         for (size_t c = 0; c < cols.size(); ++c)
         {
             const float cx = x0 + (float) c * (colW + 24.0f);
@@ -147,7 +139,7 @@ namespace hama
         }
 
         // third column: tuning, window, MIDI learn, back
-        const float cx = x0 + 2.0f * (colW + 24.0f), w3 = 1232.0f - 2.0f * (colW + 24.0f);
+        const float cx = x0 + (float) cols.size() * (colW + 24.0f), w3 = 1232.0f - (float) cols.size() * (colW + 24.0f);
         visit ("box", { cx, y0, w3, h }, "Tuning and window", false, {});
         float y = y0 + 48.0f;
         visit ("label", { cx + 16.0f, y, 200.0f, 16.0f }, "A4", false, {});
@@ -169,14 +161,6 @@ namespace hama
         }
         y += 64.0f;
         visit ("tile", { cx + 16.0f, y, 228.0f, 26.0f }, "Fit to screen", false, [this] { if (onFit) onFit(); });
-        y += 60.0f;
-        int learnedCount = 0;
-        for (auto& cc : p.ccMap) if (cc.load() >= 0) ++learnedCount;
-        visit ("label", { cx + 16.0f, y, 200.0f, 16.0f }, "MIDI learn", false, {});
-        visit ("note", { cx + 16.0f, y, w3 - 32.0f, 16.0f }, p.learnParam.load() >= 0 ? juce::String ("move a knob on your controller")
-                       : learnedCount == 0 ? juce::String ("right-click a knob") : juce::String (learnedCount) + " learned", false, {});
-        y += 20.0f;
-        visit ("tile", { cx + 16.0f, y, 110.0f, 26.0f }, "Clear all", false, [&p] { for (auto& cc : p.ccMap) cc.store (-1); });
         visit ("back", { cx + 16.0f, y0 + h - 56.0f, w3 - 32.0f, 36.0f }, "Back to play", true, [this] { if (onClose) onClose(); });
     }
 

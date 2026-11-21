@@ -766,7 +766,7 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
     {
         const int n = m.getNoteNumber();
         if (m.isNoteOn()) schedulePitch (samplePos, n, m.getFloatVelocity());
-        else if (const float rel = param (apvts, "harpRelease"); rel < 7.9f && numReleases < (int) releases.size())
+        else if (const float rel = noteRelease(); numReleases < (int) releases.size())
             releases[(size_t) numReleases++] = { samplePos, n, rel };
         return;
     }
@@ -831,7 +831,7 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
         }
         else if (m.isNoteOff())
         {
-            if (const float rel = param (apvts, "harpRelease"); rel < 7.9f && numReleases < (int) releases.size())
+            if (const float rel = noteRelease(); numReleases < (int) releases.size())
                 releases[(size_t) numReleases++] = { samplePos, n, rel };
         }
         return;
@@ -884,7 +884,7 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
     else if (m.isNoteOff())
     {
         const int n = m.getNoteNumber();
-        if (const float rel = param (apvts, "harpRelease"); rel < 7.9f && numReleases < (int) releases.size())
+        if (const float rel = noteRelease(); numReleases < (int) releases.size())
         {
             const int kp = juce::roundToInt (param (apvts, "keysPlay"));
             // RELEASE: the sound ends when the key goes up (Notes: that note, Flourish: the whole run)
@@ -1100,7 +1100,7 @@ void Hamamatsu108Processor::sweep (int offset, bool down, int first, int count, 
     const int n = (int) tones.size();
     if (n == 0 || count <= 0) return;
     // the STROKE switches shape every stroke, whatever plays it (keys, strum keys, mouse, motion, left hand)
-    if (! inStroke && count >= 3)
+    if (false && ! inStroke && count >= 3)   // stroke toggles retired: every strum plays clean
     {
         auto on = [this] (const char* id) { return param (apvts, id) > 0.5f; };
         const bool sDown = on ("strokeDown"), sHalf = on ("strokeHalf"), sBounce = on ("strokeBounce"),
@@ -1185,7 +1185,9 @@ void Hamamatsu108Processor::flourish (int samplePos, int key, float velocity, bo
     static const int majSteps[] = { 0, 2, 4, 5, 7, 9, 11 }, minSteps[] = { 0, 2, 3, 5, 7, 8, 10 };
     int degree = -1;
     for (int d = 0; d < 7; ++d) if ((keyMinor ? minSteps[d] : majSteps[d]) == pcRel) degree = d;
-    const int chord = degree >= 0 ? prog::chordOnDegree (keyRoot, keyMinor, degree) : chords::index (key % 12, flourishType (key));
+    int chord = degree >= 0 ? prog::chordOnDegree (keyRoot, keyMinor, degree) : chords::index (key % 12, flourishType (key));
+    // NOTES strip: the notes you picked are the run, whatever key starts it
+    if (const int pick = stringsPick.load(); chords::isValid (pick)) chord = pick;
     flourishChord = chord;
     if (motionActive()) return;   // MOTION is on (GRID / LINES / RHYTHM / STRINGS): the key only picks the chord, the window plays it
     const int range = juce::jlimit (1, 4, juce::roundToInt (param (apvts, "harpRange")));
@@ -1290,8 +1292,12 @@ void Hamamatsu108Processor::patternStep (int offset, juce::int64 k)
     stroke (offset, c, accent);
 }
 
+// RELEASE when a key goes up: the knob, but "ring" lets go over 3 s, so a held key decides how long a note lasts
+float Hamamatsu108Processor::noteRelease() { return juce::jmin (param (apvts, "harpRelease"), 3.0f); }
+
 void Hamamatsu108Processor::startVoice (int note, float velocity)
 {
+    keyNow = note;   // every string this key starts (layers, SPARKLE, SUB...) belongs to it, so its release finds them all
     if (! dualOn) { startHarp (voiceSettings, note, velocity); startSwitchVoices (note, velocity); return; }
     // MORPH blends layer A and layer B (equal power)
     const float m = juce::jlimit (0.0f, 1.0f, morphNow);
@@ -1347,6 +1353,7 @@ void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note,
     float pan = juce::jlimit (-panLimit, panLimit, ((float) note - centre) / 30.0f * (0.4f + 1.4f * spread));
     if (layerB) pan = juce::jlimit (-panLimit, panLimit, -pan * 1.15f);
     target->start (note, velocity, pan, settings, rng, noteHz (note));
+    target->key = keyNow;
 }
 
 // MIDI OUT: harp on channel 1, chord layer on 2, bass on 3 (FL Studio: set the plugin's MIDI output port)
@@ -1686,6 +1693,12 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     voiceSettings.decay = mp ("harpDecay") * model.decay * (1.0f + 1.2f * dream);
     voiceSettings.attack = juce::jmin (3.0f, param (apvts, "harpAttack") + 1.6f * sw (swSwell) * sw (swSwell) + (sw (swSwell) > 0.0f ? 0.03f : 0.0f));
     voiceSettings.sustain = juce::jmax (param (apvts, "harpSustain"), sw (swFreeze));
+    {
+        // FREEZE off: what it held lets go now, it does not ring on
+        const bool frozen = sw (swFreeze) > 0.0f;
+        if (wasFrozen && ! frozen) for (auto& v : voices) if (v.isActive()) v.release (0.8f);
+        wasFrozen = frozen;
+    }
     if (sw (swFreeze) > 0.0f) voiceSettings.decay *= 1.0f + 3.0f * sw (swFreeze);
     voiceSettings.shape = mp ("harpShape");
     voiceSettings.stereo = juce::jmin (1.5f, 2.0f * param (apvts, "spread"));
@@ -2385,7 +2398,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
             if (releases[(size_t) e].delay < start + len)
             {
                 for (auto& v : voices)
-                    if (v.isActive() && (releases[(size_t) e].note < 0 || v.getNote() == releases[(size_t) e].note)) v.release (releases[(size_t) e].secs);
+                    if (v.isActive() && (releases[(size_t) e].note < 0 || v.getNote() == releases[(size_t) e].note || v.key == releases[(size_t) e].note)) v.release (releases[(size_t) e].secs);
                 releases[(size_t) e] = releases[(size_t) --numReleases];
             }
             else ++e;
@@ -2762,6 +2775,7 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
     auto state = apvts.copyState();
     state.setProperty ("uiWidth2", editorWidth.load(), nullptr);   // 2 = the compact window (1156 wide at 100 %)
     state.setProperty ("keysV2", 1, nullptr);
+    state.setProperty ("keysV3", 1, nullptr);
     state.setProperty ("stringsPick", stringsPick.load(), nullptr);
     state.setProperty ("captureMode", captureMode.load(), nullptr);
     state.setProperty ("captureQuant", captureQuant.load(), nullptr);
@@ -2911,6 +2925,9 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
             apvts.replaceState (state);
             stringsPick.store ((int) state.getProperty ("stringsPick", -1));
             if (! state.hasProperty ("keysV2"))   // older sessions: keys play single notes now (Split made some keys strum)
+                if (auto* kp = apvts.getParameter ("keysPlay")) kp->setValueNotifyingHost (kp->convertTo0to1 (0.0f));
+            // sessions before v0.2.76: Flourish off left the keys on Split (low keys strummed); now they play notes
+            if (! state.hasProperty ("keysV3") && juce::roundToInt (param (apvts, "keysPlay")) == 6)
                 if (auto* kp = apvts.getParameter ("keysPlay")) kp->setValueNotifyingHost (kp->convertTo0to1 (0.0f));
             presetManager->restoreCurrent (presetKey, presetModified);
             undoManager.clearUndoHistory();

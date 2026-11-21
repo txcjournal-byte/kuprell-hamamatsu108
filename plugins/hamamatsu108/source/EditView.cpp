@@ -1887,32 +1887,24 @@ namespace hama
             small ("bassLevel", "Level", bs.getX() + 130, bs.getY());
             small ("bassTone", "Tone", bs.getX() + 186, bs.getY());
 
-            // row 3: the steps, the morph targets and the modulation matrix
+            // row 3: what MORPH moves, and the modulation matrix (the arp and gate steps live on the main page)
             y += rh + g;
-            auto as = cp ("Arp steps", 0, y, 296, rh);
-            seq = std::make_unique<SeqEditor> (processor);
-            addAndMakeVisible (*seq);
-            seq->setBounds (as);
-            auto gs = cp ("Gate steps", 304, y, 236, rh);
-            gate = std::make_unique<GateEditor> (processor);
-            addAndMakeVisible (*gate);
-            gate->setBounds (gs);
-            auto mt = cp ("Morph targets", 548, y, 300, rh);
+            auto mt = cp ("Morph targets: what the MORPH knob moves", 0, y, 608, rh);
             for (int i = 0; i < mod::morphSlots; ++i)
             {
                 const juce::String n (i + 1);
-                const int cx = mt.getX() + (i / 4) * 142, cy = mt.getY() + (i % 4) * 20;
-                choice ("morph" + n + "Dst", {}, { cx, cy, 108, 18 });
-                tiny ("morph" + n + "Amt", cx + 108, cy - 5);
+                const int cx = mt.getX() + (i / 4) * 296, cy = mt.getY() + (i % 4) * 20;
+                choice ("morph" + n + "Dst", {}, { cx, cy, 240, 18 });
+                tiny ("morph" + n + "Amt", cx + 244, cy - 5);
             }
-            auto mx = cp ("Modulation", 856, y, 376, rh);
+            auto mx = cp ("Modulation", 616, y, 616, rh);
             for (int i = 0; i < mod::matrixSlots; ++i)
             {
                 const juce::String n (i + 1);
-                const int cx = mx.getX() + (i / 4) * 180, cy = mx.getY() + (i % 4) * 20;
-                choice ("mod" + n + "Src", {}, { cx, cy, 60, 18 });
-                choice ("mod" + n + "Dst", {}, { cx + 62, cy, 84, 18 });
-                tiny ("mod" + n + "Amt", cx + 146, cy - 5);
+                const int cx = mx.getX() + (i / 4) * 300, cy = mx.getY() + (i % 4) * 20;
+                choice ("mod" + n + "Src", {}, { cx, cy, 100, 18 });
+                choice ("mod" + n + "Dst", {}, { cx + 104, cy, 150, 18 });
+                tiny ("mod" + n + "Amt", cx + 256, cy - 5);
             }
 
             // row 4: the eight effect slots, left to right
@@ -1934,7 +1926,6 @@ namespace hama
 
         void tick() override
         {
-            seq->tick(); gate->tick();
             const int m = juce::roundToInt (plain (processor.apvts, "model"));
             if (m != shownModel) { shownModel = m; repaint (cards); }
             juce::String sig;

@@ -141,6 +141,7 @@ namespace hama
     class StrumBar;
     class NotesStrip;
     class ModeStrip;
+    class MorphInfo;
     class LfoPanel;
 
     class InstrumentView : public juce::Component, private juce::Timer
@@ -189,6 +190,7 @@ namespace hama
     private:
         std::unique_ptr<NotesStrip> notesStrip;
         std::unique_ptr<ModeStrip> modeStrip;
+        std::unique_ptr<MorphInfo> morphInfo;
         std::unique_ptr<LfoPanel> lfo1, lfo2;
         juce::OwnedArray<DeckSlider> mainSliders;
         juce::OwnedArray<kuprell::Knob> mainKnobs;

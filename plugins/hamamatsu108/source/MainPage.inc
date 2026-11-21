@@ -210,7 +210,7 @@
         {
             const auto gr = gridArea().reduced (8.0f, 4.0f);
             const float cw = gr.getWidth() / (float) cols;
-            const int col = c % cols, row = c / cols;
+            const int col = c / page::presetRows, row = c % page::presetRows;   // down a column first, then the next one
             return { gr.getX() + cw * (float) col + 1.0f, gr.getY() + (float) (row * page::presetRowH), cw - 2.0f, (float) page::presetRowH };
         }
         int cellAt (juce::Point<float> p) const
@@ -389,7 +389,7 @@
             else if (button (2).contains (e.position))
             {
                 const bool on = flourishOn();
-                setParam (s, "keysPlay", on ? 6.0f : 4.0f);
+                setParam (s, "keysPlay", on ? 0.0f : 4.0f);   // off = Notes: every key its own note again
                 if (onStatus) onStatus ("FLOURISH", on ? "off" : "on: one key = a whole run of the chord in the key");
             }
             else
@@ -405,7 +405,7 @@
             repaint();
         }
 
-        static constexpr int numMoves = 6;
+        static constexpr int numMoves = 0;   // the stroke toggles are gone: strums play clean
         static const juce::StringArray& moveNames() { static const juce::StringArray n { "Down", "Half", "Bounce", "Waver", "Middle", "Half time" }; return n; }
         static const char* const* moveIds() { static const char* ids[] = { "strokeDown", "strokeHalf", "strokeBounce", "strokeWaver", "strokeMiddle", "strokeSlow" }; return ids; }
 
@@ -483,8 +483,8 @@
 
         void resized() override
         {
-            rate->setBounds (4, 6, 60, 66);
-            depth->setBounds (62, 6, 60, 66);
+            rate->setBounds (0, 6, 46, 66);
+            depth->setBounds (44, 6, 46, 66);
         }
 
         void update()
@@ -503,7 +503,7 @@
             g.fillRect (r);
             g.setFont (LookAndFeel::uiFont (11.5f));
             g.setColour (page::dim());
-            g.drawText (title, juce::Rectangle<float> (126.0f, (float) getHeight() - 16.0f, 80.0f, 12.0f), juce::Justification::centredLeft, false);
+            g.drawText (title, juce::Rectangle<float> (94.0f, (float) getHeight() - 16.0f, 80.0f, 12.0f), juce::Justification::centredLeft, false);
             g.setColour (page::led().withAlpha (0.15f + 0.85f * (0.5f + 0.5f * lampValue)));
             g.fillEllipse (lamp());
             chip (g, targetChip(), "To " + mod::targetNames()[juce::roundToInt (plain (processor.apvts, (id + "QDst").toRawUTF8()))]);
@@ -550,14 +550,14 @@
         {
             g.setColour (page::screen());
             g.fillRect (r);
-            g.setFont (LookAndFeel::monoFont (11.0f));
+            g.setFont (LookAndFeel::monoFont (10.0f));
             g.setColour (page::phosphor());
             g.drawFittedText (text + juce::String::fromUTF8 ("  \xe2\x96\xbe"), r.toNearestInt().reduced (4, 0), juce::Justification::centredLeft, 1, 0.8f);
         }
-        juce::Rectangle<float> lamp() const { return { 172.0f, (float) getHeight() - 13.0f, 6.0f, 6.0f }; }
+        juce::Rectangle<float> lamp() const { return { 140.0f, (float) getHeight() - 13.0f, 6.0f, 6.0f }; }
         float lampValue = 0.0f;
-        juce::Rectangle<float> targetChip() const { return { 126.0f, 8.0f, (float) getWidth() - 134.0f, 20.0f }; }
-        juce::Rectangle<float> shapeChip() const  { return { 126.0f, 32.0f, (float) getWidth() - 134.0f, 20.0f }; }
+        juce::Rectangle<float> targetChip() const { return { 94.0f, 8.0f, (float) getWidth() - 98.0f, 20.0f }; }
+        juce::Rectangle<float> shapeChip() const  { return { 94.0f, 32.0f, (float) getWidth() - 98.0f, 20.0f }; }
 
         Hamamatsu108Processor& processor;
         juce::String id, title;
@@ -849,4 +849,93 @@
         int lastSig = -1;
         juce::String lastGate;
         bool paintOn = true;
+    };
+
+    //==========================================================================
+    // MORPH INFO: right next to the MORPH knob, what it moves. Click: pick what it moves.
+    class MorphInfo : public juce::Component
+    {
+    public:
+        explicit MorphInfo (Hamamatsu108Processor& p) : processor (p) {}
+
+        void update()
+        {
+            juce::String sig = juce::String (plain (processor.apvts, "dual"));
+            for (int i = 1; i <= mod::morphSlots; ++i)
+                sig << "|" << plain (processor.apvts, ("morph" + juce::String (i) + "Dst").toRawUTF8()) << "," << plain (processor.apvts, ("morph" + juce::String (i) + "Amt").toRawUTF8());
+            if (sig != lastSig) { lastSig = sig; repaint(); }
+        }
+
+        juce::StringArray lines() const
+        {
+            juce::StringArray l;
+            if (plain (processor.apvts, "dual") > 0.5f) l.add ("Layer A > B");
+            for (int i = 1; i <= mod::morphSlots; ++i)
+            {
+                auto* c = dynamic_cast<juce::AudioParameterChoice*> (processor.apvts.getParameter ("morph" + juce::String (i) + "Dst"));
+                auto* a = processor.apvts.getParameter ("morph" + juce::String (i) + "Amt");
+                if (c == nullptr || a == nullptr || c->getIndex() == 0) continue;
+                l.add (c->getCurrentChoiceName() + "  " + a->getCurrentValueAsText());
+            }
+            if (l.isEmpty()) l.add ("nothing yet");
+            return l;
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat();
+            g.setColour (page::screen());
+            g.fillRect (r);
+            g.setColour (juce::Colours::black.withAlpha (0.6f));
+            g.fillRect (r.withHeight (1.5f));
+            auto in = r.reduced (7.0f, 5.0f);
+            g.setFont (LookAndFeel::uiFont (10.0f));
+            g.setColour (page::phosphorDim());
+            g.drawText ("Morph moves", in.removeFromTop (14.0f), juce::Justification::centredLeft, false);
+            g.setFont (LookAndFeel::monoFont (10.0f));
+            const auto l = lines();
+            for (int i = 0; i < juce::jmin (5, l.size()); ++i)
+            {
+                g.setColour (page::phosphor().withAlpha (hover ? 1.0f : 0.85f));
+                g.drawText (i == 4 && l.size() > 5 ? juce::String ("+ ") + juce::String (l.size() - 4) + " more" : l[i],
+                            in.removeFromTop (13.0f), juce::Justification::centredLeft, true);
+            }
+        }
+
+        void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
+        void mouseExit (const juce::MouseEvent&) override  { hover = false; repaint(); }
+
+        void mouseDown (const juce::MouseEvent&) override
+        {
+            // one menu per slot: pick what MORPH moves; the amount is set in EDIT or by dragging the slot knob there
+            juce::PopupMenu m;
+            auto& s = processor.apvts;
+            m.addItem (1, "Layer A > B (layer B on)", true, plain (s, "dual") > 0.5f);
+            for (int i = 1; i <= mod::morphSlots; ++i)
+            {
+                auto* c = dynamic_cast<juce::AudioParameterChoice*> (s.getParameter ("morph" + juce::String (i) + "Dst"));
+                if (c == nullptr) continue;
+                juce::PopupMenu sub;
+                for (int k = 0; k < c->choices.size(); ++k) sub.addItem (1000 * i + k + 1, c->choices[k], true, k == c->getIndex());
+                m.addSubMenu ("Slot " + juce::String (i) + ":  " + c->getCurrentChoiceName(), sub);
+            }
+            juce::Component::SafePointer<MorphInfo> safe (this);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int res)
+            {
+                if (safe == nullptr || res <= 0) return;
+                auto& st = safe->processor.apvts;
+                if (res == 1) { setParam (st, "dual", plain (st, "dual") > 0.5f ? 0.0f : 1.0f); return; }
+                const int slot = res / 1000, k = res % 1000 - 1;
+                const juce::String n (slot);
+                setParam (st, "morph" + n + "Dst", (float) k);
+                // a new target with no amount would do nothing: give it a clear one
+                if (k > 0 && std::abs (plain (st, ("morph" + n + "Amt").toRawUTF8())) < 0.05f) setParam (st, "morph" + n + "Amt", 0.5f);
+                safe->repaint();
+            });
+        }
+
+    private:
+        Hamamatsu108Processor& processor;
+        juce::String lastSig;
+        bool hover = false;
     };
