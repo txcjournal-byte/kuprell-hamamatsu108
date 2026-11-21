@@ -37,11 +37,15 @@ namespace kuprell
             auto t = r.reduced (0.0f, 1.0f).withTrimmedRight (1.5f).withTrimmedBottom (1.5f);
             g.setColour (juce::Colours::black.withAlpha (0.5f));
             g.fillRect (t.translated (1.5f, 2.0f));
-            auto c = (isAccent || button.getToggleState()) ? juce::Colour (0xffe8e6df) : juce::Colour (0xff4b4a46);
-            if (isMouseOverButton) c = c.brighter (0.08f);
-            if (isButtonDown) c = c.darker (0.15f);
-            g.setColour (c);
+            // a key: light one for the main action, dark rubber caps for the rest
+            const bool lightKey = isAccent || button.getToggleState();
+            auto top = lightKey ? juce::Colour (0xfff2f0ea) : juce::Colour (0xff4a4a4f), bot = lightKey ? juce::Colour (0xffc9c5bc) : juce::Colour (0xff202023);
+            if (isMouseOverButton) { top = top.brighter (0.06f); bot = bot.brighter (0.06f); }
+            if (isButtonDown) t = t.translated (0.0f, 1.0f);
+            g.setGradientFill (juce::ColourGradient (top, 0.0f, t.getY(), bot, 0.0f, t.getBottom(), false));
             g.fillRect (t);
+            g.setColour (juce::Colours::black.withAlpha (0.8f));
+            g.drawRect (t.expanded (0.5f), 1.0f);
             g.setColour (juce::Colours::white.withAlpha (isAccent ? 0.5f : 0.14f));
             g.fillRect (t.withHeight (1.0f));
             return;

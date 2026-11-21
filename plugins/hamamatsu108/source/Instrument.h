@@ -56,15 +56,15 @@ namespace hama
         constexpr int bankY = 40, bankH = 22, tabsX = 300;   // the bank tabs sit up in the top row, next to the name
         constexpr int presetY = bankY + 32, presetRows = 10, presetRowH = 13, presetH = presetRows * presetRowH + 8;
         constexpr int switchY = presetY + presetH + 10, switchH = 68;
-        constexpr int strumY = switchY + switchH + 10, strumBarH = 22, strumH = 184;
-        constexpr int deckY2 = strumY + strumH + 8;
+        constexpr int strumY = switchY + switchH + 10, strumBarH = 36, strumH = 184;
+        constexpr int deckY2 = strumY + strumH + 16;   // the dark console under the concrete face
         inline juce::Rectangle<int> bankArea()   { return { x0, bankY, w0, presetY - bankY + presetH }; }
         inline juce::Rectangle<int> switchArea() { return { x0, switchY, w0, switchH }; }
         inline juce::Rectangle<int> strumArea()  { return { x0, strumY, w0, strumH }; }
         inline juce::Rectangle<int> strumBar()   { return { x0 + 10, strumY + 6, w0 - 20, strumBarH }; }
         inline juce::Rectangle<int> motionCtl()  { return { x0 + 10, strumY + 8 + strumBarH, 124, 128 }; }
         inline juce::Rectangle<int> motionWin()  { return { x0 + 142, strumY + 8 + strumBarH, w0 - 152, strumH - strumBarH - 14 }; }
-        inline juce::Rectangle<int> deckArea2()  { return { x0, deckY2, w0, geo::deckBottom - deckY2 }; }
+        inline juce::Rectangle<int> deckArea2()  { return { x0, deckY2, w0, geo::bodyY + geo::panelH + geo::frontH - 18 - deckY2 }; }
         // HARPOLOGY themes: one cast material, one light, one screen colour, one lamp
         struct Theme
         {
@@ -96,8 +96,13 @@ namespace hama
         inline juce::Colour screen()      { return theme().screen; }
         inline void paintScreen (juce::Graphics& g, juce::Rectangle<float> r)
         {
-            g.setColour (juce::Colour (0xff1d1d1c));             // the cut in the concrete
+            // the bezel: a thick black rim set into the face, a lip of light under it
+            g.setColour (juce::Colours::white.withAlpha (0.3f));
+            g.fillRect (r.getX(), r.getBottom(), r.getWidth(), 1.0f);
+            g.setColour (juce::Colour (0xff050505));
             g.fillRect (r);
+            g.setColour (juce::Colour (0xff1e1e20));
+            g.drawRect (r.reduced (2.0f), 1.0f);
             const auto s = r.reduced (4.0f);
             g.setColour (theme().screenGlass);
             g.fillRect (s);
@@ -109,6 +114,11 @@ namespace hama
             juce::ColourGradient tube (juce::Colours::transparentBlack, s.getCentreX(), s.getCentreY(), juce::Colours::black.withAlpha (0.45f), s.getX(), s.getY(), true);
             g.setGradientFill (tube);                               // the curved glass falls off at the edges
             g.fillRect (s);
+            for (int i = 0; i < 5; ++i)                             // the top of the bezel shades the glass
+            {
+                g.setColour (juce::Colours::black.withAlpha (0.18f * (1.0f - (float) i / 5.0f)));
+                g.fillRect (s.withHeight (1.0f).translated (0.0f, (float) i));
+            }
         }
         // phosphor text: the trace, and its faint bloom
         inline void phosphorText (juce::Graphics& g, const juce::String& t, juce::Rectangle<float> r, juce::Justification j, juce::Colour c)

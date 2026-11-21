@@ -38,6 +38,8 @@ namespace kuprell
         static juce::Colour themeAccent, themeSoft, themeDeep;
         // brutalist skin: flat cast knobs, hairline arcs, no chrome
         static inline bool concrete = false;
+        // a plugin can draw its own dial (the whole look of a product), given the dial area, 0..1 and enabled
+        static inline std::function<void (juce::Graphics&, juce::Rectangle<float>, float, bool, juce::Colour)> customDial;   // last: the label ink (prints the scale)
         static inline juce::Colour screenInk { 0xff74f5b8 }, lamp { 0xffc8321e };
         juce::String getParamID() const { return parameter != nullptr ? parameter->getParameterID() : juce::String(); }
         // placeholder knob for a feature that arrives later (drawn dimmed, not editable)

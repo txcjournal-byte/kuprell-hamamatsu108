@@ -6,173 +6,70 @@
 #include "KuprellLookAndFeel.h"
 #include "KuprellBrandAssets.h"
 #include "Controls.h"
+#include "Hardware.h"
 
 using namespace kuprell;
 using namespace hama::look;
 
 namespace hama
 {
-        // CONCRETE: one cast slab in a dark hall, cut by a single hard shaft of light
+    // HARPOLOGY: a gunmetal chassis; a cast concrete face for the sounds, switches and strum; a dark console for the deck
     void paintConcreteSlab (juce::Graphics& g, juce::Rectangle<float> bounds)
+    {
+        using namespace geo;
+        g.fillAll (juce::Colour (0xff0b0b0c));
+        const juce::Rectangle<float> body ((float) bodyX, (float) bodyY, (float) bodyW, (float) (panelH + frontH - 4));
+        hw::chassis (g, body, (float) cheekW);
+
+        // the concrete face (sounds, switches, strum), set into the chassis
+        const float fx = body.getX() + (float) cheekW + 4.0f, fw = body.getWidth() - 2.0f * (float) cheekW - 8.0f;
+        const juce::Rectangle<float> face (fx, body.getY() + 8.0f, fw, (float) (page::strumY + page::strumH) - body.getY() + 2.0f);
+        const juce::Rectangle<float> console (fx, face.getBottom() + 6.0f, fw, body.getBottom() - face.getBottom() - 14.0f);
         {
-            using namespace geo;
-            g.fillAll (page::theme().hall);
-            // the shaft in the hall behind the slab (a hard-edged wedge, no blur)
+            juce::Graphics::ScopedSaveState clip (g);
+            g.reduceClipRegion (face.toNearestInt());
+            g.setGradientFill (juce::ColourGradient (page::theme().slab.brighter (0.55f), 0.0f, face.getY(), page::theme().slab.brighter (0.05f), 0.0f, face.getBottom(), false));
+            g.fillRect (face);
+            juce::Random rnd (2049);
+            for (int i = 0; i < 26000; ++i)   // fine cast grain, nothing louder
             {
-                juce::Path wedge;
-                wedge.startNewSubPath (bounds.getWidth() * 0.58f, 0.0f);
-                wedge.lineTo (bounds.getWidth() * 0.80f, 0.0f);
-                wedge.lineTo (bounds.getWidth() * 0.46f, bounds.getBottom());
-                wedge.lineTo (bounds.getWidth() * 0.12f, bounds.getBottom());
-                wedge.closeSubPath();
-                g.setColour (page::theme().shaft);
-                g.fillPath (wedge);
+                g.setColour ((rnd.nextBool() ? juce::Colours::black : juce::Colours::white).withAlpha (0.02f + rnd.nextFloat() * 0.04f));
+                g.fillRect (face.getX() + rnd.nextFloat() * face.getWidth(), face.getY() + rnd.nextFloat() * face.getHeight(), 1.0f, 1.0f);
             }
-            const juce::Rectangle<float> slab ((float) bodyX, (float) bodyY, (float) bodyW, (float) (panelH + frontH));
-            // drop shadow: one hard offset block, like a heavy object on the floor
-            g.setColour (juce::Colours::black.withAlpha (0.55f));
-            g.fillRect (slab.translated (10.0f, 12.0f));
-            g.setColour (page::theme().slab);
-            g.fillRect (slab);
-            // the material: every theme is its own way of building a monument (fixed seeds, it never changes)
+            for (int i = 0; i < 140; ++i)   // a few pores
             {
-                juce::Graphics::ScopedSaveState clip (g);
-                g.reduceClipRegion (slab.toNearestInt());
-                juce::Random rnd (2049);
-                const int kind = page::themeIndex();
-                const auto dark = juce::Colours::black, light = juce::Colours::white;
-                // fine grain everywhere
-                for (int i = 0; i < 24000; ++i)
-                {
-                    const float x = slab.getX() + rnd.nextFloat() * slab.getWidth(), y = slab.getY() + rnd.nextFloat() * slab.getHeight();
-                    g.setColour ((rnd.nextBool() ? dark : light).withAlpha (0.02f + rnd.nextFloat() * 0.05f));
-                    g.fillRect (x, y, 1.0f, 1.0f);
-                }
-                if (kind == 0 || kind == 5)
-                {
-                    // fair-faced concrete: cast panels, tie holes in pairs, pores
-                    g.setColour (dark.withAlpha (0.28f));
-                    for (float x = slab.getX() + 280.0f; x < slab.getRight() - 40.0f; x += 280.0f) g.fillRect (x, slab.getY(), 1.0f, slab.getHeight());
-                    for (float y = slab.getY() + 150.0f; y < slab.getBottom() - 20.0f; y += 150.0f) g.fillRect (slab.getX(), y, slab.getWidth(), 1.0f);
-                    for (float x = slab.getX() + 70.0f; x < slab.getRight(); x += 140.0f)
-                        for (float y = slab.getY() + 37.0f; y < slab.getBottom(); y += 75.0f)
-                        {
-                            g.setColour (dark.withAlpha (0.45f)); g.fillEllipse (x - 4.0f, y - 4.0f, 8.0f, 8.0f);
-                            g.setColour (light.withAlpha (0.10f)); g.drawEllipse (x - 4.0f, y - 3.0f, 8.0f, 8.0f, 1.0f);
-                        }
-                    for (int i = 0; i < 320; ++i)
-                    {
-                        const float d = 1.0f + rnd.nextFloat() * 2.4f;
-                        g.setColour (dark.withAlpha (0.18f + rnd.nextFloat() * 0.22f));
-                        g.fillEllipse (slab.getX() + rnd.nextFloat() * slab.getWidth(), slab.getY() + rnd.nextFloat() * slab.getHeight(), d, d);
-                    }
-                }
-                else if (kind == 1)
-                {
-                    // sandstone: sediment, laid down in bands over ages
-                    float y = slab.getY();
-                    while (y < slab.getBottom())
-                    {
-                        const float h = 6.0f + rnd.nextFloat() * 34.0f;
-                        g.setColour ((rnd.nextBool() ? dark : light).withAlpha (0.03f + rnd.nextFloat() * 0.07f));
-                        juce::Path band;
-                        band.startNewSubPath (slab.getX(), y);
-                        for (float x = slab.getX(); x <= slab.getRight() + 40.0f; x += 40.0f) band.lineTo (x, y + std::sin (x * 0.004f + y) * 3.0f);
-                        band.lineTo (slab.getRight(), y + h); band.lineTo (slab.getX(), y + h); band.closeSubPath();
-                        g.fillPath (band);
-                        y += h;
-                    }
-                    for (int i = 0; i < 900; ++i)
-                    {
-                        g.setColour (dark.withAlpha (0.10f + rnd.nextFloat() * 0.15f));
-                        g.fillRect (slab.getX() + rnd.nextFloat() * slab.getWidth(), slab.getY() + rnd.nextFloat() * slab.getHeight(), 1.0f + rnd.nextFloat() * 2.0f, 1.0f);
-                    }
-                }
-                else if (kind == 2)
-                {
-                    // basalt, board-formed: every plank of the formwork left its grain
-                    for (float y = slab.getY(); y < slab.getBottom(); y += 18.0f)
-                    {
-                        g.setColour ((rnd.nextBool() ? dark : light).withAlpha (0.03f + rnd.nextFloat() * 0.05f));
-                        g.fillRect (slab.getX(), y, slab.getWidth(), 18.0f);
-                        g.setColour (dark.withAlpha (0.35f));
-                        g.fillRect (slab.getX(), y, slab.getWidth(), 1.0f);
-                        for (int k = 0; k < 7; ++k)
-                        {
-                            const float gy = y + 2.0f + rnd.nextFloat() * 14.0f, gx = slab.getX() + rnd.nextFloat() * slab.getWidth();
-                            g.setColour (light.withAlpha (0.04f));
-                            g.fillRect (gx, gy, 60.0f + rnd.nextFloat() * 260.0f, 1.0f);
-                        }
-                    }
-                }
-                else if (kind == 3)
-                {
-                    // corten: weathered steel plates, bolted, rust running down
-                    for (int i = 0; i < 160; ++i)
-                    {
-                        const float x = slab.getX() + rnd.nextFloat() * slab.getWidth(), y = slab.getY() + rnd.nextFloat() * slab.getHeight();
-                        g.setColour ((rnd.nextBool() ? juce::Colour (0xff2a1208) : juce::Colour (0xffb0612e)).withAlpha (0.05f + rnd.nextFloat() * 0.08f));
-                        g.fillRect (x, y, 1.0f + rnd.nextFloat() * 3.0f, 30.0f + rnd.nextFloat() * 160.0f);
-                    }
-                    for (float x = slab.getX() + 280.0f; x < slab.getRight() - 40.0f; x += 280.0f)
-                    {
-                        g.setColour (dark.withAlpha (0.55f)); g.fillRect (x, slab.getY(), 2.0f, slab.getHeight());
-                        g.setColour (light.withAlpha (0.10f)); g.fillRect (x + 2.0f, slab.getY(), 1.0f, slab.getHeight());
-                    }
-                    for (float x = slab.getX() + 12.0f; x < slab.getRight(); x += 280.0f)
-                        for (float y = slab.getY() + 12.0f; y < slab.getBottom(); y += 96.0f)
-                            for (float dx : { 0.0f, 256.0f })
-                            {
-                                g.setColour (dark.withAlpha (0.5f)); g.fillEllipse (x + dx, y + 1.0f, 6.0f, 6.0f);
-                                g.setColour (juce::Colour (0xffc98a5c).withAlpha (0.5f)); g.fillEllipse (x + dx, y, 5.0f, 5.0f);
-                            }
-                }
-                else if (kind == 4)
-                {
-                    // night: a ribbed monolith, vertical flutes catching the last light
-                    for (float x = slab.getX(); x < slab.getRight(); x += 14.0f)
-                    {
-                        g.setColour (dark.withAlpha (0.30f)); g.fillRect (x, slab.getY(), 4.0f, slab.getHeight());
-                        g.setColour (light.withAlpha (0.05f)); g.fillRect (x + 4.0f, slab.getY(), 1.0f, slab.getHeight());
-                    }
-                }
+                const float d = 1.0f + rnd.nextFloat() * 1.6f;
+                g.setColour (juce::Colours::black.withAlpha (0.16f + rnd.nextFloat() * 0.18f));
+                g.fillEllipse (face.getX() + rnd.nextFloat() * face.getWidth(), face.getY() + rnd.nextFloat() * face.getHeight(), d, d);
             }
-            // the light falls across the slab: the same wedge, lighter where it hits
-            {
-                juce::Graphics::ScopedSaveState save (g);
-                g.reduceClipRegion (slab.toNearestInt());
-                juce::Path lit;
-                lit.startNewSubPath (bounds.getWidth() * 0.58f, 0.0f);
-                lit.lineTo (bounds.getWidth() * 0.80f, 0.0f);
-                lit.lineTo (bounds.getWidth() * 0.46f, bounds.getBottom());
-                lit.lineTo (bounds.getWidth() * 0.12f, bounds.getBottom());
-                lit.closeSubPath();
-                g.setColour (juce::Colour (0xffe8e6df).withAlpha (0.13f));
-                g.fillPath (lit);
-                // a second, thin slit of light, like a cut in a monument's roof
-                juce::Path slit;
-                slit.startNewSubPath (bounds.getWidth() * 0.86f, 0.0f);
-                slit.lineTo (bounds.getWidth() * 0.885f, 0.0f);
-                slit.lineTo (bounds.getWidth() * 0.62f, bounds.getBottom());
-                slit.lineTo (bounds.getWidth() * 0.58f, bounds.getBottom());
-                slit.closeSubPath();
-                g.setColour (juce::Colour (0xffe8e6df).withAlpha (0.09f));
-                g.fillPath (slit);
-                // the side away from the light falls into a hard shadow
-                juce::Path shade;
-                shade.startNewSubPath (0.0f, 0.0f);
-                shade.lineTo (bounds.getWidth() * 0.30f, 0.0f);
-                shade.lineTo (0.0f, bounds.getBottom() * 0.75f);
-                shade.closeSubPath();
-                g.setColour (juce::Colours::black.withAlpha (0.16f));
-                g.fillPath (shade);
-            }
-            // hard edges: light on top, shadow at the bottom
-            g.setColour (page::theme().slab.brighter (0.45f));
-            g.fillRect (slab.withHeight (2.0f));
-            g.setColour (page::theme().slab.darker (1.2f));
-            g.fillRect (slab.withTop (slab.getBottom() - 3.0f));
+            // one shaft of light, hard edged, from the top left
+            juce::Path shaft;
+            shaft.startNewSubPath (face.getX() + face.getWidth() * 0.30f, face.getY());
+            shaft.lineTo (face.getX() + face.getWidth() * 0.47f, face.getY());
+            shaft.lineTo (face.getX() + face.getWidth() * 0.29f, face.getBottom());
+            shaft.lineTo (face.getX() + face.getWidth() * 0.12f, face.getBottom());
+            shaft.closeSubPath();
+            g.setColour (juce::Colours::white.withAlpha (0.07f));
+            g.fillPath (shaft);
         }
+        // the face's cut edge: light on top, shadow below, screws in the corners
+        g.setColour (juce::Colours::white.withAlpha (0.45f));
+        g.fillRect (face.withHeight (1.0f));
+        g.setColour (juce::Colours::black.withAlpha (0.7f));
+        g.fillRect (face.withTop (face.getBottom() - 1.0f));
+        g.drawRect (face.expanded (1.0f), 1.0f);
+        for (auto c : { face.getTopLeft().translated (9.0f, 9.0f), face.getTopRight().translated (-9.0f, 9.0f),
+                        face.getBottomLeft().translated (9.0f, -9.0f), face.getBottomRight().translated (-9.0f, -9.0f) })
+            hw::screw (g, c, c.x * 0.03f);
+
+        // the console: dark metal, a lip of light where it meets the face
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2b2b2f), 0.0f, console.getY(), juce::Colour (0xff17171a), 0.0f, console.getBottom(), false));
+        g.fillRect (console);
+        g.setColour (juce::Colours::white.withAlpha (0.16f));
+        g.fillRect (console.withHeight (1.0f));
+        g.setColour (juce::Colours::black);
+        g.drawRect (console.expanded (1.0f), 1.0f);
+    }
 
     void paintWordmark (juce::Graphics& g, juce::Point<float> at, juce::Colour c)
     {
@@ -271,17 +168,22 @@ namespace hama
             {
                 paintConcrete (g, bounds);
                 paintRear (g);
-                drawWell (g, page::strumArea().toFloat(), 0.0f);
-                drawWell (g, page::deckArea2().toFloat().expanded (0.0f, 2.0f), 0.0f);
-                // the maker's mark, cast into the slab: pressed-in letters (light edge below, shadow above)
+                // the strum window: cut into the concrete
                 {
-                    static const auto michroma = juce::Typeface::createSystemTypefaceFor (KuprellBrand::michroma_ttf, (size_t) KuprellBrand::michroma_ttfSize);
-                    g.setFont (juce::Font (juce::FontOptions (michroma).withHeight (17.0f)).withExtraKerningFactor (0.32f));
-                    const juce::Rectangle<float> mark ((float) page::x0, (float) geo::deckBottom + 5.0f, 360.0f, 22.0f);
-                    g.setColour (page::theme().slab.brighter (0.9f));
-                    g.drawText ("ALTRUISTI", mark.translated (0.0f, 1.0f), juce::Justification::centredLeft, false);
-                    g.setColour (page::theme().slab.darker (2.2f));
-                    g.drawText ("ALTRUISTI", mark, juce::Justification::centredLeft, false);
+                    const auto w = page::strumArea().reduced (10, 0).withTrimmedTop (page::strumBarH + 8).withTrimmedBottom (8).toFloat().expanded (3.0f);
+                    hw::recess (g, w, page::screen());
+                }
+                // the deck: printed section headers and fine grooves between the groups
+                {
+                    const auto d = page::deckArea2().toFloat();
+                    const float hy = d.getY() + 2.0f;
+                    struct S { float x0, x1; const char* name; };
+                    const S sec[] = { { 0, 82, "Envelope" }, { 86, 160, "Body" }, { 166, 350, "LFO 1" }, { 354, 538, "LFO 2" }, { 542, 668, "Output" }, { 670, (float) page::w0, "Morph" } };
+                    for (const auto& q : sec)
+                    {
+                        hw::header (g, { d.getX() + q.x0 + 4.0f, hy, q.x1 - q.x0 - 8.0f, 13.0f }, q.name);
+                        if (q.x0 > 0) hw::groove (g, d.getX() + q.x0 - 2.0f, hy, d.getBottom() + 10.0f);
+                    }
                 }
                 return;
             }
@@ -438,6 +340,38 @@ namespace hama
             const float tx = (float) innerX + 6.0f;
             // product wordmark (the company mark joins when the brand is settled)
             static const auto michroma = juce::Typeface::createSystemTypefaceFor (KuprellBrand::michroma_ttf, (size_t) KuprellBrand::michroma_ttfSize);
+            if (th().concrete)
+            {
+                // the nameplate: a brushed dark metal plate, the name struck into it in bright metal
+                const juce::Rectangle<float> plate (tx - 12.0f, (float) rearY - 2.0f, 226.0f, 42.0f);
+                hw::raised (g, plate, juce::Colour (0xff4a4a4f), juce::Colour (0xff1f1f22), 2.0f, 3.0f);
+                {
+                    juce::Graphics::ScopedSaveState clip (g);
+                    g.reduceClipRegion (plate.reduced (1.0f).toNearestInt());
+                    juce::Random rnd (7);
+                    for (float y = plate.getY(); y < plate.getBottom(); y += 1.0f)   // brushing
+                    {
+                        g.setColour (juce::Colours::white.withAlpha (rnd.nextFloat() * 0.035f));
+                        g.fillRect (plate.getX(), y, plate.getWidth(), 1.0f);
+                    }
+                }
+                hw::screw (g, { plate.getX() + 7.0f, plate.getCentreY() });
+                hw::screw (g, { plate.getRight() - 7.0f, plate.getCentreY() }, 2.1f);
+                const juce::Rectangle<float> name (plate.getX() + 18.0f, plate.getY() + 3.0f, 200.0f, 26.0f);
+                g.setFont (juce::Font (juce::FontOptions (michroma).withHeight (23.0f)).withExtraKerningFactor (0.03f));
+                g.setColour (juce::Colours::black.withAlpha (0.85f));
+                g.drawText ("Harpology", name.translated (0.0f, 1.5f), juce::Justification::centredLeft, false);
+                g.setGradientFill (juce::ColourGradient (juce::Colour (0xffffffff), 0.0f, name.getY() + 6.0f, juce::Colour (0xff9a968e), 0.0f, name.getBottom() - 5.0f, false));
+                g.drawText ("Harpology", name, juce::Justification::centredLeft, false);
+                // the maker's mark, struck into the plate in the same wide letters
+                const juce::Rectangle<float> mark (name.getX() + 1.0f, plate.getBottom() - 13.0f, 200.0f, 10.0f);
+                g.setFont (juce::Font (juce::FontOptions (michroma).withHeight (8.0f)).withExtraKerningFactor (0.62f));
+                g.setColour (juce::Colours::black.withAlpha (0.8f));
+                g.drawText ("ALTRUISTI", mark.translated (0.0f, 1.0f), juce::Justification::centredLeft, false);
+                g.setColour (juce::Colour (0xffb8b4ac));
+                g.drawText ("ALTRUISTI", mark, juce::Justification::centredLeft, false);
+                return;
+            }
             g.setFont (juce::Font (juce::FontOptions (michroma).withHeight (25.0f)).withExtraKerningFactor (0.04f));
             g.setColour (th().concrete ? page::theme().wordmark : sk.panelMid.getPerceivedBrightness() > 0.6f ? juce::Colour (0xff1c1d22) : juce::Colour (0xfff1e2cc));
             g.drawText ("Harpology", juce::Rectangle<float> (tx - 1.0f, (float) rearY + 10.0f, 300.0f, 30.0f), juce::Justification::centredLeft, false);
@@ -1806,21 +1740,28 @@ namespace hama
         {
             if (thin)
             {
-                // hairline fader: a 2 px slot, the lit part above the zero, a thin flat cap
+                // long-throw fader: a dark slot with a printed scale either side, a black cap with a white index line
                 auto b = getLocalBounds().toFloat();
-                const float top = b.getY() + 6.0f, bot = b.getBottom() - 18.0f, cx = b.getCentreX();
+                const float top = b.getY() + 7.0f, bot = b.getBottom() - 20.0f, cx = b.getCentreX();
                 const float v = param->getValue(), y = bot - (bot - top) * v;
-                g.setColour (juce::Colour (0xff0f0f0e));
-                g.fillRect (cx - 1.0f, top, 2.0f, bot - top);
-                g.setColour (juce::Colour (0xff8e8c86));
-                g.fillRect (cx - 1.0f, y, 2.0f, bot - y);
-                g.setColour (juce::Colour (0xff0f0f0e));
-                g.fillRect (cx - 7.0f, y - 2.5f, 14.0f, 5.0f);
-                g.setColour (juce::Colour (0xffe8e6df));
-                g.fillRect (cx - 6.0f, y - 1.5f, 12.0f, 3.0f);
-                g.setColour (juce::Colour (0xff8b8882));
+                g.setColour (hw::printLight().withAlpha (0.35f));
+                for (int i = 0; i <= 10; ++i)
+                {
+                    const float ty = top + (bot - top) * (float) i / 10.0f;
+                    const float len = i % 5 == 0 ? 4.0f : 2.5f;
+                    g.fillRect (cx - 8.0f - len, ty, len, 1.0f);
+                    g.fillRect (cx + 8.0f, ty, len, 1.0f);
+                }
+                g.setColour (juce::Colour (0xff050505));
+                g.fillRect (cx - 2.0f, top - 3.0f, 4.0f, bot - top + 6.0f);
+                g.setColour (juce::Colours::white.withAlpha (0.1f));
+                g.fillRect (cx - 2.0f, bot + 3.0f, 4.0f, 1.0f);
+                g.setColour (page::phosphor().withAlpha (0.55f));
+                g.fillRect (cx - 0.5f, y, 1.0f, bot - y);
+                hw::faderCap (g, { cx - 8.0f, y - 6.0f, 16.0f, 12.0f });
+                g.setColour (hw::printLight());
                 g.setFont (LookAndFeel::uiFont (9.5f, true));
-                g.drawText (label, b.removeFromBottom (14.0f), juce::Justification::centred, false);
+                g.drawText (label, b.removeFromBottom (12.0f), juce::Justification::centred, false);
                 return;
             }
             auto t = track();
@@ -2623,8 +2564,8 @@ namespace hama
                         g.setColour (page::phosphor().withAlpha (0.3f * v));
                         g.strokePath (trace, juce::PathStrokeType (th0 + 3.0f));
                     }
-                    g.setColour (page::phosphor().withAlpha (0.16f + 0.84f * v));
-                    g.strokePath (trace, juce::PathStrokeType (v > 0.02f ? juce::jmax (1.0f, th0 * 0.7f) : 0.8f));
+                    g.setColour (page::phosphor().withAlpha (0.34f + 0.66f * v));
+                    g.strokePath (trace, juce::PathStrokeType (v > 0.02f ? juce::jmax (1.0f, th0 * 0.7f) : 1.0f));
                     continue;
                 }
                 g.setColour (juce::Colour (0xffd9c3a3).withAlpha (0.22f).interpolatedWith (th().accent, v));
@@ -3264,14 +3205,15 @@ namespace hama
         layoutStrips();
         {
             const auto d = page::deckArea2();
-            for (int i = 0; i < 8; ++i) mainSliders[i]->setBounds (d.getX() + 6 + i * 19 + (i >= 4 ? 4 : 0), d.getY() + 4, 19, d.getHeight() - 6);
-            lfo1->setBounds (d.getX() + 166, d.getY() + 4, 184, d.getHeight() - 8);
-            lfo2->setBounds (d.getX() + 354, d.getY() + 4, 184, d.getHeight() - 8);
+            // under the printed section headers (14 px)
+            for (int i = 0; i < 8; ++i) mainSliders[i]->setBounds (d.getX() + 2 + i * 20 + (i >= 4 ? 4 : 0), d.getY() + 15, 20, d.getHeight() - 16);
+            lfo1->setBounds (d.getX() + 166, d.getY() + 15, 184, d.getHeight() - 18);
+            lfo2->setBounds (d.getX() + 354, d.getY() + 15, 184, d.getHeight() - 18);
             const int kx = d.getX() + 542;
-            for (int i = 0; i < 3; ++i) mainKnobs[i]->setBounds (kx + i * 42, d.getY() + 10, 42, d.getHeight() - 10);
+            for (int i = 0; i < 3; ++i) mainKnobs[i]->setBounds (kx + i * 42, d.getY() + 20, 42, d.getHeight() - 22);
             // MORPH: the big knob, and right beside it what it moves
-            morphInfo->setBounds (kx + 128, d.getY() + 8, 112, d.getHeight() - 16);
-            mainKnobs[3]->setBounds (kx + 244, d.getY() - 2, d.getRight() - kx - 244, d.getHeight() + 2);
+            morphInfo->setBounds (kx + 132, d.getY() + 20, d.getRight() - kx - 132 - 92, d.getHeight() - 28);
+            mainKnobs[3]->setBounds (d.getRight() - 88, d.getY() + 14, 88, d.getHeight() - 14);
         }
         return;
 
@@ -3327,6 +3269,7 @@ namespace hama
         Knob::themeSoft = sk.accent.soft;
         Knob::themeDeep = sk.accent.deep;
         Knob::concrete = th().concrete;
+        Knob::customDial = [] (juce::Graphics& g, juce::Rectangle<float> r, float v, bool en, juce::Colour ink) { hw::knob (g, r, v, page::phosphor(), ink, en); };
         kuprell::TopBar::concrete = th().concrete;
         kuprell::LookAndFeel::flat = th().concrete;
         backdrop->skin = skinIndex;

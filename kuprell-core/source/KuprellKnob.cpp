@@ -38,6 +38,11 @@ namespace kuprell
             const float prop = enabled ? (float) valueToProportionOfLength (getValue()) : 0.0f;
             const float angle = startAngle + prop * (endAngle - startAngle);
 
+            if (Knob::customDial)
+            {
+                Knob::customDial (g, area, enabled ? (float) valueToProportionOfLength (getValue()) : 0.0f, enabled, owner.style.themed == 0 ? owner.style.label : juce::Colour (0xffd9d6ce));
+                return;
+            }
             if (Knob::concrete)
             {
                 const float ringR = size * 0.5f - 2.0f;
@@ -315,7 +320,7 @@ namespace kuprell
         const bool enabled = parameter != nullptr;
 
         g.setFont (LookAndFeel::uiFont (style.labelHeight, ! Knob::concrete));
-        const auto labelColour = Knob::concrete ? juce::Colour (0xffb3b0a9) : style.label;
+        const auto labelColour = Knob::concrete && style.themed != 0 ? juce::Colour (0xffb3b0a9) : style.label;
         g.setColour (enabled ? labelColour : labelColour.withAlpha (0.45f));
         g.drawText (label, r.removeFromTop (12), juce::Justification::centredTop, false);
 

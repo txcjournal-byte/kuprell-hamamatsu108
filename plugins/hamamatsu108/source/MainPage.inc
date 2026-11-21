@@ -24,30 +24,35 @@
         void paint (juce::Graphics& g) override
         {
             const auto r = getLocalBounds().toFloat();
-            // tabs
-            g.setFont (LookAndFeel::uiFont (11.0f, true));
+            // tabs: a row of small keys; the chosen bank is lit
+            g.setFont (LookAndFeel::uiFont (10.5f, true));
             for (int i = 0; i < banks().size(); ++i)
             {
-                const auto t = tab (i);
+                const auto t = tab (i).reduced (1.0f, 2.0f);
                 const bool on = i == bank;
-                if (on)   // the chosen bank is the one in the light
+                if (on)
                 {
-                    g.setColour (page::lit());
-                    g.fillRect (t);
+                    hw::raised (g, t, page::phosphor().brighter (0.3f), page::phosphor().darker (0.5f), 2.0f, 2.0f);
+                    g.setColour (juce::Colour (0xff04140b));
                 }
-                g.setColour (on ? page::litInk() : page::onSlab());
+                else
+                {
+                    hw::key (g, t);
+                    g.setColour (hw::printLight());
+                }
                 g.drawText (banks()[i], t, juce::Justification::centred, false);
             }
-            // previous / next sound: two hairline chevrons after the tabs
+            // previous / next sound: two small keys with chevrons
             for (int k = 0; k < 2; ++k)
             {
-                const auto a = stepArrow (k);
+                const auto a = stepArrow (k).reduced (1.0f, 2.0f);
+                hw::key (g, a, k == hoverArrow);
                 juce::Path p;
-                const float dx = k == 0 ? -3.0f : 3.0f;   // k 0 = back (‹), 1 = forward (›)
-                p.startNewSubPath (a.getCentreX() - dx, a.getCentreY() - 6.0f);
+                const float dx = k == 0 ? -2.5f : 2.5f;   // k 0 = back, 1 = forward
+                p.startNewSubPath (a.getCentreX() - dx, a.getCentreY() - 4.5f);
                 p.lineTo (a.getCentreX() + dx, a.getCentreY());
-                p.lineTo (a.getCentreX() - dx, a.getCentreY() + 6.0f);
-                g.setColour (k == hoverArrow ? page::lit() : page::onSlab());
+                p.lineTo (a.getCentreX() - dx, a.getCentreY() + 4.5f);
+                g.setColour (hw::printLight());
                 g.strokePath (p, juce::PathStrokeType (1.6f));
             }
             // pages
@@ -184,10 +189,10 @@
         juce::Rectangle<float> tab (int i) const
         {
             float x = (float) page::tabsX;
-            for (int k = 0; k < i; ++k) x += tabW (k) + 2.0f;
+            for (int k = 0; k < i; ++k) x += tabW (k) + 3.0f;
             return { x, 0.0f, tabW (i), (float) page::bankH };
         }
-        static float tabW (int i) { return 12.0f + 6.2f * (float) banks()[i].length(); }
+        static float tabW (int i) { return 16.0f + 6.2f * (float) banks()[i].length(); }
         // pages: small, at the bottom-right corner of the screen
         juce::Rectangle<float> pageText() const { const auto g = gridArea(); return { g.getRight() - 74.0f, g.getBottom() - 15.0f, 48.0f, 12.0f }; }
         juce::Rectangle<float> prevArrow() const { const auto t = pageText(); return { t.getX() - 10.0f, t.getY() + 2.0f, 8.0f, 8.0f }; }
@@ -244,39 +249,14 @@
             {
                 const auto t = tile (i);
                 const bool o = on (i);
-                // a block of concrete; switched on = it stands in the light
-                g.setColour (o ? page::lit() : juce::Colour (0xff4a4946));
-                g.fillRect (t);
-                g.setColour (juce::Colour (0xff2a2927));
-                g.fillRect (t.withTop (t.getBottom() - 2.0f));
-                g.fillRect (t.withLeft (t.getRight() - 1.0f));
-                g.setColour (o ? juce::Colours::white : juce::Colour (0xff6c6a66));
-                g.fillRect (t.withHeight (1.0f));
-                // LED
-                const auto ledR = juce::Rectangle<float> (5.0f, 5.0f).withCentre ({ t.getCentreX(), t.getY() + 7.0f });
-                g.setColour (o ? page::led() : juce::Colour (0xff2e2d2b));
-                g.fillEllipse (ledR);
-                // name
+                // printed name, a push key with its lamp, the amount knob under it
                 g.setFont (LookAndFeel::uiFont (9.0f, true));
-                g.setColour (o ? page::litInk() : page::onSlab());
-                g.drawFittedText (niceName (i), t.withTrimmedTop (14.0f).withHeight (12.0f).toNearestInt(), juce::Justification::centred, 1, 0.75f);
-                // amount knob
-                const auto k = knobRect (i);
-                const float a = amt (i);
-                const float start = juce::MathConstants<float>::pi * 1.25f, span = juce::MathConstants<float>::pi * 1.5f;
-                juce::Path track, val;
-                track.addCentredArc (k.getCentreX(), k.getCentreY(), k.getWidth() * 0.5f, k.getWidth() * 0.5f, 0.0f, -start * 0.6f - 0.3f, start * 0.6f + 0.3f, true);
-                g.setColour ((o ? page::litInk() : juce::Colours::black).withAlpha (0.18f));
-                g.strokePath (track, juce::PathStrokeType (1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-                const float a0 = -span * 0.5f, a1 = a0 + span * a;
-                val.addCentredArc (k.getCentreX(), k.getCentreY(), k.getWidth() * 0.5f, k.getWidth() * 0.5f, 0.0f, a0, a1, true);
-                g.setColour (o ? page::litInk() : page::onSlab());
-                g.strokePath (val, juce::PathStrokeType (1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-                g.setColour (o ? juce::Colour (0xff3a3936) : juce::Colour (0xff2c2b29));
-                g.fillEllipse (k.reduced (4.0f));
-                const float ang = a0 + span * a;
-                g.setColour (o ? page::lit() : page::onSlab());
-                g.drawLine (k.getCentreX(), k.getCentreY(), k.getCentreX() + std::sin (ang) * (k.getWidth() * 0.5f - 5.0f), k.getCentreY() - std::cos (ang) * (k.getWidth() * 0.5f - 5.0f), 1.6f);
+                g.setColour (hw::printDark());
+                g.drawFittedText (niceName (i), t.withHeight (11.0f).toNearestInt(), juce::Justification::centred, 1, 0.7f);
+                const auto k = keyRect (i);
+                hw::key (g, k, o);
+                hw::led (g, { k.getCentreX(), k.getCentreY() + (o ? 1.0f : 0.0f) }, o, page::led(), 6.0f);
+                hw::knob (g, knobRect (i), amt (i), page::phosphor(), hw::printDark());
             }
         }
 
@@ -330,7 +310,8 @@
             const float gap = 3.0f, w = ((float) getWidth() - gap * (float) (n - 1)) / (float) n;
             return { (float) i * (w + gap), 0.0f, w, (float) getHeight() };
         }
-        juce::Rectangle<float> knobRect (int i) const { const auto t = tile (i); return juce::Rectangle<float> (22.0f, 22.0f).withCentre ({ t.getCentreX(), t.getBottom() - 20.0f }); }
+        juce::Rectangle<float> keyRect (int i) const { const auto t = tile (i); return { t.getX() + 5.0f, t.getY() + 13.0f, t.getWidth() - 10.0f, 17.0f }; }
+        juce::Rectangle<float> knobRect (int i) const { const auto t = tile (i); return juce::Rectangle<float> (30.0f, 30.0f).withCentre ({ t.getCentreX(), t.getBottom() - 17.0f }); }
 
         Hamamatsu108Processor& processor;
         int dragging = -1, lastSig = 0;
@@ -345,29 +326,96 @@
         std::function<void (const juce::String&, const juce::String&)> onStatus;
         std::function<void (bool)> onNotes;
         bool notesOpen = false;
+        // the small knobs of the bar, drawn here (drag up / down, double-click = default)
+        static const char* knobId (int i)   { const char* ids[] = { "strumRate", "arpSwing", "strumFeel", "strumVary", "harpRange" }; return ids[i]; }
+        static const char* knobName (int i) { const char* n[] = { "Speed", "Swing", "Feel", "Human", "Range" }; return n[i]; }
+        static constexpr int numKnobs = 5;
+        juce::Rectangle<float> knobArea (int i) const { const float x0 = selector (3).getRight() + 24.0f, step = juce::jmin (72.0f, ((float) getWidth() - x0) / (float) numKnobs); return { x0 + (float) i * step, 0.0f, step - 4.0f, (float) getHeight() }; }
 
         void update()
         {
-            int sig = (arpOn() ? 1 : 0) + (gateOn() ? 2 : 0) + (flourishOn() ? 4 : 0);
+            int sig = (arpOn() ? 1 : 0) + (gateOn() ? 2 : 0) + (flourishOn() ? 4 : 0) + (notesOpen ? 8 : 0);
+            sig = sig * 131 + processor.stringsNow.load() * 7 + juce::roundToInt (plain (processor.apvts, "gridRate")) * 3
+                  + juce::roundToInt (plain (processor.apvts, "keyRoot")) * 1009 + juce::roundToInt (plain (processor.apvts, "keyMode")) * 50021;
+            for (int i = 0; i < numKnobs; ++i) if (auto* q = processor.apvts.getParameter (knobId (i))) sig = sig * 31 + juce::roundToInt (q->getValue() * 200.0f);
             for (int i = 0; i < numMoves; ++i) if (plain (processor.apvts, moveIds()[i]) > 0.5f) sig |= 8 << i;
             if (sig != lastSig) { lastSig = sig; repaint(); }
         }
 
         void paint (juce::Graphics& g) override
         {
-            g.setFont (LookAndFeel::uiFont (13.0f, true));
-            g.setColour (page::ink());
-            g.drawText ("Strum", juce::Rectangle<float> (0.0f, 0.0f, 66.0f, (float) getHeight()), juce::Justification::centredLeft, false);
+            g.setFont (juce::Font (juce::FontOptions (12.0f, juce::Font::bold)).withExtraKerningFactor (0.22f));
+            g.setColour (hw::printDark());
+            g.drawText ("STRUM", juce::Rectangle<float> (0.0f, 0.0f, 66.0f, (float) getHeight()), juce::Justification::centredLeft, false);
+            g.fillRect (0.0f, (float) getHeight() - 3.0f, 54.0f, 1.0f);
             const char* names[] = { "Arp", "Gate", "Flourish" };
             const bool st[] = { arpOn(), gateOn(), flourishOn() };
             for (int i = 0; i < 3; ++i) chip (g, button (i), names[i], st[i], true);
             chip (g, notesChip(), "Notes", notesOpen, true);
+            // a printed groove, then the readouts: rate, key, scale, the chord on the strings
+            auto groove = [&g, this] (float x) { g.setColour (juce::Colours::black.withAlpha (0.35f)); g.fillRect (x, 4.0f, 1.0f, (float) getHeight() - 8.0f); g.setColour (juce::Colours::white.withAlpha (0.25f)); g.fillRect (x + 1.0f, 4.0f, 1.0f, (float) getHeight() - 8.0f); };
+            groove (notesChip().getRight() + 9.0f);
+            for (int i = 0; i < 4; ++i)
+            {
+                const auto r = selector (i);
+                g.setFont (LookAndFeel::uiFont (9.0f, true));
+                g.setColour (hw::printDark());
+                g.drawText (selectorName (i), r.withHeight (11.0f), juce::Justification::centredLeft, false);
+                const auto box = r.withTrimmedTop (13.0f);
+                page::paintScreen (g, box);
+                g.setFont (LookAndFeel::monoFont (11.0f));
+                page::phosphorText (g, selectorText (i), box.reduced (6.0f, 0.0f), juce::Justification::centredLeft, page::phosphor());
+            }
+            groove (selector (3).getRight() + 10.0f);
+            for (int i = 0; i < numKnobs; ++i)
+            {
+                const auto r = knobArea (i);
+                float v = 0.0f;
+                if (auto* q = processor.apvts.getParameter (knobId (i))) v = q->getValue();
+                hw::knob (g, r.withHeight (26.0f).withSizeKeepingCentre (26.0f, 26.0f), v, page::phosphor(), hw::printDark());
+                g.setFont (LookAndFeel::uiFont (9.0f, true));
+                g.setColour (hw::printDark());
+                g.drawText (knobName (i), r.withTop (r.getBottom() - 10.0f), juce::Justification::centred, false);
+            }
             for (int i = 0; i < numMoves; ++i) chip (g, moveChip (i), moveNames()[i], plain (processor.apvts, moveIds()[i]) > 0.5f, true);
         }
 
         void mouseDown (const juce::MouseEvent& e) override
         {
             auto& s = processor.apvts;
+            dragKnob = -1;
+            for (int i = 0; i < numKnobs; ++i)
+                if (knobArea (i).contains (e.position))
+                {
+                    if (auto* q = s.getParameter (knobId (i)))
+                    {
+                        if (e.getNumberOfClicks() > 1) { q->setValueNotifyingHost (q->getDefaultValue()); repaint(); return; }
+                        dragKnob = i; dragStart = q->getValue(); q->beginChangeGesture();
+                    }
+                    return;
+                }
+            for (int i = 0; i < 4; ++i)
+                if (selector (i).contains (e.position))
+                {
+                    if (i == 3) { notesOpen = ! notesOpen; if (onNotes) onNotes (notesOpen); repaint(); return; }
+                    const char* ids[] = { "gridRate", "keyRoot", "keyMode" };
+                    juce::PopupMenu m;
+                    if (i == 1)
+                    {
+                        const int cur = juce::roundToInt (plain (s, "keyRoot"));
+                        for (int k = 0; k < 12; ++k) m.addItem (k + 1, chords::rootName (k), true, k == cur);
+                    }
+                    else if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (s.getParameter (ids[i])))
+                    {
+                        for (int k = 0; k < c->choices.size(); ++k) m.addItem (k + 1, c->choices[k], true, k == c->getIndex());
+                    }
+                    else return;
+                    juce::Component::SafePointer<StrumBar> safe (this);
+                    const juce::String pid (ids[i]);
+                    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withTargetScreenArea (localAreaToGlobal (selector (i).toNearestInt())),
+                                     [safe, pid] (int res) { if (safe != nullptr && res > 0) { setParam (safe->processor.apvts, pid, (float) (res - 1)); safe->repaint(); } });
+                    return;
+                }
             if (notesChip().contains (e.position))
             {
                 notesOpen = ! notesOpen;
@@ -435,21 +483,38 @@
 
         void chip (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& text, bool on, bool led) const
         {
-            g.setColour (on ? page::lit() : juce::Colour (0xff2a2928));
-            g.fillRect (r);
+            // a push key with its lamp at the left
+            r = r.reduced (0.0f, 1.0f);
+            hw::key (g, r, on);
+            if (on) r = r.translated (0.0f, 1.0f);
             auto tr = r;
             if (led)
             {
-                g.setColour (on ? page::led() : juce::Colour (0xff3d3c39));
-                g.fillEllipse (r.getX() + 8.0f, r.getCentreY() - 3.0f, 6.0f, 6.0f);
-                tr = r.withTrimmedLeft (12.0f);
+                hw::led (g, { r.getX() + 10.0f, r.getCentreY() }, on, page::led(), 5.5f);
+                tr = r.withTrimmedLeft (14.0f);
             }
             g.setFont (LookAndFeel::uiFont (10.5f, true));
-            g.setColour (on ? page::litInk() : page::ink());
+            g.setColour (hw::printLight());
             g.drawText (text, tr, juce::Justification::centred, false);
         }
-        juce::Rectangle<float> button (int i) const { const float w[] = { 52.0f, 56.0f, 78.0f }, x[] = { 62.0f, 118.0f, 178.0f }; return { x[i], 2.0f, w[i], (float) getHeight() - 4.0f }; }
-        juce::Rectangle<float> notesChip() const { return { 270.0f, 2.0f, 64.0f, (float) getHeight() - 4.0f }; }
+        juce::Rectangle<float> button (int i) const { const float w[] = { 52.0f, 56.0f, 78.0f }, x[] = { 66.0f, 122.0f, 182.0f }; return { x[i], (float) getHeight() * 0.5f - 12.0f, w[i], 24.0f }; }
+        juce::Rectangle<float> notesChip() const { return { 264.0f, (float) getHeight() * 0.5f - 12.0f, 64.0f, 24.0f }; }
+        juce::Rectangle<float> selector (int i) const
+        {
+            const float w[] = { 62.0f, 50.0f, 70.0f, 76.0f };
+            float x = notesChip().getRight() + 20.0f;
+            for (int k = 0; k < i; ++k) x += w[k] + 6.0f;
+            return { x, 1.0f, w[i], (float) getHeight() - 2.0f };
+        }
+        static juce::String selectorName (int i) { const char* n[] = { "Rate", "Key", "Scale", "Chord" }; return n[i]; }
+        juce::String selectorText (int i) const
+        {
+            if (i == 3) return chords::shortName (processor.stringsNow.load());
+            const char* ids[] = { "gridRate", "keyRoot", "keyMode" };
+            if (i == 1) return chords::rootName (juce::roundToInt (plain (processor.apvts, "keyRoot")));
+            if (auto* q = processor.apvts.getParameter (ids[i])) return q->getCurrentValueAsText();
+            return {};
+        }
         juce::Rectangle<float> moveChip (int i) const
         {
             float x = (float) getWidth();
@@ -461,7 +526,24 @@
         bool flourishOn() const { const int k = juce::roundToInt (plain (processor.apvts, "keysPlay")); return k == 4 || k == 5; }
 
         Hamamatsu108Processor& processor;
-        int lastSig = -1;
+        int lastSig = -1, dragKnob = -1;
+        float dragStart = 0.0f;
+    public:
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            if (dragKnob < 0) return;
+            if (auto* q = processor.apvts.getParameter (knobId (dragKnob)))
+            {
+                q->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, dragStart - (float) e.getDistanceFromDragStartY() / 160.0f));
+                if (onStatus) onStatus (q->getName (32), q->getCurrentValueAsText());
+                repaint();
+            }
+        }
+        void mouseUp (const juce::MouseEvent&) override
+        {
+            if (dragKnob >= 0) if (auto* q = processor.apvts.getParameter (knobId (dragKnob))) q->endChangeGesture();
+            dragKnob = -1;
+        }
     };
 
     // one LFO on the main page: rate, depth, shape and what it moves
@@ -503,7 +585,7 @@
             g.fillRect (r);
             g.setFont (LookAndFeel::uiFont (11.5f));
             g.setColour (page::dim());
-            g.drawText (title, juce::Rectangle<float> (94.0f, (float) getHeight() - 16.0f, 80.0f, 12.0f), juce::Justification::centredLeft, false);
+            // the title is printed on the console above (section header)
             g.setColour (page::led().withAlpha (0.15f + 0.85f * (0.5f + 0.5f * lampValue)));
             g.fillEllipse (lamp());
             chip (g, targetChip(), "To " + mod::targetNames()[juce::roundToInt (plain (processor.apvts, (id + "QDst").toRawUTF8()))]);
