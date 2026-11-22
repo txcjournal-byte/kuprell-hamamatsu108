@@ -37,8 +37,16 @@ namespace hama
         std::function<void (int)> pick;            // LED lists: click on an item
         std::function<juce::String()> text;        // screens
         juce::String tip;
-        bool live() const { return param.isNotEmpty() || press != nullptr || pick != nullptr || text != nullptr; }
+        int spare = -1;                            // no sound yet: the position is kept in the processor
+        bool live() const { return param.isNotEmpty() || spare >= 0 || press != nullptr || pick != nullptr || text != nullptr; }
     };
+
+    namespace
+    {
+        float valueOf (Hamamatsu108Processor& pr, const ConsoleView::Control& c);
+        void setValueOf (Hamamatsu108Processor& pr, ConsoleView::Control& c, float v);
+        void gesture (Hamamatsu108Processor& pr, ConsoleView::Control& c, bool begin);
+    }
 
     ConsoleView::ConsoleView (Hamamatsu108Processor& p) : processor (p)
     {
@@ -122,7 +130,6 @@ namespace hama
         }
         par ("Morph", "Glass", "morph", "MORPH: blends layer A into layer B");
         par ("Morph", "Steel", "bLevel", "Layer B level");
-        par ("Morph", "Wood", "harpShape", "Layer A character");
         par ("Morph", "Air", "polish", "Air: polish and sparkle on top");
 
         // LFOs
@@ -141,18 +148,14 @@ namespace hama
             }
         }
         par ("LFO 2", "Depth", "lfo2QAmt", "LFO 2 depth", "knob");
-        if (auto* c = find ("LFO 2", "Tempo", "button")) { c->lit = [&pr] { return plainOf (pr, "lfo2Sync") > 0.5f; }; c->press = [&pr] { setPlain (pr, "lfo2Sync", plainOf (pr, "lfo2Sync") > 0.5f ? 0.0f : 5.0f); }; }
 
         // AMP ENV
-        par ("Amp env", "Level", "master", "Output level");
         par ("Amp env", "Atk", "harpAttack", "Attack: how the string starts");
         par ("Amp env", "Dec", "harpDecay", "Decay: how long the string rings");
         par ("Amp env", "Sus", "harpSustain", "Sustain: how long it holds on");
         par ("Amp env", "Rel", "harpRelease", "Release: after you let go of the key");
 
         // BODY
-        par ("Body", "Ring", "harpSustain", "Ring: how long the body resonates");
-        par ("Body", "Mix", "bLevel", "Body mix");
 
         // HAND
         if (auto* c = find ("Hand", "Arp", "button"))
@@ -181,7 +184,6 @@ namespace hama
         par ("Hand", "Human", "strumVary", "Human: small differences in time and touch");
         par ("Hand", "Octave", "arpOctaves", "Arp octaves", "knob");
         par ("Hand", "Accent", "arpVelScale", "Accent: dynamics of the arp", "knob");
-        toggle ("Hand", "Latch", "hold", "LATCH: keeps playing after you let go");
 
         // STRING
         par ("String", "Tone", "harpTone", "Tone of the string");
@@ -189,7 +191,6 @@ namespace hama
         par ("String", "Detune", "bDetune", "Detune of layer B");
         par ("String", "Width", "width", "Stereo width");
         par ("String", "Coarse", "harpOctave", "Octave", "knob");
-        par ("String", "Release", "harpRelease", "Release", "knob");
         if (auto* c = find ("String", "Exciter", "screen"))
         {
             c->text = [&pr] { auto* q = P (pr, "harpVoice"); return q != nullptr ? q->getCurrentValueAsText() : juce::String(); };
@@ -214,23 +215,20 @@ namespace hama
         // SPACE
         par ("Space", "Size", "sw12Amt", "Reverb size");
         par ("Space", "Mix", "sw11Amt", "Echo amount");
-        par ("Space", "Width", "width", "Width", "knob");
         toggle ("Space", "Freeze", "sw3On", "FREEZE: the sound hangs in the air");
         toggle ("Space", "Shimmer", "sw13On", "SHIMMER: an octave of light on the reverb");
         toggle ("Space", "Tail", "sw12On", "Reverb on");
 
         // CONSOLE
         par ("CONSOLE", "Volume", "master", "Volume");
-        par ("CONSOLE", "Speed", "strumSpeed", "Strum speed", "hfader");
+        par ("CONSOLE", "Speed", "strumSpeedMul", "Pattern speed", "hfader");
         toggle ("CONSOLE", "Hold", "hold", "HOLD: the chord stays after you let go");
-        toggle ("CONSOLE", "Freeze", "sw3On", "FREEZE");
         if (auto* c = find ("CONSOLE", "Menu", "button")) { c->press = [this] { if (onMenu) onMenu(); }; c->tip = "Sounds: the preset browser"; }
         if (auto* c = find ("CONSOLE", "Setup", "button")) { c->press = [this] { if (onSetup) onSetup(); }; c->tip = "Setup: MIDI, tuning, window size"; }
         if (auto* c = find ("CONSOLE", "Up", "button")) { c->press = [this] { if (onPrev) onPrev(); }; c->tip = "Previous sound"; }
         if (auto* c = find ("CONSOLE", "Down", "button")) { c->press = [this] { if (onNext) onNext(); }; c->tip = "Next sound"; }
         if (auto* c = find ("CONSOLE", "Sound", "button")) { c->lit = [this] { return ! effectsOpen; }; c->press = [this] { if (effectsOpen && onEffects) onEffects(); }; c->tip = "PANEL: the sound"; }
         if (auto* c = find ("CONSOLE", "Effects", "button")) { c->lit = [this] { return effectsOpen; }; c->press = [this] { if (onEffects) onEffects(); }; c->tip = "PANEL: the effects"; }
-        if (auto* c = find ("CONSOLE", "Notes", "button")) { c->lit = [&pr] { return juce::roundToInt (plainOf (pr, "keysPlay")) == 0; }; c->press = [&pr] { setPlain (pr, "keysPlay", 0.0f); }; }
         if (auto* c = find ("CONSOLE", "Preset", "screen"))
         {
             c->text = [&pr] { return pr.presetManager->currentName(); };
@@ -255,6 +253,39 @@ namespace hama
             c->lit = [&pr] { return pr.midiOut.load(); };
             c->press = [&pr] { pr.midiOut.store (! pr.midiOut.load()); };
             c->tip = "MIDI OUT: the plugin sends what it plays (record it on a MIDI track)";
+        }
+
+        // everything else keeps its position until its sound arrives
+        auto& spare = pr.consoleSpare;
+        for (int i = 0; i < (int) controls.size() && i < Hamamatsu108Processor::numSpare; ++i)
+        {
+            auto& c = *controls[(size_t) i];
+            const juce::String kind (c.def->kind);
+            if (kind == "fader" || kind == "knob" || kind == "hfader")
+            {
+                if (c.param.isEmpty()) { c.spare = i; c.tip = juce::String (c.def->section) + " " + c.def->label + " (sound in the next step)"; }
+            }
+            else if (kind == "button" && c.press == nullptr && c.lit == nullptr)
+            {
+                c.lit = [&spare, i] { return spare[(size_t) i].load() > 0.5f; };
+                c.press = [&spare, i] { spare[(size_t) i].store (spare[(size_t) i].load() > 0.5f ? 0.0f : 1.0f); };
+                c.tip = juce::String (c.def->section) + " " + c.def->label + " (sound in the next step)";
+            }
+            else if (kind == "leds" && c.pick == nullptr)
+            {
+                const int n = c.def->numItems;
+                c.selected = [&spare, i] { return juce::jmax (0, juce::roundToInt (spare[(size_t) i].load())); };
+                c.pick = [&spare, i] (int k) { spare[(size_t) i].store ((float) k); };
+                c.tip = juce::String (c.def->section) + " " + c.def->label + " (sound in the next step)";
+                // its select key steps through the LEDs
+                for (auto& kp : controls)
+                    if (juce::String (kp->def->kind) == "button" && juce::String (kp->def->section) == c.def->section
+                        && juce::String (kp->def->label) == juce::String (c.def->label) + " select")
+                    {
+                        kp->lit = nullptr;
+                        kp->press = [&spare, i, n] { spare[(size_t) i].store ((float) ((juce::jmax (0, juce::roundToInt (spare[(size_t) i].load())) + 1) % juce::jmax (1, n))); };
+                    }
+            }
         }
     }
 
@@ -311,11 +342,9 @@ namespace hama
             auto& c = *cp;
             const juce::String kind (c.def->kind);
             const auto r = c.r;
-            if (kind == "fader" && c.param.isNotEmpty())
+            if (kind == "fader")
             {
-                auto* q = P (processor, c.param.toRawUTF8());
-                if (q == nullptr) continue;
-                const float v = q->getValue();
+                const float v = valueOf (processor, c);
                 const float capH = 18.0f, travel = r.getHeight() - capH;
                 const float cy = r.getY() + (1.0f - v) * travel;
                 const bool dark = r.getY() > 270.0f;   // the lower tier is dark graphite
@@ -324,11 +353,9 @@ namespace hama
                 const float scale = 0.5f;
                 g.drawImage (img, juce::Rectangle<float> (r.getCentreX() - 32.0f * scale - 1.0f, cy - 30.0f * scale, 64.0f * scale, 96.0f * scale), juce::RectanglePlacement::stretchToFit);
             }
-            else if (kind == "hfader" && c.param.isNotEmpty())
+            else if (kind == "hfader")
             {
-                auto* q = P (processor, c.param.toRawUTF8());
-                if (q == nullptr) continue;
-                const float v = q->getValue();
+                const float v = valueOf (processor, c);
                 auto cap = juce::Rectangle<float> (18.0f, 24.0f).withCentre ({ r.getX() + 9.0f + v * (r.getWidth() - 18.0f), r.getCentreY() });
                 g.setColour (juce::Colours::black.withAlpha (0.6f));
                 g.fillRoundedRectangle (cap.translated (1.5f, 3.0f), 2.0f);
@@ -340,8 +367,7 @@ namespace hama
             }
             else if (kind == "knob")
             {
-                float v = 0.5f;
-                if (c.param.isNotEmpty()) if (auto* q = P (processor, c.param.toRawUTF8())) v = q->getValue();
+                const float v = valueOf (processor, c);
                 const int frames = knobStrip.getHeight() / knobStrip.getWidth();
                 const int f = juce::jlimit (0, frames - 1, juce::roundToInt (v * (float) (frames - 1)));
                 const float side = 84.0f * 0.5f;   // 84 render px, the knob 60 of them
@@ -351,6 +377,19 @@ namespace hama
             }
             else if (kind == "button")
             {
+                const juce::String label (c.def->label);
+                if (label == "Up" || label == "Down")   // the arrows, cut into the keys
+                {
+                    auto k = r.reduced (r.getWidth() * 0.27f, r.getHeight() * 0.3f).translated (0.0f, -1.0f);
+                    juce::Path tri;
+                    if (label == "Up") tri.addTriangle (k.getCentreX(), k.getY(), k.getRight(), k.getBottom(), k.getX(), k.getBottom());
+                    else tri.addTriangle (k.getX(), k.getY(), k.getRight(), k.getY(), k.getCentreX(), k.getBottom());
+                    g.setColour (juce::Colours::white.withAlpha (0.18f));
+                    g.fillPath (tri, juce::AffineTransform::translation (0.0f, 1.2f));
+                    g.setColour (juce::Colour (0xff070707));
+                    g.fillPath (tri);
+                    continue;
+                }
                 if (c.lit && c.lit())
                 {
                     const float rad = r.getHeight() > 24.0f ? 4.0f : 3.0f;
@@ -613,20 +652,18 @@ namespace hama
         {
             auto& c = *controls[(size_t) i];
             const juce::String kind (c.def->kind);
-            if ((kind == "fader" || kind == "knob" || kind == "hfader") && c.param.isNotEmpty())
+            if ((kind == "fader" || kind == "knob" || kind == "hfader") && (c.param.isNotEmpty() || c.spare >= 0))
             {
                 dragging = i; dragStartY = kind == "hfader" ? -d.x : d.y;
-                if (auto* q = P (processor, c.param.toRawUTF8()))
+                gesture (processor, c, true);
+                if (kind == "fader")   // a click on the track jumps the cap there
                 {
-                    q->beginChangeGesture();
-                    if (kind == "fader")   // a click on the track jumps the cap there
-                    {
-                        const float travel = c.r.getHeight() - 18.0f;
-                        const float cy = c.r.getY() + (1.0f - q->getValue()) * travel;
-                        if (d.y < cy - 2.0f || d.y > cy + 20.0f) q->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, 1.0f - (d.y - c.r.getY() - 9.0f) / travel));
-                    }
-                    dragStartValue = q->getValue();
+                    const float travel = c.r.getHeight() - 18.0f;
+                    const float cy = c.r.getY() + (1.0f - valueOf (processor, c)) * travel;
+                    if (d.y < cy - 2.0f || d.y > cy + 20.0f) setValueOf (processor, c, 1.0f - (d.y - c.r.getY() - 9.0f) / travel);
                 }
+                dragStartValue = valueOf (processor, c);
+                repaint();
                 return;
             }
             if (kind == "leds" && c.pick)
@@ -671,13 +708,12 @@ namespace hama
                 if (e.getDistanceFromDragStart() > 6 && onDragTake) { onDragTake (this); dragging = -1; }
                 return;
             }
-            if (auto* q = P (processor, c.param.toRawUTF8()))
             {
                 const float range = kind == "fader" ? c.r.getHeight() - 18.0f : kind == "hfader" ? c.r.getWidth() - 18.0f : 160.0f;
                 const float pos = kind == "hfader" ? -d.x : d.y;
                 const float fine = e.mods.isShiftDown() ? 0.2f : 1.0f;
-                q->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, dragStartValue + (dragStartY - pos) / range * fine));
-                if (onStatus) onStatus (q->getName (40), q->getCurrentValueAsText());
+                setValueOf (processor, c, dragStartValue + (dragStartY - pos) / range * fine);
+                if (onStatus) if (auto* q = P (processor, c.param.toRawUTF8())) onStatus (q->getName (40), q->getCurrentValueAsText());
             }
             repaint();
             return;
@@ -719,8 +755,7 @@ namespace hama
 
     void ConsoleView::mouseUp (const juce::MouseEvent&)
     {
-        if (dragging >= 0)
-            if (auto* q = P (processor, controls[(size_t) dragging]->param.toRawUTF8())) q->endChangeGesture();
+        if (dragging >= 0) gesture (processor, *controls[(size_t) dragging], false);
         dragging = -1;
         if (heldKey >= 0) { processor.keyboardState.noteOff (1, heldKey, 0.0f); heldKey = -1; }
         dragHandle = -1; lastStrumX = -1.0f;
@@ -734,7 +769,10 @@ namespace hama
         {
             auto& c = *controls[(size_t) i];
             if (c.param.isNotEmpty())
+            {
                 if (auto* q = P (processor, c.param.toRawUTF8())) { q->beginChangeGesture(); q->setValueNotifyingHost (q->getDefaultValue()); q->endChangeGesture(); }
+            }
+            else if (c.spare >= 0) processor.consoleSpare[(size_t) c.spare].store (-1.0f);
             repaint(); return;
         }
         if (keysView || ! bed().contains (d)) return;
@@ -748,14 +786,13 @@ namespace hama
         if (const int i = hitControl (toDesign (e.position)); i >= 0)
         {
             auto& c = *controls[(size_t) i];
-            if (c.param.isNotEmpty())
-                if (auto* q = P (processor, c.param.toRawUTF8()))
-                {
-                    q->beginChangeGesture();
-                    q->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, q->getValue() + w.deltaY * 0.08f));
-                    q->endChangeGesture();
-                    repaint();
-                }
+            if (c.param.isNotEmpty() || c.spare >= 0)
+            {
+                gesture (processor, c, true);
+                setValueOf (processor, c, valueOf (processor, c) + w.deltaY * 0.08f);
+                gesture (processor, c, false);
+                repaint();
+            }
         }
     }
 
@@ -783,11 +820,31 @@ namespace hama
         juce::String sig;
         for (auto& c : controls)
         {
-            if (c->param.isNotEmpty()) if (auto* q = P (processor, c->param.toRawUTF8())) sig << juce::String (q->getValue(), 3) << ",";
+            if (c->param.isNotEmpty() || c->spare >= 0) sig << juce::String (valueOf (processor, *c), 3) << ",";
             if (c->lit) sig << (c->lit() ? "1" : "0");
             if (c->selected) sig << c->selected();
         }
         sig << processor.presetManager->currentName() << processor.activeChord.load() << processor.detectedChord.load() << (int) keysView << bedLayer;
         if (any || keysView || sig != lastSig) { lastSig = sig; repaint(); }
+    }
+
+    namespace
+    {
+        float valueOf (Hamamatsu108Processor& pr, const ConsoleView::Control& c)
+        {
+            if (c.param.isNotEmpty()) if (auto* q = P (pr, c.param.toRawUTF8())) return q->getValue();
+            if (c.spare >= 0) { const float v = pr.consoleSpare[(size_t) c.spare].load(); return v < 0.0f ? 0.5f : v; }
+            return 0.5f;
+        }
+        void setValueOf (Hamamatsu108Processor& pr, ConsoleView::Control& c, float v)
+        {
+            v = juce::jlimit (0.0f, 1.0f, v);
+            if (c.param.isNotEmpty()) { if (auto* q = P (pr, c.param.toRawUTF8())) q->setValueNotifyingHost (v); return; }
+            if (c.spare >= 0) pr.consoleSpare[(size_t) c.spare].store (v);
+        }
+        void gesture (Hamamatsu108Processor& pr, ConsoleView::Control& c, bool begin)
+        {
+            if (c.param.isNotEmpty()) if (auto* q = P (pr, c.param.toRawUTF8())) { if (begin) q->beginChangeGesture(); else q->endChangeGesture(); }
+        }
     }
 }

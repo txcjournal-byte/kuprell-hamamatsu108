@@ -354,6 +354,7 @@ Hamamatsu108Processor::Hamamatsu108Processor()
       apvts (*this, &undoManager, "Hamamatsu108", createParameterLayout())
 {
     resetPlate();
+    for (auto& v : consoleSpare) v.store (-1.0f);
     for (auto& sl : progSlots) sl.store (-1);
     progNotes.reserve (256);
     gridNotes.reserve (256);
@@ -2805,6 +2806,9 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
             pl.add (juce::String (plTone[(size_t) i].load(), 3) + ":" + juce::String (plBend[(size_t) i].load(), 3) + ":" + juce::String (plLevel[(size_t) i].load(), 3) + ":" + juce::String (plTime[(size_t) i].load(), 3));
         state.setProperty ("plate", pl.joinIntoString (","), nullptr);
         state.setProperty ("plateMute", (juce::int64) plMute.load(), nullptr);
+        juce::StringArray sp;
+        for (auto& v : consoleSpare) sp.add (juce::String (v.load(), 3));
+        state.setProperty ("consoleSpare", sp.joinIntoString (","), nullptr);
     }
     state.setProperty ("captureMode", captureMode.load(), nullptr);
     state.setProperty ("captureQuant", captureQuant.load(), nullptr);
@@ -2966,6 +2970,8 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
                     }
                 }
                 plMute.store ((std::uint32_t) (juce::int64) state.getProperty ("plateMute", 0));
+                const auto sp = juce::StringArray::fromTokens (state.getProperty ("consoleSpare").toString(), ",", {});
+                for (int i = 0; i < numSpare; ++i) consoleSpare[(size_t) i].store (i < sp.size() ? sp[i].getFloatValue() : -1.0f);
             }
             if (! state.hasProperty ("keysV2"))   // older sessions: keys play single notes now (Split made some keys strum)
                 if (auto* kp = apvts.getParameter ("keysPlay")) kp->setValueNotifyingHost (kp->convertTo0to1 (0.0f));

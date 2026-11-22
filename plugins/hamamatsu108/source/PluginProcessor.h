@@ -111,6 +111,9 @@ public:
     }
     // KEYS: the on-screen keyboard in the strum window
     juce::MidiKeyboardState keyboardState;
+    // console controls whose sound comes in a later step: their positions are kept with the session (-1 = untouched)
+    static constexpr int numSpare = 192;
+    std::array<std::atomic<float>, numSpare> consoleSpare;
     void strumNow (bool down) { pendingStrum.store (down ? 1 : -1); }   // PC keyboard: a whole stroke
     // MOTION is on and plays a pattern (GRID / LINES / RHYTHM / STRINGS, not PLATE)
     bool motionActive() const { return *apvts.getRawParameterValue ("gridOn") > 0.5f && juce::roundToInt (apvts.getRawParameterValue ("motionType")->load()) != 4; }
