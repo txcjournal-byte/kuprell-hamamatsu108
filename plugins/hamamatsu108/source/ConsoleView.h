@@ -53,6 +53,7 @@ namespace hama
 
         Hamamatsu108Processor& processor;
         juce::Image background, knobStrip, capLight, capDark;
+        juce::Image bgScaled;   // the panel at the size it is shown: drawn once, then only copied
         std::vector<std::unique_ptr<Control>> controls;
         int dragging = -1;
         float dragStartValue = 0.0f, dragStartY = 0.0f;
@@ -62,7 +63,7 @@ namespace hama
         bool keysView = false;
         int dragHandle = -1, heldKey = -1;
         float lastStrumX = -1.0f;
-        juce::String lastSig;
+        juce::int64 lastSig = 0;
         juce::Rectangle<float> resetKey() const;
         void resetMenu();
 

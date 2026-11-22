@@ -360,7 +360,19 @@ namespace hama
     void ConsoleView::paint (juce::Graphics& g)
     {
         const float sx = (float) getWidth() / designW, sy = (float) getHeight() / designH;
-        g.drawImage (background, getLocalBounds().toFloat(), juce::RectanglePlacement::stretchToFit);
+        {
+            // the big rendered panel is scaled once per window size, not on every repaint
+            const float ps = juce::jmax (1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
+            const int iw = juce::roundToInt ((float) getWidth() * ps), ih = juce::roundToInt ((float) getHeight() * ps);
+            if (bgScaled.getWidth() != iw || bgScaled.getHeight() != ih)
+            {
+                bgScaled = juce::Image (juce::Image::RGB, juce::jmax (1, iw), juce::jmax (1, ih), false);
+                juce::Graphics bg (bgScaled);
+                bg.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+                bg.drawImage (background, bgScaled.getBounds().toFloat(), juce::RectanglePlacement::stretchToFit);
+            }
+            g.drawImage (bgScaled, getLocalBounds().toFloat(), juce::RectanglePlacement::stretchToFit);
+        }
         juce::Graphics::ScopedSaveState save (g);
         g.addTransform (juce::AffineTransform::scale (sx, sy));
 
@@ -900,15 +912,25 @@ namespace hama
         for (auto& v : glow) if (v > 0.0f) { v = juce::jmax (0.0f, v - 0.03f); any = true; }
         phase += 0.9f;
         // repaint when anything shown changed (cheap signature of the bound values)
-        juce::String sig;
+        juce::int64 sig = 1469598103934665603LL;
+        auto mix = [&sig] (juce::int64 v) { sig = (sig ^ v) * 1099511628211LL; };
         for (auto& c : controls)
         {
-            if (c->param.isNotEmpty() || c->spare >= 0) sig << juce::String (valueOf (processor, *c), 3) << ",";
-            if (c->lit) sig << (c->lit() ? "1" : "0");
-            if (c->selected) sig << c->selected();
+            if (c->param.isNotEmpty() || c->spare >= 0) mix (juce::roundToInt (valueOf (processor, *c) * 1000.0f));
+            if (c->lit) mix (c->lit() ? 7 : 3);
+            if (c->selected) mix (c->selected());
         }
-        sig << processor.presetManager->currentName() << processor.activeChord.load() << processor.detectedChord.load() << (int) keysView << bedLayer;
-        if (any || keysView || sig != lastSig) { lastSig = sig; repaint(); }
+        mix (processor.presetManager->currentName().hashCode64());
+        mix (processor.activeChord.load()); mix (processor.detectedChord.load()); mix (keysView ? 1 : 0); mix (bedLayer);
+        mix (processor.stringsMode.load()); mix ((juce::int64) processor.plMute.load());
+        if (sig != lastSig) { lastSig = sig; repaint(); }
+        else if (any || keysView)
+        {
+            // only the strings move: repaint just that part
+            const float sx = (float) getWidth() / designW, sy = (float) getHeight() / designH;
+            auto b = bed().expanded (16.0f, 24.0f);
+            repaint (juce::Rectangle<float> (b.getX() * sx, b.getY() * sy, b.getWidth() * sx, b.getHeight() * sy).getSmallestIntegerContainer());
+        }
     }
 
     namespace
