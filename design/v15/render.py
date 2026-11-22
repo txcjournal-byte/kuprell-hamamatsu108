@@ -3,8 +3,11 @@ from scipy import ndimage as ndi
 from skimage.draw import polygon as skpoly
 from PIL import Image
 
-D = json.load(open('layout.json'))
-W, H = 3200, 1840
+import os
+D = json.load(open(os.environ.get('LAYOUT', 'layout.json')))
+STATIC = os.environ.get('STATIC') == '1'
+SPRITE = os.environ.get('SPRITE') == '1'
+W, H = D.get('canvas', [3200, 1840])
 rng = np.random.default_rng(7)
 
 Hm = np.zeros((H, W), np.float32)          # height
@@ -29,6 +32,7 @@ def setmat(m, alb, metal=0.0, sp=40, sk=0.3, br=0):
 def rrect_sdf(x, y, w, h, r, pad=0):
     """local window sdf of rounded rect. returns (slice_y, slice_x, sdf)"""
     x0, y0, x1, y1 = max(int(x - pad), 0), max(int(y - pad), 0), min(int(x + w + pad), W), min(int(y + h + pad), H)
+    x0, y0 = min(x0, W), min(y0, H); x1, y1 = max(x1, x0), max(y1, y0)
     yy, xx = np.mgrid[y0:y1, x0:x1].astype(np.float32) + 0.5
     cx, cy, hw, hh = x + w / 2, y + h / 2, w / 2, h / 2
     qx = np.abs(xx - cx) - hw + r; qy = np.abs(yy - cy) - hh + r
@@ -53,14 +57,14 @@ def raise_rrect(x, y, w, h, r, height, bev, base=None, alb=(.05,.05,.05), metal=
 
 # ---------------- background: dark cast concrete
 noise = ndi.gaussian_filter(rng.standard_normal((H, W)).astype(np.float32), 1.2)
-coarse = ndi.gaussian_filter(rng.standard_normal((H // 8, W // 8)).astype(np.float32), 3)
+coarse = ndi.gaussian_filter(rng.standard_normal(((H + 7) // 8, (W + 7) // 8)).astype(np.float32), 3)
 coarse = np.kron(coarse, np.ones((8, 8), np.float32))[:H, :W]
 A[:] = (0.035 + 0.012 * coarse[..., None] + 0.01 * noise[..., None]) * np.array([1, 1.02, 1.0])
 Hm[:] = 0.6 * noise + 2 * coarse
 SP[:] = 8; SK[:] = 0.05
 
 # ---------------- cheeks (angled side slabs)
-for side in (0, 1):
+for side in ((0, 1) if not SPRITE else ()):
     pts_x = np.array([0, 144, 144, 104, 104, 0], float); pts_y = np.array([0, 0, .61 * H, .79 * H, H, H])
     if side: pts_x = W - pts_x
     rr, cc = skpoly(pts_y, pts_x, (H, W)); m = np.zeros((H, W), bool); m[rr, cc] = True
@@ -72,7 +76,7 @@ for side in (0, 1):
 px, py, pw, ph = D['panel']
 m = rect_mask(px, py, pw, ph); prof = bevel_profile(m, 10)
 Hm[m] = 40 + 10 * prof[m]
-setmat(m, (.27, .27, .265), metal=1, sp=50, sk=.65, br=1)
+setmat(m, (.05, .05, .053) if os.environ.get('DARK') == '1' else (.27, .27, .265), metal=1, sp=50, sk=.65, br=1)
 tx, ty, tw, th = D['tierb']
 m2 = rect_mask(tx + 4, ty, tw - 8, th - 4); prof2 = bevel_profile(m2, 8)
 Hm[m2] = 44 + 4 * prof2[m2]
@@ -119,7 +123,7 @@ n = 36; chord = {1, 3, 5, 8, 10, 12, 15, 17, 19, 22, 24, 26}
 TOP = [0,0,30,0,0,60,0,0,18,0,0,44,0,0,0,26,0,0,70,0,0,0,36,0,0,14,0,0,52,0,0,0,0,0,0,0]
 BOT = [40,40,70,40,40,40,90,40,40,55,40,40,40,120,40,40,40,62,40,40,40,40,96,40,40,40,40,40,40,76,40,40,40,40,40,40]
 MUTE = {7, 21}
-for i in range(n):
+for i in range(n if not (STATIC or SPRITE) else 0):
     sx = bx + 40 + (14 + i * (1150 / (n - 1))) * 2; th = (2.6 - 1.6 * i / n) * 2.2
     y0, y1 = by + 32, by + 304
     ha, hb = y0 + 8 + TOP[i], y1 - BOT[i]          # the two handles: bend (top) and pluck point (bottom)
@@ -151,6 +155,7 @@ for f in D['ft']:
     # slot
     sl, sdf, xx, yy = rrect_sdf(gx + 14, y + 10, gw - 28, h - 20, 4, 1); ins = sdf < 0
     Hm[sl][ins] = Hm[sl][ins] - 22 * np.clip(-sdf[ins] / 3, 0, 1); A[sl][ins] = (.004, .004, .004); SK[sl][ins] = .05
+    if STATIC: continue
     # cap
     cx0, cy0, cw0, chh = f['cap']
     base = 48
@@ -163,6 +168,7 @@ for f in D['ft']:
 
 # ---------------- buttons
 for b in D['btn']:
+    if STATIC: b = dict(b, lit=False)
     x, y, w, h = b['r']
     big = not b['sm']
     sl, ins, sdf, xx, yy = raise_rrect(x - 2, y - 2, w + 4, h + 4, 7 if big else 4, 22 if big else 12, 6 if big else 4,
@@ -180,6 +186,7 @@ for b in D['btn']:
 
 # ---------------- LEDs (panel lists)
 for l in D['led']:
+    if STATIC: l = dict(l, on=False)
     x, y, w, h = l['r']; cx, cy = x + w / 2, y + h / 2
     R0 = 11
     sl = (slice(int(cy) - R0 - 2, int(cy) + R0 + 3), slice(int(cx) - R0 - 2, int(cx) + R0 + 3))
@@ -194,6 +201,7 @@ for l in D['led']:
 
 # ---------------- knobs
 for k in D['kn']:
+    if STATIC: continue
     x, y, w, h = k['r']; cx, cy = x + w / 2, y + h / 2; R0 = w / 2 + 4
     rot = float(k['rot'].replace('rotate(', '').replace('deg)', '') or 0)
     sl = (slice(int(cy - R0 - 3), int(cy + R0 + 4)), slice(int(cx - R0 - 3), int(cx + R0 + 4)))
@@ -218,6 +226,7 @@ for hz in D['hz']:
     x, y, w, h = hz['r']
     sl, sdf, xx, yy = rrect_sdf(x, y, w, h, 4, 1); ins = sdf < 0
     Hm[sl][ins] -= 12 * np.clip(-sdf[ins] / 3, 0, 1); A[sl][ins] = (.005, .005, .005)
+    if STATIC: continue
     x, y, w, h = hz['b']
     sl, ins, sdf, xx, yy = raise_rrect(x, y, w, h, 4, 30, 5, alb=(.03, .03, .03), sp=90, sk=.45)
     c = np.abs(xx - (x + w / 2)) < 2; A[sl][ins & c] = (.92, .91, .88)
@@ -279,13 +288,13 @@ col = col + bl
 haze = np.exp(-np.clip(by - ys, 0, None) / 160.0) * (ys < by) * 0.0
 col += haze[..., None] * np.array([.3, 1, .7])
 # vignette
-vig = 1 - 0.35 * (((xx_n - .5) * 1.2) ** 2 + ((yy_n - .45) * 1.3) ** 2)
+vig = 1 - (0 if SPRITE else 0.35) * (((xx_n - .5) * 1.2) ** 2 + ((yy_n - .45) * 1.3) ** 2)
 col *= vig[..., None]
 # filmic
 col = col * 1.1
 col = (col * (2.51 * col + 0.03)) / (col * (2.43 * col + 0.59) + 0.14)
 col = np.clip(col, 0, 1) ** (1 / 2.2)
-grain = rng.standard_normal((H, W, 1)).astype(np.float32) * 0.008
+grain = rng.standard_normal((H, W, 1)).astype(np.float32) * (0 if SPRITE else 0.008)
 col = np.clip(col + grain, 0, 1)
-Image.fromarray((col * 255).astype(np.uint8)).save('base.png')
+Image.fromarray((col * 255).astype(np.uint8)).save(os.environ.get('OUT', 'base.png'))
 print('done')

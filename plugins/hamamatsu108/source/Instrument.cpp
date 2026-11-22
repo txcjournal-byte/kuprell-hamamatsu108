@@ -1381,6 +1381,19 @@ namespace hama
 
         void mouseUp (const juce::MouseEvent&) override { dragging = false; repaint(); }
 
+        bool isLive() const { return live; }
+        bool hasNotes() const { return ! notes.empty(); }
+        void dragFrom (juce::Component* source)
+        {
+            if (dragging || notes.empty()) return;
+            const auto file = writeMidiFile();
+            if (! file.existsAsFile()) return;
+            dragging = true;
+            juce::Component::SafePointer<MidiCapture> safe (this);
+            juce::DragAndDropContainer::performExternalDragDropOfFiles ({ file.getFullPathName() }, false, source,
+                                                                       [safe] { if (safe != nullptr) safe->dragging = false; });
+        }
+
     private:
         juce::File writeMidiFile() const
         {
@@ -3519,6 +3532,11 @@ namespace hama
         repaint();
     }
 
+    bool InstrumentView::takeLive() const { return capture->isLive(); }
+    bool InstrumentView::hasTake() const { return capture->hasNotes(); }
+    void InstrumentView::dragTake (juce::Component* source) { capture->dragFrom (source); }
+    void InstrumentView::takeMenu (juce::Component*) { capture->showMenu(); }
+
     void InstrumentView::timerCallback()
     {
         if (processor.skin.load() != currentSkin) applySkin (processor.skin.load());
@@ -3527,6 +3545,7 @@ namespace hama
         const auto flashes = processor.stringFlashes.exchange (0);
         plate->update (flashes, chord >= 0 ? chord : processor.detectedChord.load());
         motion->flash (flashes);   // chord detection: piano roll notes too
+        if (onFlashes) onFlashes (flashes);
         module->update (processor.meterLeft.load(), processor.meterRight.load(), chord);
         capture->update();
         rail->update();

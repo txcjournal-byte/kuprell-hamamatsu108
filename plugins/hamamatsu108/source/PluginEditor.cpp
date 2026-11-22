@@ -83,6 +83,21 @@ Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
     content.addAndMakeVisible (status);
     content.addChildComponent (about);
 
+    // HARPOLOGY console: the whole window; the browser, setup and effects open over it
+    content.addAndMakeVisible (console);
+    topBar.setVisible (false);   // the console has its own preset screen and arrows
+    instrument.onFlashes = [this] (std::uint32_t b) { console.flash (b); };
+    console.onMenu = [this] { showPage (page == Page::presets ? Page::play : Page::presets); };
+    console.onSetup = [this] { showPage (page == Page::settings ? Page::play : Page::settings); };
+    console.onEffects = [this] { showPage (page == Page::edit ? Page::play : Page::edit); };
+    console.onPrev = [this] { browser.refresh(); audioProcessor.presetManager->loadNext (-1, browser.filtered()); audioProcessor.previewPreset(); };
+    console.onNext = [this] { browser.refresh(); audioProcessor.presetManager->loadNext (1, browser.filtered()); audioProcessor.previewPreset(); };
+    console.takeLive = [this] { return instrument.takeLive(); };
+    console.hasTake = [this] { return instrument.hasTake(); };
+    console.onDragTake = [this] (juce::Component* c) { instrument.dragTake (c); };
+    console.onTakeMenu = [this] (juce::Component* c) { instrument.takeMenu (c); };
+    console.onStatus = [this] (const juce::String& n, const juce::String& v) { status.setText (n, v); };
+
     topBar.setPreset (audioProcessor.presetManager->currentCategory(), audioProcessor.presetManager->currentName(), audioProcessor.presetManager->isModified());
     instrument.onStatus = [this] (const juce::String& n, const juce::String& v) { status.setText (n, v); };
 
@@ -210,6 +225,13 @@ void Hamamatsu108Editor::showPage (Page p)
     for (auto* c : { (juce::Component*) &editView, (juce::Component*) &browser, (juce::Component*) &settings })
         if (c->isVisible()) c->toFront (false);
     topBar.toFront (false);
+    // the console is the play page; the other pages lie over it under the preset bar
+    console.effectsOpen = p == Page::edit;
+    console.setVisible (true);
+    console.toFront (false);
+    topBar.setVisible (p != Page::play);
+    for (auto* c : { (juce::Component*) &topBar, (juce::Component*) &editView, (juce::Component*) &browser, (juce::Component*) &settings, (juce::Component*) &help })
+        if (c->isVisible()) c->toFront (false);
 }
 
 void Hamamatsu108Editor::compareAB()
@@ -361,6 +383,7 @@ void Hamamatsu108Editor::resized()
 
     content.setTransform (juce::AffineTransform::scale (scale));
     content.setBounds (0, 0, baseWidth, baseHeight);
+    console.setBounds (0, 0, baseWidth, baseHeight);
 
     const int stageH = baseHeight - StatusBar::height;
     instrument.setBounds (0, 0, baseWidth, stageH);

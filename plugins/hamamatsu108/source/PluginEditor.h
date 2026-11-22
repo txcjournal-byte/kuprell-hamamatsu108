@@ -6,6 +6,7 @@
 #include "EditView.h"
 #include "BrowserView.h"
 #include "Overlays.h"
+#include "ConsoleView.h"
 #include "KuprellLookAndFeel.h"
 #include "KuprellTopBar.h"
 
@@ -60,6 +61,7 @@ private:
     hama::SettingsView settings;
     hama::HelpView help;
     hama::AboutView about;
+    hama::ConsoleView console { audioProcessor };   // HARPOLOGY: the one-page console over everything else
 
     enum class Page { play, edit, presets, settings };
     void showPage (Page);

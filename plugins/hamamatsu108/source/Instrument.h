@@ -166,6 +166,12 @@ namespace hama
 
         // text shown in the editor's status bar
         std::function<void (const juce::String& name, const juce::String& value)> onStatus;
+        // the one-page console reads the plucked strings and drags the MIDI take through these
+        std::function<void (std::uint32_t)> onFlashes;
+        bool takeLive() const;
+        bool hasTake() const;
+        void dragTake (juce::Component* source);
+        void takeMenu (juce::Component* target);
 
     private:
         struct Backdrop;

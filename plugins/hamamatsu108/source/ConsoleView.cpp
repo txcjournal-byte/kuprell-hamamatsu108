@@ -1,0 +1,793 @@
+#include "ConsoleView.h"
+#include "ConsoleLayout.h"
+#include "HarpArt.h"
+#include "Chords.h"
+#include "Presets.h"
+#include "KuprellLookAndFeel.h"
+
+namespace hama
+{
+    namespace
+    {
+        constexpr float designW = 1600.0f, designH = 920.0f;
+        const juce::Colour mint (0xff72f2bd), bone (0xfff4f2ec), ledRed (0xffee2a35);
+
+        juce::RangedAudioParameter* P (Hamamatsu108Processor& p, const char* id) { return p.apvts.getParameter (id); }
+        float plainOf (Hamamatsu108Processor& p, const char* id)
+        {
+            if (auto* v = p.apvts.getRawParameterValue (id)) return v->load();
+            return 0.0f;
+        }
+        void setPlain (Hamamatsu108Processor& p, const char* id, float v)
+        {
+            if (auto* q = P (p, id)) { q->beginChangeGesture(); q->setValueNotifyingHost (q->convertTo0to1 (v)); q->endChangeGesture(); }
+        }
+        juce::Font ui (float h, bool bold = true) { return kuprell::LookAndFeel::uiFont (h, bold); }
+    }
+
+    // one control of the console: where it is (design pixels) and what it does
+    struct ConsoleView::Control
+    {
+        const console::Def* def = nullptr;
+        juce::Rectangle<float> r;
+        juce::String param;                        // faders, knobs: the parameter it moves
+        std::function<bool()> lit;                 // keys: LED on?
+        std::function<void()> press;               // keys: what a click does
+        std::function<int()> selected;             // LED lists: which LED is on (-1 = none)
+        std::function<void (int)> pick;            // LED lists: click on an item
+        std::function<juce::String()> text;        // screens
+        juce::String tip;
+        bool live() const { return param.isNotEmpty() || press != nullptr || pick != nullptr || text != nullptr; }
+    };
+
+    ConsoleView::ConsoleView (Hamamatsu108Processor& p) : processor (p)
+    {
+        background = juce::ImageCache::getFromMemory (HarpArt::console_bg_jpg, HarpArt::console_bg_jpgSize);
+        knobStrip  = juce::ImageCache::getFromMemory (HarpArt::knob_strip_png, HarpArt::knob_strip_pngSize);
+        capLight   = juce::ImageCache::getFromMemory (HarpArt::fadercap_png, HarpArt::fadercap_pngSize);
+        capDark    = juce::ImageCache::getFromMemory (HarpArt::fadercap_dark_png, HarpArt::fadercap_dark_pngSize);
+        for (int i = 0; i < console::numDefs; ++i)
+        {
+            auto c = std::make_unique<Control>();
+            c->def = &console::defs[i];
+            c->r = { c->def->x, c->def->y, c->def->w, c->def->h };
+            controls.push_back (std::move (c));
+        }
+        bindAll();
+        setOpaque (true);
+        startTimerHz (30);
+    }
+
+    ConsoleView::~ConsoleView() = default;
+
+    void ConsoleView::bindAll()
+    {
+        auto& pr = processor;
+        auto find = [this] (const char* sec, const char* label, const char* kind = nullptr) -> Control*
+        {
+            for (auto& c : controls)
+                if (juce::String (c->def->section).equalsIgnoreCase (sec) && juce::String (c->def->label).equalsIgnoreCase (label)
+                    && (kind == nullptr || juce::String (c->def->kind) == kind))
+                    return c.get();
+            return nullptr;
+        };
+        auto par = [&] (const char* sec, const char* label, const char* id, const char* tip, const char* kind = nullptr)
+        {
+            if (auto* c = find (sec, label, kind)) { c->param = id; c->tip = tip; }
+        };
+        auto toggle = [&] (const char* sec, const char* label, const char* id, const char* tip)
+        {
+            if (auto* c = find (sec, label, "button"))
+            {
+                const juce::String pid (id);
+                c->lit = [&pr, pid] { return plainOf (pr, pid.toRawUTF8()) > 0.5f; };
+                c->press = [&pr, pid] { setPlain (pr, pid.toRawUTF8(), plainOf (pr, pid.toRawUTF8()) > 0.5f ? 0.0f : 1.0f); };
+                c->tip = tip;
+            }
+        };
+        auto choice = [&] (const char* sec, const char* label, const char* id, int offset, const char* tip)
+        {
+            // an LED list and its select key both pick from a choice parameter
+            const juce::String pid (id);
+            auto* list = find (sec, label, "leds");
+            auto* key = find (sec, (juce::String (label) + " select").toRawUTF8(), "button");
+            const int n = list != nullptr ? list->def->numItems : 0;
+            if (list != nullptr)
+            {
+                list->selected = [&pr, pid, offset, n] { const int v = juce::roundToInt (plainOf (pr, pid.toRawUTF8())) - offset; return v >= 0 && v < n ? v : -1; };
+                list->pick = [&pr, pid, offset] (int i) { setPlain (pr, pid.toRawUTF8(), (float) (i + offset)); };
+                list->tip = tip;
+            }
+            if (key != nullptr)
+            {
+                key->press = [&pr, pid, offset, n] { const int v = juce::roundToInt (plainOf (pr, pid.toRawUTF8())) - offset; setPlain (pr, pid.toRawUTF8(), (float) (((v + 1) % juce::jmax (1, n)) + offset)); };
+                key->tip = tip;
+            }
+        };
+
+        // VOICE: the layers
+        if (auto* c = find ("Voice", "Harp A", "button")) { c->lit = [] { return true; }; c->press = [] {}; c->tip = "Layer A: the main harp (always on)"; }
+        toggle ("Voice", "Harp B", "dual", "Layer B: a second engine under the harp, MORPH blends A and B");
+        if (auto* c = find ("Voice", "Bass", "button"))
+        {
+            c->lit = [&pr] { return plainOf (pr, "bassType") > 0.5f; };
+            c->press = [&pr] { setPlain (pr, "bassType", plainOf (pr, "bassType") > 0.5f ? 0.0f : 1.0f); };
+            c->tip = "Bass layer: plays the root of the chord";
+        }
+        if (auto* c = find ("Voice", "Chord", "button"))
+        {
+            c->lit = [&pr] { return plainOf (pr, "chordType") > 0.5f; };
+            c->press = [&pr] { setPlain (pr, "chordType", plainOf (pr, "chordType") > 0.5f ? 0.0f : 1.0f); };
+            c->tip = "Chord layer: a sustained chord under the harp";
+        }
+        par ("Morph", "Glass", "morph", "MORPH: blends layer A into layer B");
+        par ("Morph", "Steel", "bLevel", "Layer B level");
+        par ("Morph", "Wood", "harpShape", "Layer A character");
+        par ("Morph", "Air", "polish", "Air: polish and sparkle on top");
+
+        // LFOs
+        for (int n = 1; n <= 2; ++n)
+        {
+            const char* sec = n == 1 ? "LFO 1" : "LFO 2";
+            const juce::String id ("lfo" + juce::String (n));
+            par (sec, "Rate", (id + "Rate").toRawUTF8(), "LFO rate");
+            choice (sec, "Waveform", (id + "Shape").toRawUTF8(), 0, "LFO waveform: sine, triangle, saw, square, random");
+            if (auto* c = find (sec, "Sync", "button"))
+            {
+                const juce::String pid = id + "Sync";
+                c->lit = [&pr, pid] { return plainOf (pr, pid.toRawUTF8()) > 0.5f; };
+                c->press = [&pr, pid] { setPlain (pr, pid.toRawUTF8(), plainOf (pr, pid.toRawUTF8()) > 0.5f ? 0.0f : 5.0f); };   // free / 1/4
+                c->tip = "LFO follows the song tempo";
+            }
+        }
+        par ("LFO 2", "Depth", "lfo2QAmt", "LFO 2 depth", "knob");
+        if (auto* c = find ("LFO 2", "Tempo", "button")) { c->lit = [&pr] { return plainOf (pr, "lfo2Sync") > 0.5f; }; c->press = [&pr] { setPlain (pr, "lfo2Sync", plainOf (pr, "lfo2Sync") > 0.5f ? 0.0f : 5.0f); }; }
+
+        // AMP ENV
+        par ("Amp env", "Level", "master", "Output level");
+        par ("Amp env", "Atk", "harpAttack", "Attack: how the string starts");
+        par ("Amp env", "Dec", "harpDecay", "Decay: how long the string rings");
+        par ("Amp env", "Sus", "harpSustain", "Sustain: how long it holds on");
+        par ("Amp env", "Rel", "harpRelease", "Release: after you let go of the key");
+
+        // BODY
+        par ("Body", "Ring", "harpSustain", "Ring: how long the body resonates");
+        par ("Body", "Mix", "bLevel", "Body mix");
+
+        // HAND
+        if (auto* c = find ("Hand", "Arp", "button"))
+        {
+            c->lit = [&pr] { return juce::roundToInt (plainOf (pr, "strumMode")) == 1; };
+            c->press = [&pr] { const bool on = juce::roundToInt (plainOf (pr, "strumMode")) != 1; setPlain (pr, "strumMode", on ? 1.0f : 3.0f); if (on) setPlain (pr, "gridOn", 0.0f); };
+            c->tip = "ARP: the held chord plays note by note";
+        }
+        toggle ("Hand", "Gate", "gateOn", "GATE: the sound is chopped in rhythm");
+        if (auto* c = find ("Hand", "Flourish", "button"))
+        {
+            c->lit = [&pr] { const int k = juce::roundToInt (plainOf (pr, "keysPlay")); return k == 4 || k == 5; };
+            c->press = [&pr] { const int k = juce::roundToInt (plainOf (pr, "keysPlay")); setPlain (pr, "keysPlay", (k == 4 || k == 5) ? 0.0f : 4.0f); };
+            c->tip = "FLOURISH: one key plays a whole run";
+        }
+        if (auto* c = find ("Hand", "Notes", "button"))
+        {
+            c->lit = [&pr] { return juce::roundToInt (plainOf (pr, "keysPlay")) == 0; };
+            c->press = [&pr] { setPlain (pr, "keysPlay", 0.0f); };
+            c->tip = "NOTES: every key plays its own note";
+        }
+        choice ("Hand", "Direction", "arpPattern", 0, "Direction of the arp: up, down, up and down, thumb");
+        par ("Hand", "Speed", "strumSpeed", "Speed of the hand across the strings");
+        par ("Hand", "Swing", "arpSwing", "Swing");
+        par ("Hand", "Feel", "strumFeel", "Feel: how hard and even the hand is");
+        par ("Hand", "Human", "strumVary", "Human: small differences in time and touch");
+        par ("Hand", "Octave", "arpOctaves", "Arp octaves", "knob");
+        par ("Hand", "Accent", "arpVelScale", "Accent: dynamics of the arp", "knob");
+        toggle ("Hand", "Latch", "hold", "LATCH: keeps playing after you let go");
+
+        // STRING
+        par ("String", "Tone", "harpTone", "Tone of the string");
+        par ("String", "Stiff", "harpShape", "Stiffness: the character of the engine");
+        par ("String", "Detune", "bDetune", "Detune of layer B");
+        par ("String", "Width", "width", "Stereo width");
+        par ("String", "Coarse", "harpOctave", "Octave", "knob");
+        par ("String", "Release", "harpRelease", "Release", "knob");
+        if (auto* c = find ("String", "Exciter", "screen"))
+        {
+            c->text = [&pr] { auto* q = P (pr, "harpVoice"); return q != nullptr ? q->getCurrentValueAsText() : juce::String(); };
+            c->press = [this] {
+                auto* q = P (processor, "harpVoice");
+                if (q == nullptr) return;
+                juce::PopupMenu m;
+                const int cur = juce::roundToInt (plainOf (processor, "harpVoice"));
+                for (int i = 0; i < q->getNumSteps(); ++i) m.addItem (i + 1, q->getText (q->convertTo0to1 ((float) i), 40), true, i == cur);
+                juce::Component::SafePointer<ConsoleView> safe (this);
+                m.showMenuAsync (juce::PopupMenu::Options(), [safe] (int r) { if (safe != nullptr && r > 0) setPlain (safe->processor, "harpVoice", (float) (r - 1)); });
+            };
+            c->tip = "The exciter: which engine plucks the string (click to choose)";
+        }
+
+        // FILTER
+        par ("Filter", "Freq", "filterCutoff", "Filter cutoff");
+        par ("Filter", "Reso", "filterReso", "Filter resonance");
+        par ("Filter", "Drive", "drive", "Drive: saturation", "knob");
+        par ("Filter", "Spread", "spread", "Stereo spread of the strings", "knob");
+
+        // SPACE
+        par ("Space", "Size", "sw12Amt", "Reverb size");
+        par ("Space", "Mix", "sw11Amt", "Echo amount");
+        par ("Space", "Width", "width", "Width", "knob");
+        toggle ("Space", "Freeze", "sw3On", "FREEZE: the sound hangs in the air");
+        toggle ("Space", "Shimmer", "sw13On", "SHIMMER: an octave of light on the reverb");
+        toggle ("Space", "Tail", "sw12On", "Reverb on");
+
+        // CONSOLE
+        par ("CONSOLE", "Volume", "master", "Volume");
+        par ("CONSOLE", "Speed", "strumSpeed", "Strum speed", "hfader");
+        toggle ("CONSOLE", "Hold", "hold", "HOLD: the chord stays after you let go");
+        toggle ("CONSOLE", "Freeze", "sw3On", "FREEZE");
+        if (auto* c = find ("CONSOLE", "Menu", "button")) { c->press = [this] { if (onMenu) onMenu(); }; c->tip = "Sounds: the preset browser"; }
+        if (auto* c = find ("CONSOLE", "Setup", "button")) { c->press = [this] { if (onSetup) onSetup(); }; c->tip = "Setup: MIDI, tuning, window size"; }
+        if (auto* c = find ("CONSOLE", "Up", "button")) { c->press = [this] { if (onPrev) onPrev(); }; c->tip = "Previous sound"; }
+        if (auto* c = find ("CONSOLE", "Down", "button")) { c->press = [this] { if (onNext) onNext(); }; c->tip = "Next sound"; }
+        if (auto* c = find ("CONSOLE", "Sound", "button")) { c->lit = [this] { return ! effectsOpen; }; c->press = [this] { if (effectsOpen && onEffects) onEffects(); }; c->tip = "PANEL: the sound"; }
+        if (auto* c = find ("CONSOLE", "Effects", "button")) { c->lit = [this] { return effectsOpen; }; c->press = [this] { if (onEffects) onEffects(); }; c->tip = "PANEL: the effects"; }
+        if (auto* c = find ("CONSOLE", "Notes", "button")) { c->lit = [&pr] { return juce::roundToInt (plainOf (pr, "keysPlay")) == 0; }; c->press = [&pr] { setPlain (pr, "keysPlay", 0.0f); }; }
+        if (auto* c = find ("CONSOLE", "Preset", "screen"))
+        {
+            c->text = [&pr] { return pr.presetManager->currentName(); };
+            c->press = [this] { if (onMenu) onMenu(); };
+            c->tip = "Click: all sounds";
+        }
+        if (auto* c = find ("CONSOLE", "Status", "screen")) c->text = [] { return juce::String(); };
+
+        // STRINGS
+        if (auto* c = find ("STRINGS", "Tone | Bend", "button")) { c->lit = [this] { return ! keysView && bedLayer == 0; }; c->press = [this] { keysView = false; bedLayer = 0; }; c->tip = "Handles: bottom = where the string is plucked, top = how slack it is"; }
+        if (auto* c = find ("STRINGS", "Time | Level", "button")) { c->lit = [this] { return ! keysView && bedLayer == 1; }; c->press = [this] { keysView = false; bedLayer = 1; }; c->tip = "Handles: bottom = how late the string comes in the strum, top = its level"; }
+        if (auto* c = find ("STRINGS", "Keys", "button"))
+        {
+            c->lit = [this] { return keysView; };
+            c->press = [this] { if (heldKey >= 0) processor.keyboardState.noteOff (1, heldKey, 0.0f); heldKey = -1; keysView = ! keysView; };
+            c->tip = "KEYS: a keyboard instead of the strings";
+        }
+        if (auto* c = find ("STRINGS", "Rec", "button")) { c->lit = [this] { return takeLive && takeLive(); }; c->press = [this] { if (onTakeMenu) onTakeMenu (this); }; c->tip = "The take: everything you play is recorded (click: options)"; }
+        if (auto* c = find ("STRINGS", "Drag MIDI", "button")) { c->lit = [this] { return hasTake && hasTake(); }; c->press = [] {}; c->tip = "Drag the take into your DAW as a MIDI clip"; }
+        if (auto* c = find ("STRINGS", "MIDI out", "button"))
+        {
+            c->lit = [&pr] { return pr.midiOut.load(); };
+            c->press = [&pr] { pr.midiOut.store (! pr.midiOut.load()); };
+            c->tip = "MIDI OUT: the plugin sends what it plays (record it on a MIDI track)";
+        }
+    }
+
+    //==============================================================================
+    juce::Point<float> ConsoleView::toDesign (juce::Point<float> p) const
+    {
+        return { p.x * designW / (float) juce::jmax (1, getWidth()), p.y * designH / (float) juce::jmax (1, getHeight()) };
+    }
+
+    int ConsoleView::hitControl (juce::Point<float> d) const
+    {
+        for (int i = 0; i < (int) controls.size(); ++i)
+        {
+            auto& c = *controls[(size_t) i];
+            if (! c.live()) continue;
+            const juce::String kind (c.def->kind);
+            auto r = c.r;
+            if (kind == "leds")
+            {
+                for (int k = 0; k < c.def->numItems; ++k)
+                {
+                    const auto& it = c.def->items[k];
+                    if (juce::Rectangle<float> (it.x - 4.0f, it.y - 4.0f, 60.0f, it.h + 8.0f).contains (d)) return i;
+                }
+                continue;
+            }
+            if (kind == "strings") continue;
+            if (r.expanded (kind == "fader" ? 4.0f : 2.0f).contains (d)) return i;
+        }
+        return -1;
+    }
+
+    //==============================================================================
+    void ConsoleView::paint (juce::Graphics& g)
+    {
+        const float sx = (float) getWidth() / designW, sy = (float) getHeight() / designH;
+        g.drawImage (background, getLocalBounds().toFloat(), juce::RectanglePlacement::stretchToFit);
+        juce::Graphics::ScopedSaveState save (g);
+        g.addTransform (juce::AffineTransform::scale (sx, sy));
+
+        auto ledGlow = [&g] (juce::Point<float> c, float rad)
+        {
+            juce::ColourGradient glowG (ledRed.withAlpha (0.55f), c.x, c.y, ledRed.withAlpha (0.0f), c.x + rad * 3.2f, c.y, true);
+            g.setGradientFill (glowG);
+            g.fillEllipse (juce::Rectangle<float> (rad * 6.4f, rad * 6.4f).withCentre (c));
+            juce::ColourGradient dome (juce::Colour (0xffffc2b8), c.x - rad * 0.3f, c.y - rad * 0.4f, juce::Colour (0xff9d0b14), c.x + rad, c.y + rad, true);
+            dome.addColour (0.45, ledRed);
+            g.setGradientFill (dome);
+            g.fillEllipse (juce::Rectangle<float> (rad * 2.0f, rad * 2.0f).withCentre (c));
+        };
+
+        for (auto& cp : controls)
+        {
+            auto& c = *cp;
+            const juce::String kind (c.def->kind);
+            const auto r = c.r;
+            if (kind == "fader" && c.param.isNotEmpty())
+            {
+                auto* q = P (processor, c.param.toRawUTF8());
+                if (q == nullptr) continue;
+                const float v = q->getValue();
+                const float capH = 18.0f, travel = r.getHeight() - capH;
+                const float cy = r.getY() + (1.0f - v) * travel;
+                const bool dark = r.getY() > 270.0f;   // the lower tier is dark graphite
+                auto& img = dark ? capDark : capLight;
+                // the sprite is 64 x 96 render pixels with the cap at (8, 30, 48, 36): 2 render px = 1 design px
+                const float scale = 0.5f;
+                g.drawImage (img, juce::Rectangle<float> (r.getCentreX() - 32.0f * scale - 1.0f, cy - 30.0f * scale, 64.0f * scale, 96.0f * scale), juce::RectanglePlacement::stretchToFit);
+            }
+            else if (kind == "hfader" && c.param.isNotEmpty())
+            {
+                auto* q = P (processor, c.param.toRawUTF8());
+                if (q == nullptr) continue;
+                const float v = q->getValue();
+                auto cap = juce::Rectangle<float> (18.0f, 24.0f).withCentre ({ r.getX() + 9.0f + v * (r.getWidth() - 18.0f), r.getCentreY() });
+                g.setColour (juce::Colours::black.withAlpha (0.6f));
+                g.fillRoundedRectangle (cap.translated (1.5f, 3.0f), 2.0f);
+                juce::ColourGradient cg (juce::Colour (0xff45433f), 0.0f, cap.getY(), juce::Colour (0xff0a0a0a), 0.0f, cap.getBottom(), false);
+                g.setGradientFill (cg);
+                g.fillRoundedRectangle (cap, 2.0f);
+                g.setColour (bone);
+                g.fillRect (cap.getCentreX() - 1.0f, cap.getY() + 2.0f, 2.0f, cap.getHeight() - 4.0f);
+            }
+            else if (kind == "knob")
+            {
+                float v = 0.5f;
+                if (c.param.isNotEmpty()) if (auto* q = P (processor, c.param.toRawUTF8())) v = q->getValue();
+                const int frames = knobStrip.getHeight() / knobStrip.getWidth();
+                const int f = juce::jlimit (0, frames - 1, juce::roundToInt (v * (float) (frames - 1)));
+                const float side = 84.0f * 0.5f;   // 84 render px, the knob 60 of them
+                // filmstrip frame
+                g.drawImage (knobStrip, (int) (r.getCentreX() - side * 0.5f), (int) (r.getCentreY() - side * 0.5f), (int) side, (int) side,
+                             0, f * knobStrip.getWidth(), knobStrip.getWidth(), knobStrip.getWidth());
+            }
+            else if (kind == "button")
+            {
+                if (c.lit && c.lit())
+                {
+                    const float rad = r.getHeight() > 24.0f ? 4.0f : 3.0f;
+                    ledGlow (r.getCentre(), rad);
+                }
+            }
+            else if (kind == "leds" && c.selected)
+            {
+                const int s = c.selected();
+                if (s >= 0 && s < c.def->numItems)
+                {
+                    const auto& it = c.def->items[s];
+                    ledGlow ({ it.x + it.w * 0.5f, it.y + it.h * 0.5f }, 4.0f);
+                }
+            }
+            else if (kind == "screen" && c.text)
+            {
+                const juce::String label (c.def->label);
+                g.setColour (mint);
+                if (label == "Exciter")
+                {
+                    g.setFont (ui (10.5f));
+                    g.drawText (c.text(), r.reduced (6.0f, 0.0f), juce::Justification::centredLeft, true);
+                }
+                else if (label == "Preset")
+                {
+                    auto a = r.reduced (10.0f, 7.0f);
+                    g.setFont (ui (11.0f));
+                    const int idx = processor.presetManager->getCurrent();
+                    g.drawText (processor.presetManager->currentCategory() + " " + juce::String (idx + 1).paddedLeft ('0', 3), a.removeFromTop (14.0f), juce::Justification::centredLeft, false);
+                    g.drawText ("A=" + juce::String (processor.tuningA4.load(), 1) + "Hz", a.withHeight (14.0f).translated (0.0f, -14.0f), juce::Justification::centredRight, false);
+                    g.setFont (ui (21.0f));
+                    g.drawText (c.text(), a.removeFromTop (34.0f), juce::Justification::centredLeft, true);
+                    g.setFont (ui (10.5f));
+                    const int root = juce::roundToInt (plainOf (processor, "keyRoot"));
+                    const bool minor = plainOf (processor, "keyMode") > 0.5f;
+                    g.drawText (juce::String (chords::rootName (root)) + (minor ? " minor" : " major"), a, juce::Justification::bottomLeft, false);
+                    auto* rate = P (processor, "strumRate");
+                    const bool arp = juce::roundToInt (plainOf (processor, "strumMode")) == 1;
+                    g.drawText ((rate != nullptr ? rate->getCurrentValueAsText() : juce::String()) + (arp ? " Arp" : " Strum"), a, juce::Justification::bottomRight, false);
+                }
+                else if (label == "Status")
+                {
+                    auto a = r.reduced (10.0f, 7.0f);
+                    g.setFont (ui (11.0f));
+                    g.drawText ("HAND: Strings", a.removeFromTop (14.0f), juce::Justification::centredLeft, false);
+                    const bool on[] = { true, plainOf (processor, "dual") > 0.5f, plainOf (processor, "bassType") > 0.5f, plainOf (processor, "chordType") > 0.5f };
+                    a.removeFromTop (12.0f);
+                    auto row = a.removeFromTop (18.0f);
+                    const float cw = row.getWidth() / 4.0f;
+                    for (int k = 0; k < 4; ++k)
+                    {
+                        auto cell = row.withX (row.getX() + cw * (float) k).withWidth (cw);
+                        g.setColour (on[k] ? mint : mint.withAlpha (0.35f));
+                        g.drawText (on[k] ? "ON" : "OFF", cell, juce::Justification::centred, false);
+                        g.fillRect (cell.reduced (cw * 0.2f, 0.0f).removeFromBottom (1.0f));
+                    }
+                    // the notes on the strings
+                    std::vector<int> tones;
+                    const int chord = processor.activeChord.load() >= 0 ? processor.activeChord.load() : processor.detectedChord.load();
+                    if (chords::isValid (chord))
+                    {
+                        const int mask = chords::pitchClassMask (chord, 0);
+                        for (int pc = 0; pc < 12 && (int) tones.size() < 4; ++pc)
+                            if (mask & (1 << ((chords::rootOf (chord) + pc) % 12))) tones.push_back ((chords::rootOf (chord) + pc) % 12);
+                    }
+                    a.removeFromTop (8.0f);
+                    for (int k = 0; k < (int) tones.size(); ++k)
+                    {
+                        g.setColour (mint);
+                        g.drawText (chords::rootName (tones[(size_t) k]), a.withX (a.getX() + cw * (float) k).withWidth (cw).withHeight (16.0f), juce::Justification::centred, false);
+                    }
+                }
+            }
+            else if (kind == "label")
+            {
+                const int chord = processor.activeChord.load() >= 0 ? processor.activeChord.load() : processor.detectedChord.load();
+                g.setColour (mint);
+                g.setFont (juce::Font (juce::FontOptions (30.0f)).withExtraKerningFactor (0.02f));
+                g.drawText (chords::isValid (chord) ? chords::shortName (chord) : juce::String ("--"), r.withTrimmedTop (14.0f).expanded (40.0f, 4.0f), juce::Justification::centredRight, false);
+            }
+        }
+
+        if (keysView) paintKeys (g); else paintStrings (g);
+    }
+
+    //==============================================================================
+    // STRINGS: 26 metal strings, each with a handle at the top and at the bottom
+    juce::Rectangle<float> ConsoleView::bed() const
+    {
+        for (auto& c : controls) if (juce::String (c->def->kind) == "strings") return c->r.withTrimmedBottom (14.0f).withWidth (1170.0f);
+        return { 115.0f, 728.0f, 1180.0f, 150.0f };
+    }
+    float ConsoleView::stringX (int s) const
+    {
+        auto b = bed();
+        return b.getX() + 14.0f + (b.getWidth() - 28.0f) * (float) s / (float) (Hamamatsu108Processor::numStrings - 1);
+    }
+    std::atomic<float>& ConsoleView::handleRef (int s, bool top) const
+    {
+        auto& pr = processor;
+        if (bedLayer == 0) return top ? pr.plBend[(size_t) s] : pr.plTone[(size_t) s];
+        return top ? pr.plLevel[(size_t) s] : pr.plTime[(size_t) s];
+    }
+    float ConsoleView::handleY (int s, bool top) const
+    {
+        auto b = bed();
+        const float travel = b.getHeight() * 0.42f, v = handleRef (s, top).load();
+        return top ? b.getY() + 8.0f + v * travel : b.getBottom() - 8.0f - v * travel;
+    }
+    int ConsoleView::stringAt (float x) const
+    {
+        int best = -1; float bd = 1.0e9f;
+        for (int s = 0; s < Hamamatsu108Processor::numStrings; ++s)
+            if (const float d = std::abs (stringX (s) - x); d < bd) { bd = d; best = s; }
+        return bd < 12.0f ? best : -1;
+    }
+    int ConsoleView::handleAt (juce::Point<float> p) const
+    {
+        const int s = stringAt (p.x);
+        if (s < 0 || ((processor.plMute.load() >> (unsigned) s) & 1u)) return -1;
+        if (std::abs (p.y - handleY (s, true)) < 9.0f) return s * 2 + 1;
+        if (std::abs (p.y - handleY (s, false)) < 9.0f) return s * 2;
+        return -1;
+    }
+
+    void ConsoleView::paintStrings (juce::Graphics& g)
+    {
+        auto b = bed();
+        const int n = Hamamatsu108Processor::numStrings;
+        for (int s = 0; s < n; ++s)
+        {
+            const float x = stringX (s), v = glow[(size_t) s];
+            const bool muted = (processor.plMute.load() >> (unsigned) s) & 1u;
+            const float th = 2.2f + 2.2f * (1.0f - (float) s / (float) (n - 1));   // low strings are thicker
+            const float yt = handleY (s, true), yb = handleY (s, false);
+            // the steel: a lit cylinder
+            juce::ColourGradient steel (juce::Colour (muted ? 0xff2a2a29 : 0xff6c6b67), x - th, 0.0f, juce::Colour (muted ? 0xff141414 : 0xff3a3a38), x + th, 0.0f, false);
+            steel.addColour (0.38, juce::Colour (muted ? 0xff3c3c3a : 0xffeeeeea));
+            g.setColour (juce::Colours::black.withAlpha (0.55f));
+            g.fillRect (x - th * 0.5f + 2.0f, b.getY(), th, b.getHeight());
+            g.setGradientFill (steel);
+            g.fillRect (x - th * 0.5f, b.getY(), th, b.getHeight());
+            // the part between the handles sounds: it lights up when plucked and shivers
+            if (! muted)
+            {
+                const float amp = v * v * 2.5f;
+                if (v > 0.02f)
+                {
+                    juce::Path p;
+                    p.startNewSubPath (x, yt);
+                    for (float y = yt; y <= yb; y += 3.0f)
+                    {
+                        const float u = (y - yt) / juce::jmax (1.0f, yb - yt);
+                        p.lineTo (x + amp * std::sin (u * juce::MathConstants<float>::pi) * std::sin (y * 0.35f + phase * (3.0f + (float) (s % 5))), y);
+                    }
+                    g.setColour (mint.withAlpha (0.25f * v));
+                    g.strokePath (p, juce::PathStrokeType (th + 6.0f));
+                    g.setColour (mint.interpolatedWith (juce::Colours::white, 0.4f).withAlpha (0.35f + 0.65f * v));
+                    g.strokePath (p, juce::PathStrokeType (th * 0.8f));
+                }
+                // handles: dark cross pieces with a light index, mint while the string sounds
+                for (int t = 0; t < 2; ++t)
+                {
+                    const float y = t ? yt : yb;
+                    const bool hot = dragHandle == s * 2 + t;
+                    auto cap = juce::Rectangle<float> (22.0f, 12.0f).withCentre ({ x, y });
+                    g.setColour (juce::Colours::black.withAlpha (0.6f));
+                    g.fillRoundedRectangle (cap.translated (2.0f, 3.0f), 3.0f);
+                    juce::ColourGradient cg (juce::Colour (0xff4a4946), 0.0f, cap.getY(), juce::Colour (0xff0c0c0c), 0.0f, cap.getBottom(), false);
+                    g.setGradientFill (cg);
+                    g.fillRoundedRectangle (cap, 3.0f);
+                    g.setColour (juce::Colours::white.withAlpha (0.25f));
+                    g.drawHorizontalLine ((int) cap.getY() + 1, cap.getX() + 3.0f, cap.getRight() - 3.0f);
+                    g.setColour (hot ? mint : (v > 0.05f ? mint.withAlpha (0.8f) : bone.withAlpha (0.75f)));
+                    g.fillRect (cap.getX() + 4.0f, y - 1.0f, cap.getWidth() - 8.0f, 2.0f);
+                }
+            }
+            // note name under the string
+        }
+        // what the held handle does
+        if (dragHandle >= 0)
+        {
+            const int s = dragHandle / 2; const bool top = dragHandle & 1;
+            const float v = handleRef (s, top).load();
+            juce::String what, val;
+            if (bedLayer == 0 && ! top) { what = "TONE"; val = v < 0.2f ? "bright, near the end" : v < 0.5f ? "classic" : "round, near the middle"; }
+            else if (bedLayer == 0) { what = "BEND"; val = v < 0.01f ? "in tune" : juce::String (-2.0f * v, 2) + " st slide"; }
+            else if (! top) { what = "TIME"; val = juce::String (juce::roundToInt (v * 120.0f)) + " ms later"; }
+            else { what = "LEVEL"; val = juce::String (juce::roundToInt ((1.0f - 0.85f * v) * 100.0f)) + " %"; }
+            g.setColour (mint);
+            g.setFont (ui (11.0f));
+            g.drawText ("STRING " + juce::String (s + 1) + "  " + what + "  " + val, b.withHeight (14.0f).translated (0.0f, -16.0f), juce::Justification::centred, false);
+        }
+    }
+
+    // KEYS: C2 .. C7 in the same bed
+    namespace { constexpr int keyLo = 36, keyHi = 96; bool isBlack (int n) { const int k = n % 12; return k == 1 || k == 3 || k == 6 || k == 8 || k == 10; } }
+    juce::Rectangle<float> ConsoleView::keyRect (int n) const
+    {
+        auto a = bed().reduced (4.0f, 0.0f);
+        int whites = 0; for (int k = keyLo; k <= keyHi; ++k) if (! isBlack (k)) ++whites;
+        const float w = a.getWidth() / (float) whites;
+        int wi = 0; for (int k = keyLo; k < n; ++k) if (! isBlack (k)) ++wi;
+        if (! isBlack (n)) return { a.getX() + (float) wi * w, a.getY(), w, a.getHeight() };
+        return { a.getX() + (float) wi * w - w * 0.3f, a.getY(), w * 0.6f, a.getHeight() * 0.6f };
+    }
+    int ConsoleView::keyAt (juce::Point<float> p) const
+    {
+        for (int n = keyLo; n <= keyHi; ++n) if (isBlack (n) && keyRect (n).contains (p)) return n;
+        for (int n = keyLo; n <= keyHi; ++n) if (! isBlack (n) && keyRect (n).contains (p)) return n;
+        return -1;
+    }
+    void ConsoleView::paintKeys (juce::Graphics& g)
+    {
+        auto& ks = processor.keyboardState;
+        for (int pass = 0; pass < 2; ++pass)
+            for (int n = keyLo; n <= keyHi; ++n)
+            {
+                if (isBlack (n) != (pass == 1)) continue;
+                auto k = keyRect (n);
+                const bool on = ks.isNoteOnForChannels (0xffff, n);
+                if (pass == 0)
+                {
+                    auto body = k.reduced (1.0f, 0.0f);
+                    juce::ColourGradient cg (juce::Colour (0xffeeebe3), 0.0f, body.getY(), juce::Colour (0xffb5b2a9), 0.0f, body.getBottom(), false);
+                    g.setGradientFill (cg);
+                    g.fillRoundedRectangle (body, 3.0f);
+                    if (on) { g.setColour (mint.withAlpha (0.6f)); g.fillRoundedRectangle (body, 3.0f); }
+                    g.setColour (juce::Colours::black.withAlpha (0.35f));
+                    g.fillRect (body.withHeight (5.0f));
+                    if (n % 12 == 0)
+                    {
+                        g.setFont (ui (9.0f));
+                        g.setColour (juce::Colour (0xff3a3a38));
+                        g.drawText ("C" + juce::String (n / 12 - 1), body.withTrimmedTop (body.getHeight() - 16.0f), juce::Justification::centred, false);
+                    }
+                }
+                else
+                {
+                    g.setColour (juce::Colours::black.withAlpha (0.55f));
+                    g.fillRoundedRectangle (k.translated (2.0f, 3.0f), 2.0f);
+                    juce::ColourGradient cg (juce::Colour (0xff3c3c3c), 0.0f, k.getY(), juce::Colour (0xff0a0a0a), 0.0f, k.getBottom(), false);
+                    g.setGradientFill (cg);
+                    g.fillRoundedRectangle (k, 2.0f);
+                    g.setColour (juce::Colours::white.withAlpha (0.12f));
+                    g.fillRoundedRectangle (k.reduced (2.0f).withTrimmedTop (k.getHeight() - 12.0f), 1.5f);
+                    if (on) { g.setColour (mint.withAlpha (0.8f)); g.fillRoundedRectangle (k.reduced (1.0f), 2.0f); }
+                }
+            }
+    }
+
+    //==============================================================================
+    void ConsoleView::mouseDown (const juce::MouseEvent& e)
+    {
+        const auto d = toDesign (e.position);
+        dragging = -1; dragHandle = -1; lastStrumX = -1.0f;
+        const int i = hitControl (d);
+        if (i >= 0)
+        {
+            auto& c = *controls[(size_t) i];
+            const juce::String kind (c.def->kind);
+            if ((kind == "fader" || kind == "knob" || kind == "hfader") && c.param.isNotEmpty())
+            {
+                dragging = i; dragStartY = kind == "hfader" ? -d.x : d.y;
+                if (auto* q = P (processor, c.param.toRawUTF8()))
+                {
+                    q->beginChangeGesture();
+                    if (kind == "fader")   // a click on the track jumps the cap there
+                    {
+                        const float travel = c.r.getHeight() - 18.0f;
+                        const float cy = c.r.getY() + (1.0f - q->getValue()) * travel;
+                        if (d.y < cy - 2.0f || d.y > cy + 20.0f) q->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, 1.0f - (d.y - c.r.getY() - 9.0f) / travel));
+                    }
+                    dragStartValue = q->getValue();
+                }
+                return;
+            }
+            if (kind == "leds" && c.pick)
+            {
+                for (int k = 0; k < c.def->numItems; ++k)
+                    if (std::abs (d.y - (c.def->items[k].y + c.def->items[k].h * 0.5f)) < 8.0f) { c.pick (k); break; }
+                repaint(); return;
+            }
+            if (juce::String (c.def->label) == "Drag MIDI") { dragging = i; return; }
+            if (c.press) { c.press(); repaint(); return; }
+            return;
+        }
+        // the strings / the keys
+        if (bed().expanded (0.0f, 6.0f).contains (d))
+        {
+            if (keysView)
+            {
+                const int n = keyAt (d);
+                if (n >= 0)
+                {
+                    auto k = keyRect (n);
+                    processor.keyboardState.noteOn (1, n, juce::jlimit (0.25f, 1.0f, 0.35f + 0.65f * (d.y - k.getY()) / k.getHeight()));
+                    heldKey = n;
+                }
+                repaint(); return;
+            }
+            if (const int h = handleAt (d); h >= 0) { dragHandle = h; repaint(); return; }
+            lastStrumX = d.x;
+            if (const int s = stringAt (d.x); s >= 0) processor.pluckString (s);
+        }
+    }
+
+    void ConsoleView::mouseDrag (const juce::MouseEvent& e)
+    {
+        const auto d = toDesign (e.position);
+        if (dragging >= 0)
+        {
+            auto& c = *controls[(size_t) dragging];
+            const juce::String kind (c.def->kind);
+            if (juce::String (c.def->label) == "Drag MIDI")
+            {
+                if (e.getDistanceFromDragStart() > 6 && onDragTake) { onDragTake (this); dragging = -1; }
+                return;
+            }
+            if (auto* q = P (processor, c.param.toRawUTF8()))
+            {
+                const float range = kind == "fader" ? c.r.getHeight() - 18.0f : kind == "hfader" ? c.r.getWidth() - 18.0f : 160.0f;
+                const float pos = kind == "hfader" ? -d.x : d.y;
+                const float fine = e.mods.isShiftDown() ? 0.2f : 1.0f;
+                q->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, dragStartValue + (dragStartY - pos) / range * fine));
+                if (onStatus) onStatus (q->getName (40), q->getCurrentValueAsText());
+            }
+            repaint();
+            return;
+        }
+        if (keysView)
+        {
+            const int n = keyAt (d);
+            if (n >= 0 && n != heldKey)
+            {
+                if (heldKey >= 0) processor.keyboardState.noteOff (1, heldKey, 0.0f);
+                processor.keyboardState.noteOn (1, n, 0.75f);
+                heldKey = n;
+                repaint();
+            }
+            return;
+        }
+        if (dragHandle >= 0)
+        {
+            auto b = bed();
+            const bool top = dragHandle & 1;
+            const float travel = b.getHeight() * 0.42f;
+            const float v = juce::jlimit (0.0f, 1.0f, top ? (d.y - b.getY() - 8.0f) / travel : (b.getBottom() - 8.0f - d.y) / travel);
+            for (int s = 0; s < Hamamatsu108Processor::numStrings; ++s)
+                if (e.mods.isShiftDown() || s == dragHandle / 2) handleRef (s, top).store (v);
+            repaint();
+            return;
+        }
+        if (lastStrumX >= 0.0f)
+        {
+            // the hand across the strings: every string crossed sounds
+            for (int s = 0; s < Hamamatsu108Processor::numStrings; ++s)
+            {
+                const float x = stringX (s);
+                if (x > juce::jmin (lastStrumX, d.x) && x <= juce::jmax (lastStrumX, d.x)) processor.pluckString (s);
+            }
+            lastStrumX = d.x;
+        }
+    }
+
+    void ConsoleView::mouseUp (const juce::MouseEvent&)
+    {
+        if (dragging >= 0)
+            if (auto* q = P (processor, controls[(size_t) dragging]->param.toRawUTF8())) q->endChangeGesture();
+        dragging = -1;
+        if (heldKey >= 0) { processor.keyboardState.noteOff (1, heldKey, 0.0f); heldKey = -1; }
+        dragHandle = -1; lastStrumX = -1.0f;
+        repaint();
+    }
+
+    void ConsoleView::mouseDoubleClick (const juce::MouseEvent& e)
+    {
+        const auto d = toDesign (e.position);
+        if (const int i = hitControl (d); i >= 0)
+        {
+            auto& c = *controls[(size_t) i];
+            if (c.param.isNotEmpty())
+                if (auto* q = P (processor, c.param.toRawUTF8())) { q->beginChangeGesture(); q->setValueNotifyingHost (q->getDefaultValue()); q->endChangeGesture(); }
+            repaint(); return;
+        }
+        if (keysView || ! bed().contains (d)) return;
+        if (const int h = handleAt (d); h >= 0) handleRef (h / 2, h & 1).store (bedLayer == 0 && ! (h & 1) ? 0.35f : 0.0f);
+        else if (const int s = stringAt (d.x); s >= 0) processor.plMute.fetch_xor (1u << (unsigned) s);
+        repaint();
+    }
+
+    void ConsoleView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
+    {
+        if (const int i = hitControl (toDesign (e.position)); i >= 0)
+        {
+            auto& c = *controls[(size_t) i];
+            if (c.param.isNotEmpty())
+                if (auto* q = P (processor, c.param.toRawUTF8()))
+                {
+                    q->beginChangeGesture();
+                    q->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, q->getValue() + w.deltaY * 0.08f));
+                    q->endChangeGesture();
+                    repaint();
+                }
+        }
+    }
+
+    void ConsoleView::mouseMove (const juce::MouseEvent& e)
+    {
+        const int i = hitControl (toDesign (e.position));
+        juce::String tip = i >= 0 ? controls[(size_t) i]->tip : juce::String();
+        if (i < 0 && bed().contains (toDesign (e.position)))
+            tip = keysView ? "Click and slide over the keys" : "Drag across the strings to strum. Drag a handle to tune that string (Shift: all strings), double-click a string to switch it off";
+        if (tip != getTooltip()) setTooltip (tip);
+    }
+
+    void ConsoleView::flash (std::uint32_t bits)
+    {
+        for (int s = 0; s < Hamamatsu108Processor::numStrings; ++s)
+            if (bits & (1u << (unsigned) s)) glow[(size_t) s] = 1.0f;
+    }
+
+    void ConsoleView::timerCallback()
+    {
+        bool any = false;
+        for (auto& v : glow) if (v > 0.0f) { v = juce::jmax (0.0f, v - 0.03f); any = true; }
+        phase += 0.9f;
+        // repaint when anything shown changed (cheap signature of the bound values)
+        juce::String sig;
+        for (auto& c : controls)
+        {
+            if (c->param.isNotEmpty()) if (auto* q = P (processor, c->param.toRawUTF8())) sig << juce::String (q->getValue(), 3) << ",";
+            if (c->lit) sig << (c->lit() ? "1" : "0");
+            if (c->selected) sig << c->selected();
+        }
+        sig << processor.presetManager->currentName() << processor.activeChord.load() << processor.detectedChord.load() << (int) keysView << bedLayer;
+        if (any || keysView || sig != lastSig) { lastSig = sig; repaint(); }
+    }
+}

@@ -22,6 +22,7 @@ target_sources(Hamamatsu108 PRIVATE
     source/Presets.cpp
     source/BrowserView.cpp
     source/Overlays.cpp
+    source/ConsoleView.cpp
     ${CMAKE_SOURCE_DIR}/third_party/mts-esp/libMTSClient.cpp)
 
 # MTS-ESP microtuning client (ODDSound, permissive licence)
@@ -36,8 +37,19 @@ target_compile_definitions(Hamamatsu108 PUBLIC
     JUCE_DISPLAY_SPLASH_SCREEN=0
     HAMA_MTS=1)
 
+# the rendered console (design/v15): panel, knob filmstrip, fader caps
+juce_add_binary_data(HarpologyArt
+    HEADER_NAME HarpArt.h
+    NAMESPACE HarpArt
+    SOURCES
+        art/console_bg.jpg
+        art/knob_strip.png
+        art/fadercap.png
+        art/fadercap_dark.png)
+
 target_link_libraries(Hamamatsu108
     PRIVATE
+        HarpologyArt
         kuprell_core
         juce::juce_audio_utils
         juce::juce_dsp
