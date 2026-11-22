@@ -228,7 +228,7 @@ private:
     void sweep (int offset, bool down, int first, int count, float vel, float speedMul);
     void stroke (int offset, char type, float accent);
     void midiNote (int samplePos, int channel, int note, float velocity, bool on);
-    void flourish (int samplePos, int key, float velocity, bool up);
+    void flourish (int samplePos, int key, float velocity, bool up, int customMask = 0);
 public:
     int flourishType (int key) const;   // FLOURISH: chord type of a key (by octave)
 private:

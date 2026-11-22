@@ -979,7 +979,16 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
             if ((strumModeNow == 0 || strumModeNow == 3) && keysPlay >= 4)
             {
                 // FLOURISH: one key = a whole harp run of the chord on that key (the octave picks the chord type)
-                flourish (samplePos, n, m.getFloatVelocity(), keysPlay == 4);
+                // keep the first key down and add others: the run is the first key + the notes you add
+                // (C5 held, then E, G#, B = a run of C, E, G#, B from C5). Change them while C5 stays.
+                if (pressCount >= 2)
+                {
+                    int mask = 0;
+                    for (int i = 0; i < pressCount; ++i) mask |= 1 << (pressOrder[(size_t) i] % 12);
+                    flourish (samplePos, pressOrder[0], m.getFloatVelocity(), keysPlay == 4, mask);
+                }
+                else
+                    flourish (samplePos, n, m.getFloatVelocity(), keysPlay == 4);
             }
             else if (strumModeNow == 0 && keysPlay > 0)
             {
@@ -1005,7 +1014,7 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
             // RELEASE: the sound ends when the key goes up (Notes: that note, Flourish: the whole run)
             if (kp == 0 && ! (chordZones.load() && n <= typeZoneHigh()))
                 releases[(size_t) numReleases++] = { samplePos, n, rel };
-            else if (kp >= 4)
+            else if (kp >= 4 && heldMelodicCount <= 1)   // the run ends when the last key goes up
                 releases[(size_t) numReleases++] = { samplePos, -1, rel };
         }
         if (heldMelodic[(size_t) n])
@@ -1345,7 +1354,7 @@ int Hamamatsu108Processor::flourishType (int key) const
     return byOctave[juce::jlimit (0, 6, (key - base) / 12)];
 }
 
-void Hamamatsu108Processor::flourish (int samplePos, int key, float velocity, bool up)
+void Hamamatsu108Processor::flourish (int samplePos, int key, float velocity, bool up, int customMask)
 {
     // octaves (FL names): C2 dim, C3 major, C4 minor, C5 7, C6 maj7, C7 m7, C8 aug (zones on: the same, above the zones)
     // the chord of the key on that note (C major: C = C, D = Dm, E = Em ...), so every run is in tune with the song.
@@ -1359,10 +1368,11 @@ void Hamamatsu108Processor::flourish (int samplePos, int key, float velocity, bo
     int chord = degree >= 0 ? prog::chordOnDegree (keyRoot, keyMinor, degree) : chords::index (key % 12, flourishType (key));
     // NOTES strip: the notes you picked are the run, whatever key starts it
     if (const int pick = stringsPick.load(); chords::isValid (pick)) chord = pick;
+    if (customMask != 0) chord = chords::index (key % 12, 0);   // the display shows the root of your notes
     flourishChord = chord;
     if (motionActive()) return;   // MOTION is on (GRID / LINES / RHYTHM / STRINGS): the key only picks the chord, the window plays it
     const int range = juce::jlimit (1, 4, juce::roundToInt (param (apvts, "harpRange")));
-    const int mask = chords::pitchClassMask (chord, juce::roundToInt (param (apvts, "transpose")));
+    const int mask = customMask != 0 ? customMask : chords::pitchClassMask (chord, juce::roundToInt (param (apvts, "transpose")));
     const int low = juce::jlimit (36, 84, key);   // the run starts on the key you press
     std::vector<int> run;
     for (int n = low; n <= juce::jmin (108, low + 12 * range); ++n)
