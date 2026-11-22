@@ -1,0 +1,24 @@
+body { background:transparent !important; }
+.cheek, .panel::before, .console::before, .bridge { display:none !important; }
+.panel, .tier.tb_, .sec.dark, .tb, .console, .bed, .np { background:none !important; box-shadow:none !important; }
+.gr, .cap, .b, .kn, .arr, .hz, .ll i { visibility:hidden !important; }
+.disp { background:none !important; box-shadow:none !important; }
+.bed svg line, .bed svg circle { display:none; }
+.lc { box-shadow: inset 0 0 0 1px rgba(114,242,189,.15), inset 0 6px 14px rgba(0,0,0,.6) !important; }
+.lc::before { content:""; position:absolute; inset:0; background:linear-gradient(160deg,rgba(255,255,255,.10),transparent 35%); pointer-events:none; }
+.np { background:none !important; }
+.tb h2 { text-shadow:0 0 8px rgba(114,242,189,.6), 0 0 1px rgba(114,242,189,.9) !important; }
+/* print on the light aluminium is dark ink */
+.tier.ta .lb, .tier.ta .ll div, .tier.ta .vk span, .tier.ta .pm, .tier.ta .pz, .tier.ta .pn { color:#121212 !important; text-shadow:0 1px 0 rgba(255,255,255,.35) !important; }
+.tier.ta .sec.dark .lb { color:var(--bone) !important; text-shadow:0 1px 1px #000 !important; }
+.tier.ta .ll svg path { stroke:#121212 !important; filter:none !important; }
+.tier.ta .sc { background:repeating-linear-gradient(180deg,#1a1a1a 0 1px,transparent 1px 7px) !important; }
+.tier.ta .sec.dark .sc { background:repeating-linear-gradient(180deg,#e8e6e0 0 1px,transparent 1px 7px) !important; }
+.tier.ta .env .ep { stroke:#111 !important; filter:none !important; stroke-width:2 !important; }
+.tier.ta .env .ax, .tier.ta .env .dl { stroke:#3a3a39 !important; }
+.tier.ta .env .tl { fill:#111 !important; stroke:none !important; }
+.tier.ta .env .ko { fill:#0e6b48 !important; stroke:none !important; }
+.tier.ta .env .kl { stroke:#0e6b48 !important; }
+.tier.ta .tb2 { color:#0e6b48 !important; text-shadow:none !important; border-top-color:#3a3a39 !important; }
+.chord { opacity:.85; text-shadow:0 0 6px rgba(114,242,189,.3) !important; }
+.tb h2 { text-shadow:0 0 4px rgba(114,242,189,.35) !important; }

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+@font-face { font-family: Mi; src: url(Michroma-Regular.ttf); }
+@font-face { font-family: SG; src: url(SpaceGrotesk.ttf); }
+:root { --bone:#f4f2ec; --ash:#c9c6bf; --red:#e3242f; --mint:#72f2bd; }
+* { box-sizing:border-box; margin:0; padding:0; }
+body { width:1600px; height:920px; background:radial-gradient(80% 50% at 50% 100%,#0c2a1f,#070807 60%,#050505); font-family:SG,sans-serif; color:var(--bone); overflow:hidden; position:relative; }
+
+/* chassis: angled side cheeks, a flat upper panel, a sloped console, a recessed string bed */
+.cheek { position:absolute; top:0; bottom:0; width:72px;
+  background:linear-gradient(90deg,#0c0c0c,#2b2b2a 30%,#4a4947 52%,#232322 78%,#0a0a0a);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.25); }
+.cheek.l { left:0; clip-path:polygon(0 0,100% 0,100% 61%,72% 79%,72% 100%,0 100%); }
+.cheek.r { right:0; transform:scaleX(-1); clip-path:polygon(0 0,100% 0,100% 61%,72% 79%,72% 100%,0 100%); }
+.cheek::after { content:""; position:absolute; inset:0; background:repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 3px); }
+
+.panel { position:absolute; left:64px; right:64px; top:8px; height:556px; border-radius:3px 3px 0 0;
+  background:linear-gradient(115deg,transparent 0 38%,rgba(255,255,255,.10) 44%,transparent 52%), repeating-linear-gradient(90deg,rgba(255,255,255,.035) 0 1px,rgba(0,0,0,.03) 1px 2px,transparent 2px 4px), linear-gradient(180deg,#a9a7a2 0,#908e89 6%,#7f7d78 45%,#6e6c68 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6), inset 0 -1px 0 #000, 0 0 0 1px #000; }
+.panel::before { content:""; position:absolute; inset:0; opacity:.5; background:repeating-linear-gradient(90deg,rgba(255,255,255,.018) 0 1px,transparent 1px 2px); }
+.tier { position:absolute; left:8px; right:8px; display:flex; gap:8px; }
+.tier.ta { top:14px; height:262px; }
+.tier.tb_ { top:276px; left:0; right:0; height:280px; padding:10px 8px 0; background:linear-gradient(180deg,#2b2b2a,#1e1e1d 40%,#171716); box-shadow:inset 0 2px 0 #000, inset 0 3px 0 rgba(255,255,255,.14), 0 -1px 0 rgba(255,255,255,.4); }
+
+.sec { position:relative; height:100%; }
+.sec .row { display:flex; align-items:flex-start; gap:2px; padding:10px 8px 0; }
+.sec.dark { background:linear-gradient(180deg,#3d3c3a,#2e2d2b); box-shadow:inset 0 2px 6px #000, 0 1px 0 rgba(255,255,255,.08); border-radius:2px; }
+.tb { height:20px; display:flex; align-items:center; justify-content:center; position:relative;
+  background:linear-gradient(180deg,#1a1a19,#262624); box-shadow:inset 0 1px 2px #000, 0 1px 0 rgba(255,255,255,.35); border-radius:1px; }
+.tb h2 { font-family:SG; font-weight:700; font-size:11.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--mint); text-shadow:0 0 6px rgba(114,242,189,.45); }
+.tb .sy { position:absolute; left:6px; top:3px; display:flex; align-items:center; gap:5px; font-size:8.5px; font-weight:700; letter-spacing:.1em; color:var(--bone); }
+.tb2 { margin:10px 6px 2px; height:14px; font-size:10px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--mint); text-align:center; border-top:1px solid #a8a6a0; text-shadow:0 1px 0 rgba(0,0,0,.5); padding-top:3px; }
+
+/* printed legends */
+.lb { height:24px; display:flex; align-items:flex-end; justify-content:center; text-align:center; font-size:9.5px; line-height:10px; font-weight:700; letter-spacing:.02em; text-transform:uppercase; color:var(--bone); margin-bottom:5px; white-space:nowrap; text-shadow:0 1px 1px rgba(0,0,0,.65); }
+.cl { display:flex; flex-direction:column; align-items:center; margin:0 6px; }
+.grp { display:flex; flex-direction:column; align-items:center; margin-left:6px; }
+.grp .row { padding:0; }
+
+/* faders */
+.f { display:flex; flex-direction:column; align-items:center; }
+.ft { position:relative; width:30px; }
+.sc { position:absolute; left:1px; right:1px; top:8px; bottom:8px; background:repeating-linear-gradient(180deg,#f1efe9 0 1px,transparent 1px 7px); -webkit-mask:linear-gradient(90deg,#000 0 4px,transparent 4px 26px,#000 26px); }
+.gr { position:absolute; left:6px; right:6px; top:0; bottom:0; border-radius:2px; background:linear-gradient(90deg,#0f0f0e,#22211f 50%,#0f0f0e); box-shadow:0 0 0 1px #000, inset 0 1px 0 rgba(255,255,255,.16), 0 2px 3px rgba(0,0,0,.7); }
+.gr::after { content:""; position:absolute; left:7px; right:7px; top:5px; bottom:5px; background:#000; border-radius:2px; }
+.pm,.pz,.pn { position:absolute; right:-5px; font-style:normal; font-size:8px; font-weight:700; color:var(--bone); text-shadow:0 1px 0 #000; }
+.pm { top:2px; } .pz { top:calc(50% - 6px); } .pn { bottom:1px; }
+.cap { position:absolute; left:3px; width:24px; height:18px; border-radius:2px; z-index:2;
+  background:repeating-linear-gradient(180deg,rgba(255,255,255,.1) 0 1px,transparent 1px 3px), linear-gradient(180deg,#45433f,#141413 50%,#050505);
+  box-shadow:0 0 0 1px #000, inset 0 1px 0 rgba(255,255,255,.35), 0 3px 4px rgba(0,0,0,.85); }
+.cap::after { content:""; position:absolute; left:2px; right:2px; top:8px; height:2px; background:#f4efe3; }
+
+/* led lists */
+.ll { display:flex; flex-direction:column; gap:5px; margin-bottom:7px; }
+.ll div { display:flex; align-items:center; gap:5px; height:12px; font-size:9.5px; font-weight:700; color:var(--bone); text-transform:uppercase; text-shadow:0 1px 1px rgba(0,0,0,.65); }
+.ll i { width:8px; height:8px; border-radius:50%; background:radial-gradient(circle at 35% 30%,#4a1212,#1c0505); box-shadow:0 0 0 1.5px #000, 0 1px 0 1.5px rgba(255,255,255,.08); flex:none; }
+.ll i.on { background:radial-gradient(circle at 35% 30%,#ffb0a6,#ee2a35 45%,#9d0b14); box-shadow:0 0 0 1.5px #000, 0 0 8px 2px rgba(227,36,47,.6); }
+.ll svg { width:20px; height:10px; } .ll svg path { fill:none; stroke:var(--bone); stroke-width:1.5; filter:drop-shadow(0 1px 0 rgba(0,0,0,.6)); }
+
+/* square rubber buttons */
+.b { width:28px; height:18px; border-radius:2px; position:relative;
+  background:linear-gradient(180deg,#3d3b38,#1c1b1a 55%,#121211); box-shadow:0 0 0 1px #000, inset 0 1px 0 rgba(255,255,255,.22), 0 3px 0 #000, 0 4px 5px rgba(0,0,0,.6); }
+.b i { position:absolute; left:50%; top:50%; width:6px; height:6px; margin:-3px; border-radius:50%; background:#3a0b0b; box-shadow:0 0 0 1px #000; display:none; }
+.b.lit i { display:block; background:radial-gradient(circle at 35% 30%,#ffb0a6,#ee2a35 50%,#9d0b14); box-shadow:0 0 0 1px #000, 0 0 7px 2px rgba(227,36,47,.65); }
+.b.sm { width:20px; height:12px; box-shadow:0 0 0 1px #000, inset 0 1px 0 rgba(255,255,255,.22), 0 2px 0 #000; }
+.vk .b, .hk .b { display:block; } .vk .b i, .hk .b i { display:block; }
+.vg { display:grid; grid-template-columns:1fr 1fr; gap:8px 10px; padding:10px 12px 0; }
+.vk { display:flex; flex-direction:column; align-items:center; gap:4px; }
+.vk span, .hk span { font-size:9.5px; font-weight:700; text-transform:uppercase; color:var(--bone); text-shadow:0 1px 1px rgba(0,0,0,.65); }
+.vk .b { width:36px; height:28px; }
+.hk { display:flex; flex-direction:column; align-items:center; gap:4px; margin-bottom:9px; }
+.hk .b { width:40px; height:20px; }
+
+/* envelope diagrams, printed */
+.env { display:block; margin-bottom:2px; }
+.env .ax { stroke:#d9d7d1; stroke-width:1; }
+.env .ep { fill:none; stroke:#fff; stroke-width:1.8; filter:drop-shadow(0 1px 0 rgba(0,0,0,.55)); stroke-linejoin:round; }
+.env .dl { stroke:#c7c5bf; stroke-width:1; stroke-dasharray:2 2; }
+.env .kl { stroke:var(--mint); stroke-width:1; stroke-dasharray:3 2; }
+.env .tl { font:700 8.5px SG; fill:var(--bone); paint-order:stroke; stroke:rgba(0,0,0,.5); stroke-width:1.5px; text-anchor:middle; }
+.env .ko { font:700 7.5px SG; fill:#bff8df; paint-order:stroke; stroke:#2b2b2a; stroke-width:2px; text-anchor:middle; letter-spacing:.06em; }
+
+/* knobs */
+.kc { display:flex; flex-direction:column; align-items:center; }
+.kc .lb { height:12px; }
+.kn { border-radius:50%; position:relative; background:radial-gradient(circle at 40% 30%,#4a4845,#161514 60%,#080808); box-shadow:0 0 0 1px #000, 0 4px 6px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.25); }
+.kn b { position:absolute; left:50%; top:3px; width:2px; height:40%; margin-left:-1px; background:#f4efe3; transform-origin:50% calc(100% + 0px); }
+.kn b { transform-origin:1px 14px; }
+.kmm { display:flex; justify-content:space-between; width:100%; font-size:8px; font-weight:700; color:var(--bone); }
+.lcd { width:98px; height:20px; display:flex; align-items:center; padding:0 6px; background:#04140e; border:1px solid #000; box-shadow:inset 0 2px 4px #000, 0 1px 0 rgba(255,255,255,.3); font:700 10.5px SG; color:var(--mint); text-shadow:0 0 6px rgba(114,242,189,.5); }
+
+/* sloped console */
+.console { position:absolute; left:64px; right:64px; top:564px; height:150px;
+  background:linear-gradient(180deg,#4a4946 0,#2f2f2d 7%,#222221 50%,#151514 100%);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.35), inset 0 -2px 0 #000, 0 -2px 0 #000, 0 10px 30px rgba(0,0,0,.9), 0 40px 60px -20px rgba(114,242,189,.08); }
+.console::before { content:""; position:absolute; inset:0; background:repeating-linear-gradient(90deg,rgba(255,255,255,.03) 0 1px,transparent 1px 3px); }
+.np { position:absolute; left:22px; top:22px; }
+.cs { position:absolute; display:flex; flex-direction:column; align-items:center; }
+.cs .t { font-size:9.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--bone); text-shadow:0 1px 1px #000; margin-bottom:6px; height:20px; display:flex; align-items:flex-end; text-align:center; line-height:10px; }
+.cs .b { width:34px; height:30px; } .cs .b i { display:block; }
+.arr { width:46px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:2px;
+  background:linear-gradient(180deg,#44423e,#1b1a19); box-shadow:0 0 0 1px #000, inset 0 1px 0 rgba(255,255,255,.25), 0 3px 0 #000; }
+.arr svg { width:22px; height:14px; } .arr path { fill:#0b0b0b; stroke:#5d5a55; }
+.disp { position:absolute; left:640px; top:28px; width:470px; height:96px; padding:10px; display:flex; gap:10px;
+  background:#050505; border-radius:2px; box-shadow:0 0 0 1px #000, 0 0 0 4px #1a1918, 0 0 0 5px #000, inset 0 4px 10px #000; }
+.lc { flex:1; position:relative; padding:7px 10px; background:radial-gradient(120% 140% at 30% 0,#0d3626,#04150e 70%); box-shadow:inset 0 0 0 1px #0f3a28, inset 0 6px 14px rgba(0,0,0,.6); font-family:SG; color:var(--mint); text-shadow:0 0 8px rgba(114,242,189,.55); }
+.lc::after { content:""; position:absolute; inset:0; background:repeating-linear-gradient(180deg,rgba(0,0,0,.22) 0 1px,transparent 1px 3px); pointer-events:none; }
+.lc .s { font-size:11px; font-weight:700; display:flex; justify-content:space-between; }
+.lc .big { font-size:21px; font-weight:700; margin-top:8px; letter-spacing:.01em; }
+.lc .tg { display:flex; justify-content:space-around; margin-top:10px; font-size:11px; font-weight:700; }
+.lc .tg span { border-bottom:1px solid var(--mint); padding:0 3px 1px; }
+.under { position:absolute; left:640px; top:128px; width:470px; display:flex; justify-content:flex-end; gap:0; padding-right:12px; font-size:8.5px; font-weight:700; color:var(--ash); }
+.under span { width:54px; text-align:center; }
+.hz { width:96px; height:18px; position:relative; border-radius:2px; background:#000; box-shadow:0 0 0 2px #1d1c1a, 0 0 0 3px #000, inset 0 1px 2px #000; }
+.hz b { position:absolute; top:-3px; left:40px; width:18px; height:24px; border-radius:2px; background:repeating-linear-gradient(90deg,rgba(255,255,255,.12) 0 1px,transparent 1px 3px),linear-gradient(180deg,#45433f,#0a0a0a); box-shadow:0 0 0 1px #000, 0 3px 3px rgba(0,0,0,.8); }
+.hz b::after { content:""; position:absolute; left:8px; top:2px; bottom:2px; width:2px; background:#f4efe3; }
+.bar { position:absolute; height:12px; border-top:1px solid #8d8a84; border-left:1px solid #8d8a84; border-right:1px solid #8d8a84; }
+.bar span { position:absolute; left:50%; top:-8px; transform:translateX(-50%); padding:0 6px; background:#2c2c2a; font-size:9.5px; font-weight:700; letter-spacing:.12em; color:var(--mint); }
+
+/* string bed */
+.bed { position:absolute; left:94px; right:94px; top:722px; height:186px; background:radial-gradient(120% 120% at 50% 0,#0a2a1d,#041109 70%); box-shadow:inset 0 10px 18px #000, 0 0 0 1px #2a2826; }
+.bed svg { position:absolute; left:20px; top:6px; }
+.bed .sn { font:700 7.5px SG; fill:#3f8c6b; text-anchor:middle; }
+.bridge { position:absolute; left:0; right:0; height:8px; background:linear-gradient(180deg,#575450,#1c1b1a); box-shadow:0 2px 4px #000; }
+.chord { position:absolute; right:30px; top:8px; font-family:Mi; font-size:30px; color:var(--mint); text-shadow:0 0 14px rgba(114,242,189,.5); }
+.chord small { display:block; font:700 10px SG; letter-spacing:.2em; color:var(--mint); text-align:right; }
+.sub { position:absolute; left:8px; right:8px; bottom:-2px; height:58px; display:flex; align-items:center; justify-content:space-around; padding-top:4px; }
+.mk { display:flex; flex-direction:column; align-items:center; gap:5px; }
+.mk span { font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--bone); text-shadow:0 1px 1px #000; }
+.mk .kn b { transform-origin:1px 12px; top:2px; height:12px; }
+.mk .b i { display:block; }
+.bedctl { position:absolute; right:22px; bottom:26px; display:flex; gap:10px; align-items:flex-end; }
+.bedctl .mk span { color:var(--mint); text-shadow:none; }
+.bedmode { position:absolute; right:22px; bottom:80px; display:flex; gap:12px; align-items:flex-end; }
+.bedmode .mk span { color:var(--mint); text-shadow:none; }
+</style></head>
+<body>
+<div class="cheek l"></div><div class="cheek r"></div>
+
+<div class="panel">
+  <div class="tier ta">{{voice}}{{morph}}{{lfo1}}{{pluck}}{{body}}{{amp}}</div>
+  <div class="tier tb_">{{hand}}{{lfo2}}{{string}}{{filter}}{{space}}</div>
+</div>
+
+<div class="console">
+  <div class="np"><svg width="292" height="98" viewBox="0 0 292 98">
+    <defs><linearGradient id="sv" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".48" stop-color="#e2ded5"/><stop offset=".5" stop-color="#a8a49b"/><stop offset="1" stop-color="#efebe3"/></linearGradient>
+    <linearGradient id="ml" x1="0" x2="1"><stop offset="0" stop-color="#72f2bd" stop-opacity="0"/><stop offset=".15" stop-color="#72f2bd"/><stop offset=".85" stop-color="#72f2bd"/><stop offset="1" stop-color="#72f2bd" stop-opacity="0"/></linearGradient>
+    <filter id="gl"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
+    <text x="0" y="54" font-family="Mi" font-size="46" letter-spacing="-1" fill="#000" opacity=".9" transform="translate(0,3)">Harpology</text>
+    <text x="0" y="54" font-family="Mi" font-size="46" letter-spacing="-1" fill="url(#sv)">Harpology</text>
+    <rect x="2" y="66" width="286" height="1.5" fill="url(#ml)" filter="url(#gl)"/><rect x="2" y="66" width="286" height="1" fill="url(#ml)"/>
+    <text x="3" y="90" font-family="Mi" font-size="13" letter-spacing="10.6" fill="#000" transform="translate(0,1.2)">ALTRUISTI</text>
+    <text x="3" y="90" font-family="Mi" font-size="13" letter-spacing="10.6" fill="#d9d5cc">ALTRUISTI</text>
+  </svg></div>
+
+  <div class="cs" style="left:338px;top:18px"><div class="t">Menu</div><div class="b"></div></div>
+  <div class="cs" style="left:386px;top:18px"><div class="t">Setup</div><div class="b"></div></div>
+  <div class="cs" style="left:440px;top:2px"><div class="t" style="height:12px;margin-bottom:4px">Volume</div>
+    <div class="ft" style="height:110px"><i class="sc"></i><i class="gr"></i><b class="cap" style="top:26px"></b></div></div>
+  <div class="cs" style="left:494px;top:28px;gap:10px">
+    <div class="arr"><svg viewBox="0 0 22 14"><path d="M1 13 L11 1 L21 13 Z"/></svg></div>
+    <div class="arr"><svg viewBox="0 0 22 14"><path d="M1 1 L11 13 L21 1 Z"/></svg></div></div>
+  <div class="cs" style="left:572px;top:28px;gap:12px">
+    <div class="t" style="margin:0;height:auto">Sound</div><div class="b lit" style="width:30px;height:18px"><i></i></div>
+    <div class="t" style="margin:0;height:auto">Effects</div><div class="b" style="width:30px;height:18px"><i></i></div></div>
+
+  <div class="disp">
+    <div class="lc" style="flex:1.15"><div class="s"><span>Harp 04</span><span>A=440.0Hz</span></div><div class="big">Station Chime</div>
+      <div class="s" style="margin-top:9px;font-size:10.5px"><span>C# minor</span><span>1/16 Arp</span></div></div>
+    <div class="lc"><div class="s"><span>HAND: Strings</span><span>30</span></div>
+      <div class="tg" style="margin-top:12px"><span>ON</span><span>ON</span><span>OFF</span><span>ON</span></div>
+      <div class="s" style="margin-top:9px;font-size:10.5px;justify-content:space-around"><span>C#</span><span>E</span><span>G#</span><span>B</span></div></div>
+  </div>
+  <div class="under"><span>HARP A</span><span>HARP B</span><span>BASS</span><span>CHORD</span></div>
+
+  <div class="cs" style="left:1140px;top:18px"><div class="t">Hold</div><div class="b lit"><i></i></div></div>
+  <div class="cs" style="left:1190px;top:18px"><div class="t">Freeze</div><div class="b"><i></i></div></div>
+  <div class="cs" style="left:1240px;top:18px"><div class="t">Mono</div><div class="b"><i></i></div></div>
+  <div class="bar" style="left:1300px;top:22px;width:146px"><span>STRUM</span></div>
+  <div class="bar" style="left:566px;top:18px;width:46px"><span>PANEL</span></div>
+  <div class="cs" style="left:1300px;top:18px"><div class="t">Notes</div><div class="b lit"><i></i></div></div>
+  <div class="cs" style="left:1350px;top:18px"><div class="t">Chord</div><div class="b"><i></i></div></div>
+  <div class="cs" style="left:1400px;top:18px"><div class="t">Scale</div><div class="b"><i></i></div></div>
+  <div class="cs" style="left:1300px;top:96px;flex-direction:row;gap:10px"><div class="t" style="margin:0;height:auto">Speed</div><div class="hz"><b></b></div></div>
+</div>
+
+<div class="bed">
+  <div class="bridge" style="top:0"></div>
+  <svg width="1460" height="172" viewBox="0 0 1460 172">{{strings}}</svg>
+  <div class="chord"><small>Chord</small>C#m7</div>
+  <div class="bedmode">
+    <div class="mk"><div class="b lit" style="width:58px;height:22px"><i></i></div><span>Tone | Bend</span></div>
+    <div class="mk"><div class="b" style="width:58px;height:22px"><i></i></div><span>Time | Level</span></div>
+    <div class="mk"><div class="b" style="width:44px;height:22px"><i></i></div><span>Keys</span></div></div>
+  <div class="bedctl"><div class="mk"><div class="b lit" style="width:44px;height:26px"><i></i></div><span>Rec</span></div>
+  <div class="mk"><div class="b" style="width:64px;height:26px"><i></i></div><span>Drag MIDI</span></div>
+  <div class="mk"><div class="b" style="width:44px;height:26px"><i></i></div><span>MIDI out</span></div></div>
+</div>
+</body></html>
