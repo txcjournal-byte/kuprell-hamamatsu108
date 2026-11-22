@@ -66,6 +66,9 @@ namespace harp
         float pitchMul = 1.0f;   // layer octave / detune
         float level = 1.0f;      // layer level
         float stereo = 1.0f;     // 0 = mono voice, 1 = the engine's own stereo image
+        float bend = 0.0f;       // semitones the string starts away from its pitch (slides into tune)
+        float bendTime = 0.1f;   // seconds of that slide
+        float pick = -1.0f;      // pick position along the string (0..0.5), -1 = the engine's own
     };
 
     // 2-pole resonator: one mode of a vibrating body
@@ -213,7 +216,8 @@ namespace harp
                 driftPhase += driftInc;
                 if (driftPhase >= 1.0f) driftPhase -= 1.0f;
                 const float drift = 1.0f + driftDepth * sine() (driftPhase);
-                float s = next (pitchMul[n] * drift, rng);
+                float s = next (pitchMul[n] * drift * bendMul, rng);
+                if (bendMul != 1.0f) { bendMul = 1.0f + (bendMul - 1.0f) * bendCoef; if (std::abs (bendMul - 1.0f) < 1.0e-5f) bendMul = 1.0f; }
                 if (attack < 1.0f) attack = juce::jmin (1.0f, attack + attackInc);
                 env *= envMul;
                 const float amp = attack * env * attackGain;
@@ -264,6 +268,8 @@ namespace harp
             age = 0;
             fadeOutLeft = 0;
             freq = a.hz * a.s.pitchMul;
+            bendMul = a.s.bend != 0.0f ? std::exp2 (a.s.bend / 12.0f) : 1.0f;
+            bendCoef = std::exp (-1.0f / (juce::jmax (0.005f, a.s.bendTime) * 0.3f * sr));
             vel = a.velocity;
             const float tone = juce::jlimit (0.0f, 1.0f, a.s.tone);
             const float bright = juce::jlimit (0.0f, 1.0f, tone * (0.55f + 0.45f * vel));
@@ -334,7 +340,7 @@ namespace harp
                         auto& str = strings[(size_t) st];
                         str.tune (freq * (st == 0 ? 0.9991f : 1.0009f), t60 * 0.7f, bright, sr);   // two strings, gentle chorus
                         const int len = str.len;
-                        const int pick = juce::jmax (1, len / 7);   // pick position: 1/7 of the string
+                        const int pick = juce::jmax (1, a.s.pick >= 0.0f ? (int) ((float) len * a.s.pick) : len / 7);   // pick position: 1/7 of the string, or set per string
                         float lp = 0.0f;
                         for (int i = 0; i < len; ++i)
                         {
@@ -667,6 +673,7 @@ namespace harp
         // synthesis engines
         static constexpr int maxHarm = 24;
         std::array<float, maxHarm> wtAmp {}, wtOffset {};
+        float bendMul = 1.0f, bendCoef = 0.0f;
         float side = 0.0f, sideLp = 0.0f, stereo = 1.0f, driftPhase = 0.0f, driftInc = 0.0f, driftDepth = 0.0f;
         int numHarm = 1;
         float shape = 0.4f, wtSweep = 0.0f, bright_ = 0.5f, fmRatio = 1.0f, fmFloor = 0.0f, airQ = 20.0f, airLp = 0.0f;

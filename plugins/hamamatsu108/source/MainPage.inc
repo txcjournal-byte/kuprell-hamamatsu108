@@ -192,7 +192,7 @@
             for (int k = 0; k < i; ++k) x += tabW (k) + 3.0f;
             return { x, 0.0f, tabW (i), (float) page::bankH };
         }
-        static float tabW (int i) { return 16.0f + 6.2f * (float) banks()[i].length(); }
+        static float tabW (int i) { return 12.0f + 5.9f * (float) banks()[i].length(); }
         // pages: small, at the bottom-right corner of the screen
         juce::Rectangle<float> pageText() const { const auto g = gridArea(); return { g.getRight() - 74.0f, g.getBottom() - 15.0f, 48.0f, 12.0f }; }
         juce::Rectangle<float> prevArrow() const { const auto t = pageText(); return { t.getX() - 10.0f, t.getY() + 2.0f, 8.0f, 8.0f }; }

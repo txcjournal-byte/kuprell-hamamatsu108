@@ -353,6 +353,7 @@ Hamamatsu108Processor::Hamamatsu108Processor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, &undoManager, "Hamamatsu108", createParameterLayout())
 {
+    resetPlate();
     for (auto& sl : progSlots) sl.store (-1);
     progNotes.reserve (256);
     gridNotes.reserve (256);
@@ -1035,11 +1036,16 @@ void Hamamatsu108Processor::updateTones (int chordIndex, int transpose, int rang
             tones.push_back (n);
 }
 
-void Hamamatsu108Processor::scheduleNote (int delay, int toneIndex, float velocity)
+void Hamamatsu108Processor::scheduleNote (int delay, int toneIndex, float velocity, int visualOverride)
 {
     if (numEvents >= (int) events.size() || tones.empty()) return;
     toneIndex = juce::jlimit (0, (int) tones.size() - 1, toneIndex);
-    const int visual = tones.size() > 1 ? juce::roundToInt ((float) toneIndex * (numStrings - 1) / (float) (tones.size() - 1)) : numStrings / 2;
+    const int visual = visualOverride >= 0 ? juce::jlimit (0, numStrings - 1, visualOverride)
+                     : tones.size() > 1 ? juce::roundToInt ((float) toneIndex * (numStrings - 1) / (float) (tones.size() - 1)) : numStrings / 2;
+    // PLATE tuning: a string switched off stays silent; its own timing and level
+    if ((plMute.load() >> (unsigned) visual) & 1u) return;
+    delay += (int) (plTime[(size_t) visual].load() * 0.12f * (float) getSampleRate());
+    velocity *= 1.0f - 0.85f * plLevel[(size_t) visual].load();
     events[(size_t) numEvents++] = { juce::jmax (0, delay), juce::jlimit (0, 127, tones[(size_t) toneIndex] + 12 * juce::roundToInt (param (apvts, "harpOctave"))), juce::jlimit (0.05f, 1.0f, velocity), visual, ! eventsFromHost };
 }
 
@@ -1056,6 +1062,8 @@ void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity, 
     }
     else
         visual = juce::jlimit (0, numStrings - 1, (note - 48) * (numStrings - 1) / 48);
+    delay += (int) (plTime[(size_t) visual].load() * 0.12f * (float) getSampleRate());
+    velocity *= 1.0f - 0.85f * plLevel[(size_t) visual].load();
     // HUMAN: a little looseness in time and touch
     if (const float h = sw (swHuman); h > 0.0f)
     {
@@ -1352,7 +1360,18 @@ void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note,
     const float panLimit = 0.15f + 0.75f * spread;
     float pan = juce::jlimit (-panLimit, panLimit, ((float) note - centre) / 30.0f * (0.4f + 1.4f * spread));
     if (layerB) pan = juce::jlimit (-panLimit, panLimit, -pan * 1.15f);
-    target->start (note, velocity, pan, settings, rng, noteHz (note));
+    if (curString >= 0 && curString < numStrings)
+    {
+        // PLATE tuning: where this string is plucked (near the end = bright and thin, towards the middle = round) and how slack it is
+        auto s = settings;
+        const float t = plTone[(size_t) curString].load(), b = plBend[(size_t) curString].load();
+        s.tone = juce::jlimit (0.02f, 1.0f, s.tone + (0.35f - t) * 0.9f);
+        s.pick = 0.03f + 0.33f * t;
+        if (b > 0.001f) { s.bend = -2.0f * b; s.bendTime = 0.06f + 0.3f * b; }
+        target->start (note, velocity, pan, s, rng, noteHz (note));
+    }
+    else
+        target->start (note, velocity, pan, settings, rng, noteHz (note));
     target->key = keyNow;
 }
 
@@ -1672,6 +1691,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     buffer.clear();
     const int numSamples = buffer.getNumSamples();
     blockSamples = numSamples;
+    keyboardState.processNextMidiBuffer (midi, 0, numSamples, true);   // KEYS on the strum window
     if ((int) pitchMul.size() < numSamples) pitchMul.resize ((size_t) numSamples, 1.0f);
 
     // parameters
@@ -1920,7 +1940,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     if (const auto plucks = pendingPlucks.exchange (0); plucks != 0 && ! tones.empty())
         for (int i = 0; i < numStrings; ++i)
             if (plucks & (1u << (unsigned) i))
-                scheduleNote (0, juce::roundToInt ((float) i * (float) (tones.size() - 1) / (float) (numStrings - 1)), 0.8f);
+                scheduleNote (0, juce::roundToInt ((float) i * (float) (tones.size() - 1) / (float) (numStrings - 1)), 0.8f, i);
 
     if (const int st = pendingStrum.exchange (0); st != 0 && ! tones.empty())
         sweep (0, st > 0, st > 0 ? 0 : (int) tones.size() - 1, (int) tones.size(), 0.8f, 0.8f);
@@ -2408,7 +2428,9 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         {
             if (events[(size_t) e].delay < start + len)
             {
+                curString = events[(size_t) e].visual;
                 startVoice (events[(size_t) e].note, events[(size_t) e].velocity);
+                curString = -1;
                 if (midiOut.load() && ! previewMute)
                 {
                     const int pos = juce::jmax (start, events[(size_t) e].delay);
@@ -2777,6 +2799,13 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
     state.setProperty ("keysV2", 1, nullptr);
     state.setProperty ("keysV3", 1, nullptr);
     state.setProperty ("stringsPick", stringsPick.load(), nullptr);
+    {
+        juce::StringArray pl;
+        for (int i = 0; i < numStrings; ++i)
+            pl.add (juce::String (plTone[(size_t) i].load(), 3) + ":" + juce::String (plBend[(size_t) i].load(), 3) + ":" + juce::String (plLevel[(size_t) i].load(), 3) + ":" + juce::String (plTime[(size_t) i].load(), 3));
+        state.setProperty ("plate", pl.joinIntoString (","), nullptr);
+        state.setProperty ("plateMute", (juce::int64) plMute.load(), nullptr);
+    }
     state.setProperty ("captureMode", captureMode.load(), nullptr);
     state.setProperty ("captureQuant", captureQuant.load(), nullptr);
     state.setProperty ("gateMask", (juce::int64) gateMask.load(), nullptr);
@@ -2924,6 +2953,20 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
             const bool presetModified = (bool) state.getProperty ("presetModified", false);
             apvts.replaceState (state);
             stringsPick.store ((int) state.getProperty ("stringsPick", -1));
+            resetPlate();
+            {
+                const auto pl = juce::StringArray::fromTokens (state.getProperty ("plate").toString(), ",", {});
+                for (int i = 0; i < juce::jmin (numStrings, pl.size()); ++i)
+                {
+                    const auto v = juce::StringArray::fromTokens (pl[i], ":", {});
+                    if (v.size() == 4)
+                    {
+                        plTone[(size_t) i].store (juce::jlimit (0.0f, 1.0f, v[0].getFloatValue())); plBend[(size_t) i].store (juce::jlimit (0.0f, 1.0f, v[1].getFloatValue()));
+                        plLevel[(size_t) i].store (juce::jlimit (0.0f, 1.0f, v[2].getFloatValue())); plTime[(size_t) i].store (juce::jlimit (0.0f, 1.0f, v[3].getFloatValue()));
+                    }
+                }
+                plMute.store ((std::uint32_t) (juce::int64) state.getProperty ("plateMute", 0));
+            }
             if (! state.hasProperty ("keysV2"))   // older sessions: keys play single notes now (Split made some keys strum)
                 if (auto* kp = apvts.getParameter ("keysPlay")) kp->setValueNotifyingHost (kp->convertTo0to1 (0.0f));
             // sessions before v0.2.76: Flourish off left the keys on Split (low keys strummed); now they play notes

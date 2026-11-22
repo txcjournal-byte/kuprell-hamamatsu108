@@ -2279,7 +2279,7 @@ namespace hama
 
         juce::Rectangle<float> gridArea() const
         {
-            if (plateOnly) return getLocalBounds().toFloat().reduced (18.0f, 10.0f).withTrimmedTop (14.0f);
+            if (plateOnly) return getLocalBounds().toFloat().reduced (18.0f, 8.0f).withTrimmedTop (12.0f).withTrimmedBottom (20.0f);
             return getLocalBounds().toFloat().reduced (12.0f, 8.0f).withTrimmedLeft (34.0f).withTrimmedTop (16.0f);
         }
         juce::Rectangle<float> cell (int row, int step) const
@@ -2333,7 +2333,7 @@ namespace hama
             if (type == 1) { paintLines (g, tones, on, playing); return; }
             if (type == 2) { paintRhythm (g, on, playing); return; }
             if (type == 3) { paintStrings (g, tones, on, playing); return; }
-            if (type == 4) { paintPlate (g); return; }
+            if (type == 4) { if (keysView) { paintKeys (g); paintPlateTabs (g); } else paintPlate (g); return; }
             for (int row = 0; row < prog::gridRows; ++row)
             {
                 auto c0 = cell (row, 0);
@@ -2557,23 +2557,41 @@ namespace hama
                 const float th0 = 1.0f + 1.6f * (1.0f - (float) s / (float) (Hamamatsu108Processor::numStrings - 1));   // low strings are thicker
                 if (th().concrete)
                 {
-                    // the trace of a string on the scope: flat at rest, a decaying wave when it is plucked
+                    // the string runs between its two handles (pluck point / bend, or timing / level); outside them it is a dim stub
+                    const bool muted = (processor.plMute.load() >> (unsigned) s) & 1u;
+                    const float xl = handleX (s, false), xr = handleX (s, true);
+                    g.setColour (page::phosphor().withAlpha (muted ? 0.05f : 0.12f));
+                    g.drawLine (a.getX(), y, xl, y, 1.0f);
+                    g.drawLine (xr, y, a.getRight(), y, 1.0f);
                     juce::Path trace;
-                    const float amp = v * v * juce::jmin (9.0f, a.getHeight() / (float) Hamamatsu108Processor::numStrings * 0.9f);
-                    const float k = juce::MathConstants<float>::twoPi * (2.0f + (float) (s % 5)) / a.getWidth();
-                    trace.startNewSubPath (a.getX(), y);
-                    for (float x = a.getX(); x <= a.getRight(); x += 3.0f)
+                    const float amp = muted ? 0.0f : v * v * juce::jmin (9.0f, a.getHeight() / (float) Hamamatsu108Processor::numStrings * 0.9f);
+                    const float span = juce::jmax (10.0f, xr - xl);
+                    const float k = juce::MathConstants<float>::twoPi * (2.0f + (float) (s % 5)) / span;
+                    trace.startNewSubPath (xl, y);
+                    for (float x = xl; x <= xr; x += 3.0f)
                     {
-                        const float u = (x - a.getX()) / a.getWidth();
+                        const float u = (x - xl) / span;
                         trace.lineTo (x, y + amp * std::sin (u * juce::MathConstants<float>::pi) * std::sin (x * k + phase * (3.0f + (float) s)));
                     }
-                    if (v > 0.02f)
+                    trace.lineTo (xr, y);
+                    if (v > 0.02f && ! muted)
                     {
-                        g.setColour (page::phosphor().withAlpha (0.3f * v));
-                        g.strokePath (trace, juce::PathStrokeType (th0 + 3.0f));
+                        g.setColour (page::phosphor().withAlpha (0.22f * v));
+                        g.strokePath (trace, juce::PathStrokeType (th0 + 2.0f));
                     }
-                    g.setColour (page::phosphor().withAlpha (0.34f + 0.66f * v));
+                    g.setColour (page::phosphor().withAlpha (muted ? 0.08f : 0.3f + 0.6f * v));
                     g.strokePath (trace, juce::PathStrokeType (v > 0.02f ? juce::jmax (1.0f, th0 * 0.7f) : 1.0f));
+                    if (! muted)
+                        for (int side = 0; side < 2; ++side)
+                        {
+                            const float hx = side ? xr : xl;
+                            const bool hot = dragHandle == s * 2 + side;
+                            auto cap = juce::Rectangle<float> (4.0f, 9.0f).withCentre ({ hx, y });
+                            g.setColour (juce::Colours::black.withAlpha (0.6f));
+                            g.fillRoundedRectangle (cap.expanded (1.0f), 1.5f);
+                            g.setColour (page::phosphor().withAlpha (hot ? 1.0f : 0.55f));
+                            g.fillRoundedRectangle (cap, 1.5f);
+                        }
                     continue;
                 }
                 g.setColour (juce::Colour (0xffd9c3a3).withAlpha (0.22f).interpolatedWith (th().accent, v));
@@ -2584,8 +2602,192 @@ namespace hama
                     g.fillRect (juce::Rectangle<float> (a.getX(), y - 4.0f, a.getWidth(), 8.0f));
                 }
             }
+            paintPlateTabs (g);
+        }
+
+        // ---- PLATE tuning: two handles on every string, two layers of meaning, and a keyboard instead of the strings
+        int plateLayer = 0;        // 0 = TONE (pluck point, left) / BEND (right), 1 = TIME (left) / LEVEL (right)
+        bool keysView = false;     // KEYS instead of the strings
+        int dragHandle = -1;       // string * 2 + side while a handle is held
+        int heldKey = -1;
+        juce::Rectangle<float> tabRect (int i) const   // 0, 1 = layers (bottom left); 2, 3 = STRINGS / KEYS (bottom right)
+        {
+            auto r = getLocalBounds().toFloat().reduced (18.0f, 4.0f);
+            const float w = 82.0f, y = r.getBottom() - 15.0f;
+            if (i < 2) return { r.getX() + (float) i * (w + 4.0f), y, w, 15.0f };
+            return { r.getRight() - (float) (4 - i) * (w + 4.0f) + 4.0f, y, w, 15.0f };
+        }
+        float travel() const { return gridArea().getWidth() * 0.3f; }
+        std::atomic<float>& handleRef (int s, bool right) const
+        {
+            auto& pr = processor;
+            if (plateLayer == 0) return right ? pr.plBend[(size_t) s] : pr.plTone[(size_t) s];
+            return right ? pr.plLevel[(size_t) s] : pr.plTime[(size_t) s];
+        }
+        float handleX (int s, bool right) const
+        {
+            auto a = gridArea();
+            const float v = handleRef (s, right).load();
+            return right ? a.getRight() - v * travel() : a.getX() + v * travel();
+        }
+        void paintPlateTabs (juce::Graphics& g)
+        {
+            static const char* names[] = { "TONE  |  BEND", "TIME  |  LEVEL", "STRINGS", "KEYS" };
+            for (int i = 0; i < 4; ++i)
+            {
+                if (keysView && i < 2) continue;
+                const bool on = i < 2 ? plateLayer == i : (i == 3) == keysView;
+                auto t = tabRect (i);
+                g.setColour (on ? page::phosphor().withAlpha (0.16f) : juce::Colours::black.withAlpha (0.35f));
+                g.fillRoundedRectangle (t, 2.0f);
+                g.setColour (on ? page::phosphor().withAlpha (0.8f) : page::phosphorDim().withAlpha (0.5f));
+                g.drawRoundedRectangle (t.reduced (0.5f), 2.0f, 1.0f);
+                g.setFont (LookAndFeel::monoFont (9.5f));
+                g.drawText (names[i], t, juce::Justification::centred, false);
+            }
+            if (dragHandle >= 0 && ! keysView)
+            {
+                const int s = dragHandle / 2; const bool right = dragHandle & 1;
+                static const char* what[2][2] = { { "TONE", "BEND" }, { "TIME", "LEVEL" } };
+                const float v = handleRef (s, right).load();
+                juce::String val;
+                if (plateLayer == 0 && ! right) val = v < 0.2f ? "bright, near the end" : v < 0.5f ? "classic" : "round, near the middle";
+                else if (plateLayer == 0) val = v < 0.01f ? "in tune" : juce::String (-2.0f * v, 2) + " st slide";
+                else if (! right) val = juce::String (juce::roundToInt (v * 120.0f)) + " ms later";
+                else val = juce::String (juce::roundToInt ((1.0f - 0.85f * v) * 100.0f)) + " %";
+                g.setFont (LookAndFeel::monoFont (10.0f));
+                g.setColour (page::phosphor());
+                g.drawText ("STRING " + juce::String (s + 1) + "   " + what[plateLayer][right ? 1 : 0] + "  " + val,
+                            getLocalBounds().toFloat().reduced (18.0f, 2.0f).withHeight (12.0f), juce::Justification::centred, false);
+            }
+        }
+        int plateStringAt (float y) const
+        {
+            int best = -1; float bestD = 1.0e9f;
+            for (int s = 0; s < Hamamatsu108Processor::numStrings; ++s)
+                if (const float d = std::abs (plateY (s) - y); d < bestD) { bestD = d; best = s; }
+            return bestD < 5.0f ? best : -1;
+        }
+        int handleAt (juce::Point<float> p) const
+        {
+            const int s = plateStringAt (p.y);
+            if (s < 0 || ((processor.plMute.load() >> (unsigned) s) & 1u)) return -1;
+            if (std::abs (p.x - handleX (s, false)) < 8.0f) return s * 2;
+            if (std::abs (p.x - handleX (s, true)) < 8.0f) return s * 2 + 1;
+            return -1;
+        }
+        void dragHandleTo (juce::Point<float> p, bool all)
+        {
+            auto a = gridArea();
+            const bool right = dragHandle & 1;
+            const float v = juce::jlimit (0.0f, 1.0f, right ? (a.getRight() - p.x) / travel() : (p.x - a.getX()) / travel());
+            for (int s = 0; s < Hamamatsu108Processor::numStrings; ++s)
+                if (all || s == dragHandle / 2) handleRef (s, right).store (v);
+            repaint();
+        }
+        // KEYS: C2 .. C7
+        static constexpr int keyLo = 36, keyHi = 96;
+        static bool isBlack (int n) { const int k = n % 12; return k == 1 || k == 3 || k == 6 || k == 8 || k == 10; }
+        int numWhites() const { int c = 0; for (int n = keyLo; n <= keyHi; ++n) if (! isBlack (n)) ++c; return c; }
+        juce::Rectangle<float> keyRect (int n) const
+        {
+            auto a = gridArea().withTrimmedTop (-6.0f);
+            const float w = a.getWidth() / (float) numWhites();
+            int wi = 0;
+            for (int k = keyLo; k < n; ++k) if (! isBlack (k)) ++wi;
+            if (! isBlack (n)) return { a.getX() + (float) wi * w, a.getY(), w, a.getHeight() };
+            return { a.getX() + (float) wi * w - w * 0.3f, a.getY(), w * 0.6f, a.getHeight() * 0.6f };
+        }
+        int keyAt (juce::Point<float> p) const
+        {
+            for (int n = keyLo; n <= keyHi; ++n) if (isBlack (n) && keyRect (n).contains (p)) return n;
+            for (int n = keyLo; n <= keyHi; ++n) if (! isBlack (n) && keyRect (n).contains (p)) return n;
+            return -1;
+        }
+        void paintKeys (juce::Graphics& g)
+        {
+            auto& ks = processor.keyboardState;
+            for (int pass = 0; pass < 2; ++pass)
+                for (int n = keyLo; n <= keyHi; ++n)
+                {
+                    if (isBlack (n) != (pass == 1)) continue;
+                    auto k = keyRect (n);
+                    const bool on = ks.isNoteOnForChannels (0xffff, n);
+                    if (pass == 0)
+                    {
+                        auto body = k.reduced (1.0f, 0.0f);
+                        juce::ColourGradient cg (juce::Colour (0xffe4e1d8), 0.0f, body.getY(), juce::Colour (0xffb9b6ad), 0.0f, body.getBottom(), false);
+                        g.setGradientFill (cg);
+                        g.fillRoundedRectangle (body.withTrimmedTop (-3.0f), 3.0f);
+                        if (on) { g.setColour (page::phosphor().withAlpha (0.55f)); g.fillRoundedRectangle (body, 3.0f); }
+                        g.setColour (juce::Colours::black.withAlpha (0.25f));
+                        g.fillRect (body.withHeight (4.0f));
+                        if (n % 12 == 0)
+                        {
+                            g.setFont (LookAndFeel::monoFont (8.5f));
+                            g.setColour (juce::Colour (0xff3a3a38));
+                            g.drawText ("C" + juce::String (n / 12 - 1), body.withTrimmedTop (body.getHeight() - 14.0f), juce::Justification::centred, false);
+                        }
+                    }
+                    else
+                    {
+                        g.setColour (juce::Colours::black.withAlpha (0.5f));
+                        g.fillRoundedRectangle (k.translated (1.5f, 2.0f), 2.0f);
+                        juce::ColourGradient cg (juce::Colour (0xff3a3a3a), 0.0f, k.getY(), juce::Colour (0xff0c0c0c), 0.0f, k.getBottom(), false);
+                        g.setGradientFill (cg);
+                        g.fillRoundedRectangle (k, 2.0f);
+                        g.setColour (juce::Colours::white.withAlpha (0.12f));
+                        g.fillRoundedRectangle (k.reduced (2.0f).withTrimmedTop (k.getHeight() - 10.0f), 1.5f);
+                        if (on) { g.setColour (page::phosphor().withAlpha (0.8f)); g.fillRoundedRectangle (k.reduced (1.0f), 2.0f); }
+                    }
+                }
+        }
+        void keyOn (int n, juce::Point<float> p)
+        {
+            if (n < 0) return;
+            auto k = keyRect (n);
+            const float vel = juce::jlimit (0.25f, 1.0f, 0.35f + 0.65f * (p.y - k.getY()) / k.getHeight());   // further down the key = harder
+            processor.keyboardState.noteOn (1, n, vel);
+            heldKey = n;
+            repaint();
+        }
+        void keyOff()
+        {
+            if (heldKey >= 0) processor.keyboardState.noteOff (1, heldKey, 0.0f);
+            heldKey = -1;
+            repaint();
+        }
+        bool plateMouseDown (const juce::MouseEvent& e)
+        {
+            for (int i = 0; i < 4; ++i)
+                if ((! keysView || i >= 2) && tabRect (i).contains (e.position))
+                {
+                    if (i < 2) plateLayer = i; else { keyOff(); keysView = i == 3; }
+                    drawValue = -1; repaint(); return true;
+                }
+            if (keysView) { keyOn (keyAt (e.position), e.position); drawValue = 6; return true; }
+            if (const int h = handleAt (e.position); h >= 0) { dragHandle = h; drawValue = 5; repaint(); return true; }
+            return false;
         }
     public:
+        void mouseUp (const juce::MouseEvent&) override
+        {
+            if (drawValue == 6) keyOff();
+            if (dragHandle >= 0) { dragHandle = -1; repaint(); }
+        }
+        void mouseDoubleClick (const juce::MouseEvent& e) override
+        {
+            if (curType() != 4 || keysView) return;
+            if (const int h = handleAt (e.position); h >= 0)   // double-click a handle: back to the default
+            {
+                const int s = h / 2; const bool right = h & 1;
+                handleRef (s, right).store (plateLayer == 0 && ! right ? 0.35f : 0.0f);
+            }
+            else if (const int s = plateStringAt (e.position.y); s >= 0)   // double-click a string: off / on
+                processor.plMute.fetch_xor (1u << (unsigned) s);
+            dragHandle = -1;
+            repaint();
+        }
         void flash (std::uint32_t bits)
         {
             bool any = false;
@@ -2595,7 +2797,7 @@ namespace hama
                 if (glow[(size_t) s] > 0.0f) { glow[(size_t) s] = juce::jmax (0.0f, glow[(size_t) s] - 0.035f); any = true; }
             }
             phase += 0.9f;
-            if (any && curType() == 4) repaint();
+            if ((any || keysView) && curType() == 4) repaint();
         }
     private:
         void plateMove (juce::Point<float> p)
@@ -2758,6 +2960,7 @@ namespace hama
             if (curType() == 3) { levelRow = -1; stringsMouseDown (e); drawValue = 3; return; }
             if (curType() == 4)
             {
+                if (plateMouseDown (e)) return;
                 plateLast = -1.0f;
                 plateMove (e.position);
                 const int s = juce::roundToInt (juce::jlimit (0.0f, 1.0f, (gridArea().getBottom() - e.position.y) / gridArea().getHeight()) * (Hamamatsu108Processor::numStrings - 1));
@@ -2782,6 +2985,8 @@ namespace hama
         void mouseDrag (const juce::MouseEvent& e) override
         {
             if (drawValue == 4) { plateMove (e.position); return; }
+            if (drawValue == 5) { dragHandleTo (e.position, e.mods.isShiftDown()); return; }
+            if (drawValue == 6) { if (const int n = keyAt (e.position); n >= 0 && n != heldKey) { keyOff(); keyOn (n, e.position); } return; }
             if (drawValue == 3)
             {
                 if (levelRow >= 0) { processor.strLevel[(size_t) levelRow].store (juce::jlimit (0.1f, 1.0f, levelStart + (levelY - e.position.y) / 60.0f)); repaint(); }

@@ -100,6 +100,17 @@ public:
     std::array<std::atomic<int>, 4> stackGui { -1, -1, -1, -1 };                         // chords of the stack (GUI highlight)   // mouse up (matters when HOLD is off)
     void previewPreset() { previewRequest.store (true); }                            // short demo strum after a preset click
     void pluckString (int visualIndex) { pendingPlucks.fetch_or (1u << (unsigned) visualIndex); }
+    // PLATE tuning: every string has its own pluck point, bend, level and timing (0..1), and can be switched off
+    std::array<std::atomic<float>, numStrings> plTone, plBend, plLevel, plTime;
+    std::atomic<std::uint32_t> plMute { 0 };
+    void resetPlate (int s = -1)
+    {
+        for (int i = 0; i < numStrings; ++i)
+            if (s < 0 || s == i) { plTone[(size_t) i].store (0.35f); plBend[(size_t) i].store (0.0f); plLevel[(size_t) i].store (0.0f); plTime[(size_t) i].store (0.0f); }
+        if (s < 0) plMute.store (0);
+    }
+    // KEYS: the on-screen keyboard in the strum window
+    juce::MidiKeyboardState keyboardState;
     void strumNow (bool down) { pendingStrum.store (down ? 1 : -1); }   // PC keyboard: a whole stroke
     // MOTION is on and plays a pattern (GRID / LINES / RHYTHM / STRINGS, not PLATE)
     bool motionActive() const { return *apvts.getRawParameterValue ("gridOn") > 0.5f && juce::roundToInt (apvts.getRawParameterValue ("motionType")->load()) != 4; }
@@ -214,7 +225,7 @@ private:
     int blockSamples = 0;
     juce::int64 patOrigin = 0;
     void patternStep (int offset, juce::int64 k);
-    void scheduleNote (int delay, int toneIndex, float velocity);
+    void scheduleNote (int delay, int toneIndex, float velocity, int visualOverride = -1);
     void schedulePitch (int delay, int note, float velocity, bool record = false);
     std::array<int, 32> pressOrder {};   // held notes in the order they were pressed (ARP "As Played")
     int pressCount = 0;
@@ -264,6 +275,7 @@ private:
     std::array<PendingRelease, 64> releases {};
     int numReleases = 0;
     void startVoice (int note, float velocity);
+    int curString = -1;   // the plate string the note being started belongs to (-1 = none)
     void startHarp (const harp::Settings&, int note, float velocity, bool layerB = false);
     void scheduleArpStep (int offset);
     void updateChordLayer (int chord, int transpose);
