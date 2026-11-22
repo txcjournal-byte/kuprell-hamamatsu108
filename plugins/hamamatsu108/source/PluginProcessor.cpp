@@ -203,6 +203,21 @@ void Hamamatsu108Processor::updateModulation (int numSamples, bool hostPlaying, 
         if (off == 0) v = 0.5f * (v + 1.0f); else if (off == 2) v = 0.5f * (v - 1.0f);
         src[(size_t) (mod::lfo1 + i)] = v * env;
     }
+    {
+        // LFO 2: PHASE (against LFO 1), SMOOTH, INVERT, and a restart on every bar
+        if (P ("lfo2Bar") > 0.5f && hostPlaying)
+        {
+            const int bar = (int) std::floor (ppq / 4.0);
+            if (bar != lastLfoBar) { lfos[1].phase = 0.0; lastLfoBar = bar; }
+        }
+        float v = src[mod::lfo2];
+        const float ph = P ("lfo2Phase");
+        if (ph > 0.001f) v = v * std::cos (ph * juce::MathConstants<float>::pi) + src[mod::lfo1] * std::sin (ph * juce::MathConstants<float>::pi);
+        if (P ("lfo2Invert") > 0.5f) v = -v;
+        const float sm = P ("lfo2Smooth");
+        lfo2Smoothed += (v - lfo2Smoothed) * (sm < 0.001f ? 1.0f : (float) juce::jmin (1.0, secs / (0.02 + 1.5 * sm * sm)));
+        src[mod::lfo2] = lfo2Smoothed;
+    }
     std::array<float, mod::funcPoints> pts {}, xs {};
     funcShape (xs, pts);
     src[mod::function] = func.advance (active ? P ("funcRate") * secs : 0.0, juce::roundToInt (P ("funcMode")), xs, pts);
@@ -432,7 +447,8 @@ float Hamamatsu108Processor::noteHz (int midiNote) const
     if (mtsEnabled.load() && mtsClient != nullptr && MTS_HasMaster ((MTSClient*) mtsClient))
         return (float) MTS_NoteToFrequency ((MTSClient*) mtsClient, (char) juce::jlimit (0, 127, midiNote), -1);
 #endif
-    return tuningA4.load() * std::pow (2.0f, (midiNote - 69) / 12.0f);
+    // FINE (string): a few cents up or down
+    return tuningA4.load() * std::pow (2.0f, ((float) (midiNote - 69) + apvts.getRawParameterValue ("strFine")->load() * 0.01f) / 12.0f);
 }
 
 bool Hamamatsu108Processor::mtsConnected() const
@@ -559,6 +575,50 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
         layout.add (std::make_unique<AudioParameterChoice> (ParameterID { n + "Offset", 1 }, "LFO " + String (i) + " Offset", StringArray { "+", "0", "-" }, 1));
         layout.add (std::make_unique<AudioParameterBool> (ParameterID { n + "Trig", 1 }, "LFO " + String (i) + " Key Trig", false));
     }
+    // CONSOLE: pluck envelope, amp extras, string extras, filter modes, colour, SPACE, hand, LFO 2 extras, layer solo
+    {
+        const char* pe[] = { "pT1", "pL1", "pT2", "pL2", "pT3", "pL3", "pT4", "pTail" };
+        const char* pn[] = { "Pluck T1", "Pluck L1", "Pluck T2", "Pluck L2", "Pluck T3", "Pluck L3", "Pluck T4", "Pluck Tail" };
+        const float pd[] = { 0.05f, 1.0f, 0.3f, 1.0f, 0.5f, 1.0f, 0.5f, 1.0f };
+        for (int i = 0; i < 8; ++i) fl (pe[i], pn[i], 0.0f, 1.0f, pd[i], pct);
+    }
+    fl ("pVelo", "Pluck Velocity", -1.0f, 1.0f, 0.0f, pct);
+    fl ("ampLevel", "Layer A Level", -24.0f, 6.0f, 0.0f, [] (float v, int) { return String (v, 1) + " dB"; });
+    fl ("ampVelo", "Velocity Sense", -1.0f, 1.0f, 0.0f, pct);
+    fl ("ampHold", "Hold", 0.0f, 1.0f, 0.0f, [] (float v, int) { return String (v * 2.0f, 2) + " s"; });
+    fl ("strFine", "Fine Tune", -50.0f, 50.0f, 0.0f, [] (float v, int) { return String (v, 1) + " ct"; });
+    fl ("strSympath", "Sympathetic", 0.0f, 1.0f, 0.0f, pct);
+    fl ("strBuzz", "Buzz", 0.0f, 1.0f, 0.0f, pct);
+    fl ("strHarmonic", "Harmonic", 0.0f, 1.0f, 0.0f, pct);
+    fl ("strRelTime", "Damper Release", 0.0f, 1.0f, 0.5f, pct);
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { "strDamper", 1 }, "Damper", true));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { "strPedal", 1 }, "Pedal", false));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "filtMode", 1 }, "Filter Mode", StringArray { "HPF", "BPF", "LPF" }, 2));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { "filt24", 1 }, "Filter 24 dB", false));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { "filtTrack", 1 }, "Filter Key Track", false));
+    fl ("filtKey", "Filter Key Follow", 0.0f, 1.0f, 0.5f, pct);
+    fl ("filtVelo", "Filter Velocity", -1.0f, 1.0f, 0.0f, pct);
+    fl ("bodyTilt", "Tilt", -1.0f, 1.0f, 0.0f, pct);
+    fl ("morphWood", "Wood", 0.0f, 1.0f, 0.0f, pct);
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "spRoom", 1 }, "Space Room", StringArray { "Hall", "Plate", "Cave", "Void" }, 0));
+    fl ("spSize", "Space Size", 0.0f, 1.0f, 0.5f, pct);
+    fl ("spTone", "Space Tone", 0.0f, 1.0f, 0.5f, pct);
+    fl ("spPre", "Space Pre-delay", 0.0f, 1.0f, 0.1f, pct);
+    fl ("spMix", "Space Mix", 0.0f, 1.0f, 0.0f, pct);
+    fl ("spWidth", "Space Width", 0.0f, 1.0f, 0.8f, pct);
+    fl ("spDuck", "Space Duck", 0.0f, 1.0f, 0.0f, pct);
+    fl ("spMod", "Space Mod", 0.0f, 1.0f, 0.2f, pct);
+    fl ("spLowcut", "Space Low Cut", 0.0f, 1.0f, 0.2f, pct);
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { "spReverse", 1 }, "Space Reverse", false));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { "spTail", 1 }, "Space Tail", true));
+    fl ("ratchet", "Ratchet", 0.0f, 1.0f, 0.0f, pct);
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { "mono", 1 }, "Mono", false));
+    fl ("lfo2Phase", "LFO 2 Phase", 0.0f, 1.0f, 0.0f, pct);
+    fl ("lfo2Smooth", "LFO 2 Smooth", 0.0f, 1.0f, 0.0f, pct);
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { "lfo2Bar", 1 }, "LFO 2 Bar Restart", false));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { "lfo2Invert", 1 }, "LFO 2 Invert", false));
+    for (auto* id : { "soloA", "soloB", "soloBass", "soloChord" })
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { id, 1 }, String ("Solo ") + (String (id).substring (4)), false));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "pitchModSrc", 1 }, "Pitch Mod Source", StringArray { "LFO 1", "LFO 2", "Env" }, 0));
     fl ("pitchModAmt", "Pitch Mod Depth", -1.0f, 1.0f, 0.0f, [] (float v, int) { return String (v * 3.0f, 2) + " st"; });
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "filtLfoSel", 1 }, "Filter LFO", StringArray { "LFO 1", "LFO 2" }, 0));
@@ -741,6 +801,7 @@ void Hamamatsu108Processor::prepareToPlay (double sampleRate, int samplesPerBloc
     for (auto& u : switchFx) u.prepare (sampleRate, juce::jmax (32, samplesPerBlock));
     modelChorusL.prepare ((int) (sampleRate * 0.03)); modelChorusR.prepare ((int) (sampleRate * 0.03));
     dreamReverb.prepare (sampleRate);
+    space.prepare (sampleRate, samplesPerBlock);
     dreamL.assign ((size_t) juce::jmax (32, samplesPerBlock), 0.0f);
     dreamR.assign ((size_t) juce::jmax (32, samplesPerBlock), 0.0f);
     work.setSize (2, juce::jmax (32, samplesPerBlock));
@@ -820,7 +881,7 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
     {
         const int n = m.getNoteNumber();
         if (m.isNoteOn()) schedulePitch (samplePos, n, m.getFloatVelocity());
-        else if (const float rel = noteRelease(); numReleases < (int) releases.size())
+        else if (const float rel = noteRelease(); rel > 0.0f && numReleases < (int) releases.size())
             releases[(size_t) numReleases++] = { samplePos, n, rel };
         return;
     }
@@ -885,7 +946,7 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
         }
         else if (m.isNoteOff())
         {
-            if (const float rel = noteRelease(); numReleases < (int) releases.size())
+            if (const float rel = noteRelease(); rel > 0.0f && numReleases < (int) releases.size())
                 releases[(size_t) numReleases++] = { samplePos, n, rel };
         }
         return;
@@ -938,7 +999,7 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
     else if (m.isNoteOff())
     {
         const int n = m.getNoteNumber();
-        if (const float rel = noteRelease(); numReleases < (int) releases.size())
+        if (const float rel = noteRelease(); rel > 0.0f && numReleases < (int) releases.size())
         {
             const int kp = juce::roundToInt (param (apvts, "keysPlay"));
             // RELEASE: the sound ends when the key goes up (Notes: that note, Flourish: the whole run)
@@ -980,6 +1041,7 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
     else if (m.isController())
     {
         const int cc = m.getControllerNumber();
+        if (cc == 64) sustainPedal = m.getControllerValue() >= 64;
         if (cc == 1)
         {
             modWheel = m.getControllerValue() / 127.0f;
@@ -1112,9 +1174,18 @@ void Hamamatsu108Processor::scheduleNote (int delay, int toneIndex, float veloci
                      : tones.size() > 1 ? juce::roundToInt ((float) toneIndex * (numStrings - 1) / (float) (tones.size() - 1)) : numStrings / 2;
     // PLATE tuning: a string switched off stays silent; its own timing and level
     if ((plMute.load() >> (unsigned) visual) & 1u) return;
-    delay += (int) (plTime[(size_t) visual].load() * 0.12f * (float) getSampleRate());
+    delay += (int) (plTime[(size_t) visual].load() * 0.12f * (float) sr);
     velocity *= 1.0f - 0.85f * plLevel[(size_t) visual].load();
     events[(size_t) numEvents++] = { juce::jmax (0, delay), juce::jlimit (0, 127, tones[(size_t) toneIndex] + 12 * juce::roundToInt (param (apvts, "harpOctave"))), juce::jlimit (0.05f, 1.0f, velocity), visual, ! eventsFromHost };
+    // RATCHET: the string is struck again, fast, softer each time
+    if (const int reps = juce::roundToInt (param (apvts, "ratchet") * 3.0f); reps > 0)
+        for (int r = 1; r <= reps && numEvents < (int) events.size(); ++r)
+        {
+            auto e = events[(size_t) (numEvents - 1)];
+            e.delay = juce::jmax (0, delay) + (int) (0.055f * (float) r * (float) sr);
+            e.velocity = juce::jlimit (0.05f, 1.0f, velocity * std::pow (0.72f, (float) r));
+            events[(size_t) numEvents++] = e;
+        }
 }
 
 void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity, bool record)
@@ -1130,7 +1201,7 @@ void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity, 
     }
     else
         visual = juce::jlimit (0, numStrings - 1, (note - 48) * (numStrings - 1) / 48);
-    delay += (int) (plTime[(size_t) visual].load() * 0.12f * (float) getSampleRate());
+    delay += (int) (plTime[(size_t) visual].load() * 0.12f * (float) sr);
     velocity *= 1.0f - 0.85f * plLevel[(size_t) visual].load();
     // HUMAN: a little looseness in time and touch
     if (const float h = sw (swHuman); h > 0.0f)
@@ -1139,6 +1210,15 @@ void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity, 
         velocity *= 1.0f - h * 0.35f * humanRng.nextFloat();
     }
     events[(size_t) numEvents++] = { juce::jmax (0, delay), juce::jlimit (0, 127, note + 12 * juce::roundToInt (param (apvts, "harpOctave"))), juce::jlimit (0.05f, 1.0f, velocity), visual, record && ! eventsFromHost };
+    if (const int reps = juce::roundToInt (param (apvts, "ratchet") * 3.0f); reps > 0)   // RATCHET on single notes too
+        for (int r = 1; r <= reps && numEvents < (int) events.size(); ++r)
+        {
+            auto e = events[(size_t) (numEvents - 1)];
+            e.delay = juce::jmax (0, delay) + (int) (0.055f * (float) r * (float) sr);
+            e.velocity = juce::jlimit (0.05f, 1.0f, velocity * std::pow (0.72f, (float) r));
+            e.capture = false;
+            events[(size_t) numEvents++] = e;
+        }
 }
 
 // one hand gesture across the strings, with human variation driven by Feel
@@ -1369,13 +1449,26 @@ void Hamamatsu108Processor::patternStep (int offset, juce::int64 k)
 }
 
 // RELEASE when a key goes up: the knob, but "ring" lets go over 3 s, so a held key decides how long a note lasts
-float Hamamatsu108Processor::noteRelease() { return juce::jmin (param (apvts, "harpRelease"), 3.0f); }
+float Hamamatsu108Processor::noteRelease()
+{
+    // PEDAL (or the MIDI sustain pedal), or DAMPER off: the strings ring on after the key; -1 = no release
+    if (param (apvts, "strPedal") > 0.5f || sustainPedal || param (apvts, "strDamper") < 0.5f) return -1.0f;
+    return juce::jmin (param (apvts, "harpRelease"), 3.0f) * (0.2f + 1.6f * param (apvts, "strRelTime"));
+}
 
 void Hamamatsu108Processor::startVoice (int note, float velocity)
 {
     keyTime = 0.0;   // console LFOs: DELAY and FADE count from here
     for (int i = 0; i < 2; ++i)
         if (param (apvts, (juce::String ("lfo") + juce::String (i + 1) + "Trig").toRawUTF8()) > 0.5f) lfos[(size_t) i].phase = 0.0;
+    if (param (apvts, "mono") > 0.5f)   // MONO: one string at a time
+        for (auto& v : voices) if (v.isActive()) v.release (0.04f);
+    {
+        // VELO (amp): + = more touch sensitive, - = more even
+        const float vs = param (apvts, "ampVelo");
+        velocity = vs >= 0.0f ? std::pow (juce::jlimit (0.0f, 1.0f, velocity), 1.0f + 2.0f * vs) : velocity + (0.85f - velocity) * -vs;
+    }
+    lastNotePlayed = note;
     keyNow = note;   // every string this key starts (layers, SPARKLE, SUB...) belongs to it, so its release finds them all
     if (! dualOn) { startHarp (voiceSettings, note, velocity); startSwitchVoices (note, velocity); return; }
     // MORPH blends layer A and layer B (equal power)
@@ -1801,6 +1894,16 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     voiceSettings.bodyDamp = param (apvts, "bodyDamp");
     voiceSettings.bodyRing = param (apvts, "bodyRing");
     voiceSettings.bodyMix = param (apvts, "bodyMix");
+    {
+        const char* pe[] = { "pT1", "pL1", "pT2", "pL2", "pT3", "pL3", "pT4", "pTail" };
+        for (int i = 0; i < 8; ++i) voiceSettings.penv[(size_t) i] = param (apvts, pe[i]);
+        voiceSettings.penvVelo = param (apvts, "pVelo");
+        voiceSettings.hold = param (apvts, "ampHold") * 2.0f;
+        voiceSettings.buzz = param (apvts, "strBuzz");
+        voiceSettings.harmonic = param (apvts, "strHarmonic");
+        soloMask = (param (apvts, "soloA") > 0.5f ? 1 : 0) | (param (apvts, "soloB") > 0.5f ? 2 : 0) | (param (apvts, "soloBass") > 0.5f ? 4 : 0) | (param (apvts, "soloChord") > 0.5f ? 8 : 0);
+        voiceSettings.level = juce::Decibels::decibelsToGain (param (apvts, "ampLevel")) * ((soloMask == 0 || (soloMask & 1)) ? 1.0f : 0.0f);
+    }
     voiceSettings.stereo = juce::jmin (1.5f, 2.0f * param (apvts, "spread"));
     // long ringing strings pile up under dense strum patterns: trim the harp bus a little for long decays
     const float decayComp = 1.0f / (1.0f + 0.09f * juce::jmax (0.0f, voiceSettings.decay - 2.0f));
@@ -1833,7 +1936,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     voiceSettings2.decay = param (apvts, "bDecay") * model.decay * (1.0f + 1.2f * dream);
     voiceSettings2.attack = param (apvts, "bAttack");
     voiceSettings2.shape = mp ("bShape");
-    voiceSettings2.level = juce::Decibels::decibelsToGain (param (apvts, "bLevel"));
+    voiceSettings2.level = juce::Decibels::decibelsToGain (param (apvts, "bLevel")) * ((soloMask == 0 || (soloMask & 2)) ? 1.0f : 0.0f);
     voiceSettings2.pitchMul = std::exp2 ((float) juce::roundToInt (param (apvts, "bOctave")) + param (apvts, "bDetune") / 1200.0f);
 
     // GUI requests
@@ -2438,9 +2541,9 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     }
 
     const float chordTone = mp ("chordFilter") * (1.0f - 0.4f * age);
-    const float chordGain = 0.0f;   // chord layer retired
+    const float chordGain = (param (apvts, "chordType") > 0.5f && (soloMask == 0 || (soloMask & 8))) ? juce::Decibels::decibelsToGain (mp ("chordLevel")) : 0.0f;   // VOICE: Chord
     const float bassTone = mp ("bassTone");
-    const float bassGain = 0.0f;    // bass layer retired
+    const float bassGain = (param (apvts, "bassType") > 0.5f && (soloMask == 0 || (soloMask & 4))) ? juce::Decibels::decibelsToGain (mp ("bassLevel")) : 0.0f;    // VOICE: Bass
 
     // harp bus modulation: Harp Filter (Harp Tone also sweeps it, so it is heard on ringing notes), Volume, Pan
     const bool filterOn = modRouted[mod::tFilter] || modRouted[(size_t) targetIndex ("harpTone")];
@@ -2673,25 +2776,43 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         const float swF = sw (swFilter);
         const float cut = mp ("filterCutoff") * std::pow (0.04f, swF), reso = juce::jmin (1.0f, mp ("filterReso") + 0.35f * swF),
                     drv = juce::jmin (1.0f, mp ("drive") + 0.7f * sw (swDrive));
-        const bool filt = cut < 19500.0f;
+        const int fMode = juce::roundToInt (param (apvts, "filtMode"));
+        const bool f24 = param (apvts, "filt24") > 0.5f;
+        // KEY follow (with TRACK) and VELO move the cutoff with the last note played
+        const float keyOct = param (apvts, "filtTrack") > 0.5f ? (float) (lastNotePlayed - 60) / 12.0f * param (apvts, "filtKey") : 0.0f;
+        const float velOct = param (apvts, "filtVelo") * (lastVelocity - 0.6f) * 4.0f;
+        const float cutK = juce::jlimit (30.0f, 20000.0f, cut * std::exp2 (keyOct + velOct));
+        const bool filt = fMode != 2 || cutK < 19500.0f || f24;
         if (filt || drv > 0.001f)
         {
-            const float fsr = (float) getSampleRate();
+            const float fsr = (float) sr;
             const float q = 0.6f + reso * reso * 9.0f;
             const float dGain = 1.0f + drv * drv * 14.0f, makeup = 1.0f / (0.6f + 0.4f * std::sqrt (dGain));
-            float* L = buffer.getWritePointer (0);
-            float* R = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr;
+            float* L = left;    // the instrument is in the work buffer here (the host buffer is filled at the end)
+            float* R = right;
             for (int i = 0; i < numSamples; ++i)
             {
                 if ((i & 15) == 0)
                 {
-                    cutSmooth += (cut - cutSmooth) * 0.25f;
+                    cutSmooth += (cutK - cutSmooth) * 0.25f;
                     masterFiltL.set (juce::jmin (cutSmooth, fsr * 0.45f), q, fsr);
                     masterFiltR.set (juce::jmin (cutSmooth, fsr * 0.45f), q, fsr);
+                    masterFilt2L.set (juce::jmin (cutSmooth, fsr * 0.45f), 0.7f, fsr);
+                    masterFilt2R.set (juce::jmin (cutSmooth, fsr * 0.45f), 0.7f, fsr);
                 }
                 float bp;
                 float l = L[i], r = R != nullptr ? R[i] : l;
-                if (filt || cutSmooth < 19500.0f) { l = masterFiltL.process (l, bp); r = masterFiltR.process (r, bp); }
+                if (filt || cutSmooth < 19500.0f)
+                {
+                    // MODE: HPF / BPF / LPF from one state-variable filter; 24 dB = a second stage
+                    auto run = [fMode] (layers::Svf& f, float x)
+                    {
+                        float b; const float lp = f.process (x, b);
+                        return fMode == 2 ? lp : fMode == 1 ? b * f.k : x - f.k * b - lp;
+                    };
+                    l = run (masterFiltL, l); r = run (masterFiltR, r);
+                    if (f24) { l = run (masterFilt2L, l); r = run (masterFilt2R, r); }
+                }
                 if (drv > 0.001f)
                 {
                     // warm tape-like saturation: soft, slightly asymmetric
@@ -2762,6 +2883,19 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
         std::copy (right, right + numSamples, dreamR.begin());
         dreamReverb.process (dreamL.data(), dreamR.data(), numSamples, 0.92f, 0.35f);
         for (int i = 0; i < numSamples; ++i) { left[i] += dreamL[(size_t) i] * dream * 0.7f; right[i] += dreamR[(size_t) i] * dream * 0.7f; }
+    }
+
+    // CONSOLE: SYMPATHETIC strings, TILT and WOOD, then the SPACE room
+    {
+        if (tones != symTones) { symTones = tones; sympathetic.tune (tones, (float) sr); }
+        sympathetic.process (left, right, numSamples, param (apvts, "strSympath"));
+        colour.process (left, right, numSamples, param (apvts, "bodyTilt"), param (apvts, "morphWood"), (float) sr);
+        hama::consolefx::Space::Settings st;
+        st.room = juce::roundToInt (param (apvts, "spRoom"));
+        st.size = param (apvts, "spSize"); st.tone = param (apvts, "spTone"); st.pre = param (apvts, "spPre"); st.mix = param (apvts, "spMix");
+        st.width = param (apvts, "spWidth"); st.duck = param (apvts, "spDuck"); st.mod = param (apvts, "spMod"); st.lowCut = param (apvts, "spLowcut");
+        st.reverse = param (apvts, "spReverse") > 0.5f; st.tail = param (apvts, "spTail") > 0.5f;
+        space.process (left, right, numSamples, st);
     }
 
     PROBE (12, left);

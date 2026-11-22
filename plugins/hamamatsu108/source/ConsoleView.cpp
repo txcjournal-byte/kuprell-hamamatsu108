@@ -273,11 +273,57 @@ namespace hama
         par ("Filter", "Spread", "spread", "Stereo spread of the strings", "knob");
 
         // SPACE
-        par ("Space", "Size", "sw12Amt", "Reverb size");
-        par ("Space", "Mix", "sw11Amt", "Echo amount");
         toggle ("Space", "Freeze", "sw3On", "FREEZE: the sound hangs in the air");
         toggle ("Space", "Shimmer", "sw13On", "SHIMMER: an octave of light on the reverb");
-        toggle ("Space", "Tail", "sw12On", "Reverb on");
+
+        // everything else on the panel, now with its sound
+        par ("Morph", "Wood", "morphWood", "WOOD: a warm low body and soft saturation");
+        par ("Pluck env", "Velo", "pVelo", "How much the key velocity changes the pluck envelope");
+        {
+            const char* lab[] = { "T1", "L1", "T2", "L2", "T3", "L3", "T4", "Tail" };
+            const char* ids[] = { "pT1", "pL1", "pT2", "pL2", "pT3", "pL3", "pT4", "pTail" };
+            for (int i = 0; i < 8; ++i) par ("Pluck env", lab[i], ids[i], "Pluck envelope: a filter that opens and closes with each note (T = time, L = level)");
+        }
+        par ("Body", "Tilt", "bodyTilt", "TILT: darker <> brighter");
+        par ("Amp env", "Level", "ampLevel", "Level of layer A");
+        par ("Amp env", "Velo", "ampVelo", "Velocity: + more touch sensitive, - more even");
+        par ("Amp env", "Hold", "ampHold", "HOLD: full level for a moment before the decay");
+        par ("Filter", "Key", "filtKey", "Key follow of the filter (with TRACK on)");
+        choice ("Filter", "Mode", "filtMode", 0, "Filter mode: high-pass, band-pass, low-pass");
+        toggle ("Filter", "24 dB", "filt24", "24 dB: a steeper filter");
+        toggle ("Filter", "Track", "filtTrack", "TRACK: the filter follows the notes");
+        par ("Filter", "Velo", "filtVelo", "Velocity opens or closes the filter", "knob");
+        choice ("Space", "Room", "spRoom", 0, "The room: hall, plate, cave, void");
+        par ("Space", "Size", "spSize", "Size of the room");
+        par ("Space", "Tone", "spTone", "Tone of the room: dark .. bright");
+        par ("Space", "Pre", "spPre", "Pre-delay: the distance to the walls");
+        par ("Space", "Mix", "spMix", "How much room");
+        par ("Space", "Width", "spWidth", "Width of the room", "knob");
+        par ("Space", "Duck", "spDuck", "DUCK: the room steps back while you play", "knob");
+        par ("Space", "Mod", "spMod", "Movement in the room", "knob");
+        par ("Space", "Low cut", "spLowcut", "Low cut: a cleaner room", "knob");
+        toggle ("Space", "Reverse", "spReverse", "REVERSE: the room swells in backwards");
+        toggle ("Space", "Tail", "spTail", "TAIL: the room rings out after you stop (off = it stops soon)");
+        par ("Hand", "Ratchet", "ratchet", "RATCHET: every string is struck again, fast", "knob");
+        toggle ("Hand", "Latch", "hold", "LATCH: keeps playing after you let go");
+        toggle ("Hand", "Retrig", "strumRestart", "RETRIG: the pattern starts again with each chord");
+        par ("LFO 2", "Phase", "lfo2Phase", "Phase of LFO 2 against LFO 1", "knob");
+        par ("LFO 2", "Smooth", "lfo2Smooth", "Smooth the wave of LFO 2", "knob");
+        toggle ("LFO 2", "Tempo", "lfo2Bar", "TEMPO: LFO 2 starts again on every bar");
+        toggle ("LFO 2", "Invert", "lfo2Invert", "INVERT: LFO 2 upside down");
+        par ("String", "Fine", "strFine", "Fine tune in cents", "knob");
+        par ("String", "Sympath", "strSympath", "SYMPATHETIC: the other strings ring along", "knob");
+        par ("String", "Buzz", "strBuzz", "BUZZ: a buzzing bridge", "knob");
+        par ("String", "Harmonic", "strHarmonic", "HARMONIC: the octave flageolet", "knob");
+        par ("String", "Release", "strRelTime", "How fast the damper stops the string", "knob");
+        toggle ("String", "Damper", "strDamper", "DAMPER: the string stops when the key goes up (off = it rings out)");
+        toggle ("String", "Pedal", "strPedal", "PEDAL: like a sustain pedal held down");
+        toggle ("Voice", "Active Harp A", "soloA", "Solo layer A");
+        toggle ("Voice", "Active Harp B", "soloB", "Solo layer B");
+        toggle ("Voice", "Active Bass", "soloBass", "Solo the bass");
+        toggle ("Voice", "Active Chord", "soloChord", "Solo the chord");
+        toggle ("CONSOLE", "Freeze", "sw3On", "FREEZE");
+        toggle ("CONSOLE", "Mono", "mono", "MONO: one string at a time");
 
         // CONSOLE
         par ("CONSOLE", "Volume", "master", "Volume");

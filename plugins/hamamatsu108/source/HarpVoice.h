@@ -76,6 +76,12 @@ namespace harp
         float pos = 0.3f;        // 0 at the end (thin) .. 1 the middle (round)
         int bodyMat = 0;         // 0 wood, 1 glass, 2 steel, 3 stone
         float bodySize = 0.5f, bodyDamp = 0.3f, bodyRing = 0.4f, bodyMix = 0.35f;
+        // CONSOLE: the pluck envelope (a filter that opens and closes with the note), hold, buzz, harmonics
+        std::array<float, 8> penv { 0.0f, 1.0f, 0.3f, 1.0f, 0.5f, 1.0f, 0.5f, 1.0f };   // T1 L1 T2 L2 T3 L3 T4 Tail (0..1)
+        float penvVelo = 0.0f;   // -1..1
+        float hold = 0.0f;       // seconds at full level before the decay
+        float buzz = 0.0f;       // a buzzing bridge 0..1
+        float harmonic = 0.0f;   // 0..1: the octave flageolet rises over the fundamental
     };
 
     // 2-pole resonator: one mode of a vibrating body
@@ -225,8 +231,27 @@ namespace harp
                 const float drift = 1.0f + driftDepth * sine() (driftPhase);
                 float s = next (pitchMul[n] * drift * bendMul, rng);
                 if (bendMul != 1.0f) { bendMul = 1.0f + (bendMul - 1.0f) * bendCoef; if (std::abs (bendMul - 1.0f) < 1.0e-5f) bendMul = 1.0f; }
+                if (penvOn)   // the pluck envelope: a lowpass that follows T1..T4 / L1..L3 / Tail
+                {
+                    if (penvStage < 4)
+                    {
+                        const float u = (float) ++penvPos / (float) penvTimes[(size_t) penvStage];
+                        penvValue = penvFrom + (penvLevels[(size_t) penvStage] - penvFrom) * juce::jmin (1.0f, u);
+                        if (u >= 1.0f) { penvFrom = penvLevels[(size_t) penvStage]; ++penvStage; penvPos = 0; }
+                    }
+                    const float fc = 120.0f * std::exp2 (penvValue * 7.8f);
+                    const float k = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * juce::jmin (fc, 0.45f * sr) / sr);
+                    penvLp += (s - penvLp) * k;
+                    penvLpR += (side - penvLpR) * k;
+                    s = penvLp; side = penvLpR;
+                }
+                if (buzzAmt > 0.001f)   // the bridge buzzes: an uneven clip that grows with the level
+                {
+                    const float x = s * (2.0f + 10.0f * buzzAmt);
+                    s += buzzAmt * 0.25f * (std::tanh (x + 0.6f) - std::tanh (0.6f) - std::tanh (x) * 0.9f);
+                }
                 if (attack < 1.0f) attack = juce::jmin (1.0f, attack + attackInc);
-                env *= envMul;
+                if (holdLeft > 0) --holdLeft; else env *= envMul;
                 const float amp = attack * env * attackGain;
                 s *= amp;
                 float d = side * amp * stereo;
@@ -357,7 +382,8 @@ namespace harp
                     for (int st = 0; st < 2; ++st)
                     {
                         auto& str = strings[(size_t) st];
-                        str.tune (freq * (st == 0 ? 1.0f - spreadC : 1.0f + spreadC), t60 * (st == 0 ? 0.95f : 0.8f), brightS, sr);
+                        const float hmul = (st == 1 && a.s.harmonic > 0.01f) ? 2.0f : 1.0f;   // HARMONIC: the second string sounds the octave flageolet
+                        str.tune (freq * hmul * (st == 0 ? 1.0f - spreadC : 1.0f + spreadC), t60 * (st == 0 ? 0.95f : 0.8f), brightS, sr);
                         const int len = str.len;
                         const int pick = juce::jlimit (1, len - 1, (int) ((float) len * posF));
                         const int exLen = juce::jlimit (2, len, (int) (lenMs * 0.001f * sr));
@@ -397,6 +423,7 @@ namespace harp
                         modes[(size_t) k].set (f, ringT * std::pow (0.8f, (float) k), std::pow (matTilt[m], (float) k) * 0.06f, sr);
                     }
                     bodyMixV = juce::jlimit (0.0f, 1.0f, a.s.bodyMix);
+                    harmonicMix = juce::jlimit (0.0f, 1.0f, a.s.harmonic);
                     bowLeft = ex == 4 ? (int) ((0.35f + 2.5f * juce::jlimit (0.0f, 1.0f, a.s.sustain)) * sr) : 0;
                     bowAmp = 0.035f * (0.4f + 0.6f * vel);
                     bowLp = 0.0f;
@@ -519,6 +546,18 @@ namespace harp
                     break;
             }
             gain *= a.s.level;
+            // CONSOLE pluck envelope: levels to a cutoff, times to samples
+            {
+                const float va = juce::jlimit (0.0f, 2.0f, 1.0f + a.s.penvVelo * (vel * 2.0f - 1.0f));
+                auto lvl = [va] (float l) { return 1.0f - (1.0f - juce::jlimit (0.0f, 1.0f, l)) * va; };
+                auto smp = [this] (float t) { return juce::jmax (1, (int) ((0.002f + 2.5f * t * t) * sr)); };
+                penvLevels = { lvl (a.s.penv[1]), lvl (a.s.penv[3]), lvl (a.s.penv[5]), lvl (a.s.penv[7]) };
+                penvTimes = { smp (a.s.penv[0]), smp (a.s.penv[2]), smp (a.s.penv[4]), smp (a.s.penv[6]) };
+                penvOn = penvLevels[0] < 0.995f || penvLevels[1] < 0.995f || penvLevels[2] < 0.995f || penvLevels[3] < 0.995f;
+                penvStage = 0; penvPos = 0; penvFrom = penvLevels[0] * 0.3f + 0.7f; penvValue = penvFrom; penvLp = 0.0f; penvLpR = 0.0f;
+                holdLeft = (int) (juce::jmax (0.0f, a.s.hold) * sr);
+                buzzAmt = juce::jlimit (0.0f, 1.0f, a.s.buzz);
+            }
             driftPhase = rng.nextFloat();
             driftInc = (0.12f + 0.3f * rng.nextFloat()) / sr;
             // synths and the chime drift more, struck bars hardly (they are tuned metal)
@@ -596,7 +635,7 @@ namespace harp
                         --bowLeft;
                     }
                     const float s0 = strings[0].process(), s1 = strings[1].process();
-                    const float y = s0 + 0.8f * s1;
+                    const float y = harmonicMix > 0.01f ? s0 * (1.0f - 0.85f * harmonicMix) + s1 * (0.5f + 1.1f * harmonicMix) : s0 + 0.8f * s1;
                     float b = 0.0f;
                     for (int i = 0; i < numModes; ++i) b += modes[(size_t) i].process (y);
                     side = 0.35f * (s0 - s1);
@@ -761,7 +800,10 @@ namespace harp
         static constexpr int maxHarm = 24;
         std::array<float, maxHarm> wtAmp {}, wtOffset {};
         float bendMul = 1.0f, bendCoef = 0.0f;
-        float bodyMixV = 0.0f, bowAmp = 0.0f, bowLp = 0.0f;
+        float bodyMixV = 0.0f, bowAmp = 0.0f, bowLp = 0.0f, harmonicMix = 0.0f;
+        std::array<float, 4> penvLevels {}; std::array<int, 4> penvTimes {};
+        bool penvOn = false; int penvStage = 0, penvPos = 0, holdLeft = 0;
+        float penvFrom = 1.0f, penvValue = 1.0f, penvLp = 0.0f, penvLpR = 0.0f, buzzAmt = 0.0f;
         int bowLeft = 0;
         float side = 0.0f, sideLp = 0.0f, stereo = 1.0f, driftPhase = 0.0f, driftInc = 0.0f, driftDepth = 0.0f;
         int numHarm = 1;
