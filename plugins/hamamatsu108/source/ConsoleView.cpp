@@ -155,7 +155,14 @@ namespace hama
         par ("Amp env", "Sus", "harpSustain", "Sustain: how long it holds on");
         par ("Amp env", "Rel", "harpRelease", "Release: after you let go of the key");
 
-        // BODY
+        // BODY and the touch (HARP STRING engine)
+        choice ("Body", "Material", "bodyMat", 0, "Body material: wood, glass, steel, stone");
+        par ("Body", "Size", "bodySize", "Body size: small and high .. big and low");
+        par ("Body", "Damp", "bodyDamp", "Body damping");
+        par ("Body", "Ring", "bodyRing", "How long the body rings");
+        par ("Body", "Mix", "bodyMix", "How much of the body you hear");
+        par ("Pluck env", "Hard", "strHard", "Hardness of the touch");
+        par ("Pluck env", "Pos", "strPos", "Where the string is touched: the end (thin) .. the middle (round)");
 
         // HAND
         if (auto* c = find ("Hand", "Arp", "button"))
@@ -193,15 +200,31 @@ namespace hama
         par ("String", "Coarse", "harpOctave", "Octave", "knob");
         if (auto* c = find ("String", "Exciter", "screen"))
         {
-            c->text = [&pr] { auto* q = P (pr, "harpVoice"); return q != nullptr ? q->getCurrentValueAsText() : juce::String(); };
+            c->text = [&pr]
+            {
+                auto* q = P (pr, "harpVoice");
+                juce::String t = q != nullptr ? q->getCurrentValueAsText() : juce::String();
+                if (juce::roundToInt (plainOf (pr, "harpVoice")) == 14) if (auto* x = P (pr, "strExciter")) t = "Harp: " + x->getCurrentValueAsText();
+                return t;
+            };
             c->press = [this] {
                 auto* q = P (processor, "harpVoice");
                 if (q == nullptr) return;
                 juce::PopupMenu m;
                 const int cur = juce::roundToInt (plainOf (processor, "harpVoice"));
-                for (int i = 0; i < q->getNumSteps(); ++i) m.addItem (i + 1, q->getText (q->convertTo0to1 ((float) i), 40), true, i == cur);
+                const int touch = juce::roundToInt (plainOf (processor, "strExciter"));
+                static const char* touches[] = { "Finger", "Nail", "Pick", "Felt", "Bow" };
+                m.addSectionHeader ("HARP STRING: the touch");
+                for (int i = 0; i < 5; ++i) m.addItem (200 + i, touches[i], true, cur == 14 && touch == i);
+                m.addSectionHeader ("Other engines");
+                for (int i = 0; i < q->getNumSteps(); ++i) if (i != 14) m.addItem (i + 1, q->getText (q->convertTo0to1 ((float) i), 40), true, i == cur);
                 juce::Component::SafePointer<ConsoleView> safe (this);
-                m.showMenuAsync (juce::PopupMenu::Options(), [safe] (int r) { if (safe != nullptr && r > 0) setPlain (safe->processor, "harpVoice", (float) (r - 1)); });
+                m.showMenuAsync (juce::PopupMenu::Options(), [safe] (int r)
+                {
+                    if (safe == nullptr || r <= 0) return;
+                    if (r >= 200) { setPlain (safe->processor, "harpVoice", 14.0f); setPlain (safe->processor, "strExciter", (float) (r - 200)); }
+                    else setPlain (safe->processor, "harpVoice", (float) (r - 1));
+                });
             };
             c->tip = "The exciter: which engine plucks the string (click to choose)";
         }
@@ -469,7 +492,7 @@ namespace hama
                 const int chord = processor.activeChord.load() >= 0 ? processor.activeChord.load() : processor.detectedChord.load();
                 g.setColour (mint);
                 g.setFont (juce::Font (juce::FontOptions (30.0f)).withExtraKerningFactor (0.02f));
-                g.drawText (chords::isValid (chord) ? chords::shortName (chord) : juce::String ("--"), r.withTrimmedTop (14.0f).expanded (40.0f, 4.0f), juce::Justification::centredRight, false);
+                g.drawText (chords::isValid (chord) ? chords::shortName (chord) : juce::String ("--"), juce::Rectangle<float> (r.getRight() - 240.0f, r.getY() + 14.0f, 240.0f, 36.0f), juce::Justification::centredRight, false);
             }
         }
 

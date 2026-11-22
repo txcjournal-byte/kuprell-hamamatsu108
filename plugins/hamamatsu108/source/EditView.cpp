@@ -178,7 +178,8 @@ namespace hama
                 "Analog: three saws + sub, 24 dB low-pass with envelope. SHAPE: detune / width.",
                 "Wavetable: scans sine > warm > saw > hollow > vocal. SHAPE: table position.",
                 "Digital FM: 80s digital bell and keys. SHAPE: modulator ratio (0.5 .. 9).",
-                "Air: tuned noise resonators, breathy and glassy. SHAPE: clear tone > breath." };
+                "Air: tuned noise resonators, breathy and glassy. SHAPE: clear tone > breath.",
+                "Harp String: a touch (finger, nail, pick, felt, bow), two strings and a body of wood, glass, steel or stone." };
             return t[juce::jlimit (0, harp::numModels - 1, m)];
         }
 

@@ -510,6 +510,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     fl ("width", "Stereo Width", 0.0f, 2.0f, 1.0f, pct);
     fl ("spread", "Stereo Spread", 0.0f, 1.0f, 0.5f, pct);
     fl ("master", "Master Volume", -60.0f, 6.0f, 0.0f, [] (float v, int) { return String (v, 1) + " dB"; });
+    fl ("presetTrim", "Preset Level", -12.0f, 24.0f, 0.0f, [] (float v, int) { return String (v, 1) + " dB"; });   // evens out the loudness of the presets
 
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "harpVoice", 1 }, "Harp Voice", harp::voiceNames(), 0));
     fl ("harpTone", "Harp Tone", 0.0f, 1.0f, 0.62f, pct);
@@ -517,6 +518,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     fl ("harpAttack", "Harp Attack", 0.0015f, 3.0f, 0.0015f, [] (float v, int) { return v < 0.01f ? String ("pluck") : String (roundToInt (v * 1000.0f)) + " ms"; }, 0.3f);
     fl ("harpSustain", "Harp Sustain", 0.0f, 1.0f, 0.0f, pct);
     fl ("harpShape", "Layer A Shape", 0.0f, 1.0f, 0.4f, pct);
+    // HARP STRING engine: the touch and the body
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strExciter", 1 }, "Touch", StringArray { "Finger", "Nail", "Pick", "Felt", "Bow" }, 1));
+    fl ("strHard", "Hardness", 0.0f, 1.0f, 0.5f, pct);
+    fl ("strPos", "Pluck Position", 0.0f, 1.0f, 0.3f, pct);
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "bodyMat", 1 }, "Body Material", StringArray { "Wood", "Glass", "Steel", "Stone" }, 0));
+    fl ("bodySize", "Body Size", 0.0f, 1.0f, 0.5f, pct);
+    fl ("bodyDamp", "Body Damping", 0.0f, 1.0f, 0.3f, pct);
+    fl ("bodyRing", "Body Ring", 0.0f, 1.0f, 0.4f, pct);
+    fl ("bodyMix", "Body Mix", 0.0f, 1.0f, 0.35f, pct);
     // layer B: its own engine settings (DUAL)
     fl ("bTone", "Layer B Tone", 0.0f, 1.0f, 0.55f, pct);
     fl ("bShape", "Layer B Shape", 0.0f, 1.0f, 0.4f, pct);
@@ -694,7 +704,7 @@ void Hamamatsu108Processor::prepareToPlay (double sampleRate, int samplesPerBloc
     work.setSize (2, juce::jmax (32, samplesPerBlock));
     for (auto* s : { &masterGain })
         s->reset (sampleRate, 0.05);
-    masterGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (param (apvts, "master")));
+    masterGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (param (apvts, "master") + param (apvts, "presetTrim")));
 }
 
 bool Hamamatsu108Processor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -1367,7 +1377,8 @@ void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note,
         auto s = settings;
         const float t = plTone[(size_t) curString].load(), b = plBend[(size_t) curString].load();
         s.tone = juce::jlimit (0.02f, 1.0f, s.tone + (0.35f - t) * 0.9f);
-        s.pick = 0.03f + 0.33f * t;
+        const float basePick = s.model == harp::Model::harp ? 0.04f + 0.42f * s.pos : 1.0f / 7.0f;
+        s.pick = juce::jlimit (0.02f, 0.5f, basePick + (t - 0.35f) * 0.5f);
         if (b > 0.001f) { s.bend = -2.0f * b; s.bendTime = 0.06f + 0.3f * b; }
         target->start (note, velocity, pan, s, rng, noteHz (note));
     }
@@ -1722,6 +1733,14 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     }
     if (sw (swFreeze) > 0.0f) voiceSettings.decay *= 1.0f + 3.0f * sw (swFreeze);
     voiceSettings.shape = mp ("harpShape");
+    voiceSettings.exciter = juce::roundToInt (param (apvts, "strExciter"));
+    voiceSettings.hard = param (apvts, "strHard");
+    voiceSettings.pos = param (apvts, "strPos");
+    voiceSettings.bodyMat = juce::roundToInt (param (apvts, "bodyMat"));
+    voiceSettings.bodySize = param (apvts, "bodySize");
+    voiceSettings.bodyDamp = param (apvts, "bodyDamp");
+    voiceSettings.bodyRing = param (apvts, "bodyRing");
+    voiceSettings.bodyMix = param (apvts, "bodyMix");
     voiceSettings.stereo = juce::jmin (1.5f, 2.0f * param (apvts, "spread"));
     // long ringing strings pile up under dense strum patterns: trim the harp bus a little for long decays
     const float decayComp = 1.0f / (1.0f + 0.09f * juce::jmax (0.0f, voiceSettings.decay - 2.0f));
@@ -2687,7 +2706,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     PROBE (12, left);
     // master + soft limit + meters
-    masterGain.setTargetValue (juce::Decibels::decibelsToGain (mp ("master")));
+    masterGain.setTargetValue (juce::Decibels::decibelsToGain (mp ("master") + param (apvts, "presetTrim")));
     widthTarget = juce::jmin (2.0f, param (apvts, "width") + 0.9f * sw (swWide));
     polishNow = param (apvts, "polish");
     compAtt = 1.0f - std::exp (-1.0f / (0.012f * (float) sr));

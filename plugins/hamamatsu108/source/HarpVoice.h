@@ -15,15 +15,16 @@
 namespace harp
 {
     enum class Model { chime, celesta, vibes, glass, pluck, flute, marimba, steel, epiano, strings,
-                       analog, wavetable, fm, air };   // synthesis engines (layer B and modern presets)
-    constexpr int numModels = 14;
-    inline bool isSynthEngine (int m) { return m >= 10; }
+                       analog, wavetable, fm, air,   // synthesis engines (layer B and modern presets)
+                       harp };                       // the physical harp string: exciter, two strings, a resonating body
+    constexpr int numModels = 15;
+    inline bool isSynthEngine (int m) { return m >= 10 && m <= 13; }
 
     inline const juce::StringArray& voiceNames()
     {
         static const juce::StringArray names { "Classic Chime", "Celesta", "Vibes", "Glass", "Pluck",
                                                "Flute", "Marimba", "Steel", "E-Piano", "Strings",
-                                               "Analog", "Wavetable", "Digital FM", "Air" };
+                                               "Analog", "Wavetable", "Digital FM", "Air", "Harp String" };
         return names;
     }
 
@@ -69,6 +70,12 @@ namespace harp
         float bend = 0.0f;       // semitones the string starts away from its pitch (slides into tune)
         float bendTime = 0.1f;   // seconds of that slide
         float pick = -1.0f;      // pick position along the string (0..0.5), -1 = the engine's own
+        // HARP STRING: what touches the string, where, and the body it sits on
+        int exciter = 1;         // 0 finger, 1 nail, 2 pick, 3 felt, 4 bow
+        float hard = 0.5f;       // 0 soft .. 1 hard touch
+        float pos = 0.3f;        // 0 at the end (thin) .. 1 the middle (round)
+        int bodyMat = 0;         // 0 wood, 1 glass, 2 steel, 3 stone
+        float bodySize = 0.5f, bodyDamp = 0.3f, bodyRing = 0.4f, bodyMix = 0.35f;
     };
 
     // 2-pole resonator: one mode of a vibrating body
@@ -334,6 +341,69 @@ namespace harp
                     break;
                 }
 
+                case Model::harp:
+                {
+                    shape = juce::jlimit (0.0f, 1.0f, a.s.shape);
+                    // two strings a hair apart; STIFF (shape) pulls them further and makes the tone metallic
+                    const float spreadC = 0.0004f + 0.006f * shape * shape;
+                    const float brightS = juce::jlimit (0.0f, 1.0f, bright * (0.7f + 0.5f * a.s.hard) * (1.0f - 0.35f * a.s.bodyDamp));
+                    const int ex = juce::jlimit (0, 4, a.s.exciter);
+                    // the touch: length of the contact and how much grit is in it
+                    static const float exMs[] = { 3.2f, 0.9f, 0.28f, 7.0f, 1.0f };
+                    static const float exNoise[] = { 0.15f, 0.45f, 0.75f, 0.0f, 0.9f };
+                    const float lenMs = exMs[ex] * (1.4f - 0.8f * a.s.hard);
+                    const float noiseMix = juce::jlimit (0.0f, 1.0f, exNoise[ex] * (0.5f + 0.8f * a.s.hard));
+                    const float posF = a.s.pick >= 0.0f ? a.s.pick : 0.04f + 0.42f * a.s.pos;
+                    for (int st = 0; st < 2; ++st)
+                    {
+                        auto& str = strings[(size_t) st];
+                        str.tune (freq * (st == 0 ? 1.0f - spreadC : 1.0f + spreadC), t60 * (st == 0 ? 0.95f : 0.8f), brightS, sr);
+                        const int len = str.len;
+                        const int pick = juce::jlimit (1, len - 1, (int) ((float) len * posF));
+                        const int exLen = juce::jlimit (2, len, (int) (lenMs * 0.001f * sr));
+                        float lp = 0.0f;
+                        const float lpc = 0.05f + 0.6f * a.s.hard * brightS;
+                        for (int i = 0; i < len; ++i)
+                        {
+                            float v = 0.0f;
+                            if (i < exLen)
+                            {
+                                const float u = (float) i / (float) exLen;
+                                const float pulse = std::sin (u * juce::MathConstants<float>::pi);
+                                lp += ((rng.nextFloat() * 2.0f - 1.0f) - lp) * lpc;
+                                v = pulse * pulse * (1.0f - noiseMix) + lp * noiseMix * 1.6f;
+                            }
+                            burst[(size_t) i] = v;
+                        }
+                        const float amp = (ex == 4 ? 0.25f : 1.0f) * (st == 0 ? 0.8f : 0.6f) * (0.4f + 0.6f * vel);
+                        for (int i = 0; i < len; ++i)
+                            str.excite (i, amp * (burst[(size_t) i] - (i >= pick ? burst[(size_t) (i - pick)] : 0.0f)));
+                    }
+                    // the body: eight resonances of a material, fixed in pitch like a real instrument
+                    static const float ratios[4][8] = { { 1.0f, 1.9f, 2.7f, 3.9f, 5.6f, 8.1f, 11.5f, 16.0f },        // wood: warm, dense
+                                                        { 1.0f, 2.76f, 5.40f, 8.93f, 13.34f, 18.64f, 24.8f, 31.9f }, // glass: a free bar
+                                                        { 1.0f, 1.506f, 2.0f, 2.44f, 3.17f, 3.9f, 4.8f, 5.9f },      // steel: a plate
+                                                        { 1.0f, 1.6f, 2.3f, 3.1f, 4.4f, 5.2f, 6.9f, 8.8f } };        // stone: low, heavy
+                    static const float baseHz[4] = { 95.0f, 420.0f, 180.0f, 60.0f };
+                    static const float matT60[4] = { 0.09f, 1.6f, 1.1f, 0.05f };
+                    static const float matTilt[4] = { 0.75f, 0.9f, 0.85f, 0.6f };
+                    const int m = juce::jlimit (0, 3, a.s.bodyMat);
+                    const float base = baseHz[m] * std::pow (2.0f, (0.5f - a.s.bodySize) * 2.5f);
+                    const float ringT = matT60[m] * (0.25f + 2.2f * a.s.bodyRing) * (1.0f - 0.85f * a.s.bodyDamp);
+                    numModes = 8;
+                    for (int k = 0; k < 8; ++k)
+                    {
+                        const float f = juce::jmin (0.45f * sr, base * ratios[m][k]);
+                        modes[(size_t) k].set (f, ringT * std::pow (0.8f, (float) k), std::pow (matTilt[m], (float) k) * 0.06f, sr);
+                    }
+                    bodyMixV = juce::jlimit (0.0f, 1.0f, a.s.bodyMix);
+                    bowLeft = ex == 4 ? (int) ((0.35f + 2.5f * juce::jlimit (0.0f, 1.0f, a.s.sustain)) * sr) : 0;
+                    bowAmp = 0.035f * (0.4f + 0.6f * vel);
+                    bowLp = 0.0f;
+                    envMul = 1.0f;
+                    gain = 0.55f * velGain;
+                    break;
+                }
                 case Model::pluck:
                     for (int st = 0; st < 2; ++st)
                     {
@@ -515,6 +585,23 @@ namespace harp
                     }
                     return y;
                 }
+                case Model::harp:
+                {
+                    if (bowLeft > 0)   // BOW: the hair keeps feeding the strings while the note lasts
+                    {
+                        bowLp += ((rng.nextFloat() * 2.0f - 1.0f) - bowLp) * 0.25f;
+                        const float fade = juce::jmin (1.0f, (float) bowLeft / (0.2f * sr));
+                        strings[0].excite (0, bowLp * bowAmp * fade);
+                        strings[1].excite (0, bowLp * bowAmp * 0.7f * fade);
+                        --bowLeft;
+                    }
+                    const float s0 = strings[0].process(), s1 = strings[1].process();
+                    const float y = s0 + 0.8f * s1;
+                    float b = 0.0f;
+                    for (int i = 0; i < numModes; ++i) b += modes[(size_t) i].process (y);
+                    side = 0.35f * (s0 - s1);
+                    return y * (1.0f - 0.55f * bodyMixV) + b * bodyMixV * 2.2f;
+                }
                 case Model::pluck:
                 {
                     const float s0 = strings[0].process(), s1 = strings[1].process();
@@ -674,6 +761,8 @@ namespace harp
         static constexpr int maxHarm = 24;
         std::array<float, maxHarm> wtAmp {}, wtOffset {};
         float bendMul = 1.0f, bendCoef = 0.0f;
+        float bodyMixV = 0.0f, bowAmp = 0.0f, bowLp = 0.0f;
+        int bowLeft = 0;
         float side = 0.0f, sideLp = 0.0f, stereo = 1.0f, driftPhase = 0.0f, driftInc = 0.0f, driftDepth = 0.0f;
         int numHarm = 1;
         float shape = 0.4f, wtSweep = 0.0f, bright_ = 0.5f, fmRatio = 1.0f, fmFloor = 0.0f, airQ = 20.0f, airLp = 0.0f;

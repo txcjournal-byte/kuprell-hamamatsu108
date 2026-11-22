@@ -77,17 +77,96 @@ namespace presets
 
                 switch (c)
                 {
-                    case 0: // Harp: the classic strummed chime, played by a relaxed hand
-                        b.set ("harpVoice", (float) b.pick ({ 0, 0, 0, 0, 1, 7 }));
-                        b.set ("harpTone", b.range (0.55f, 0.75f));
-                        b.set ("harpDecay", b.range (1.8f, 3.0f));
+                    case 0: // Harp: the HARP STRING engine, eight characters, each one far from the others
+                    {
+                        static const char* const harpNames[8][5] = {
+                            { "Concert Steel", "Titan Harp", "Chrome Lyre", "Silver Citadel", "Iron Choir" },
+                            { "Glass Cathedral", "Crystal Throne", "Prism Rain", "Frozen Orbit", "Halo Strings" },
+                            { "Razor Wire", "Edge of Steel", "Cutting Light", "Steel Fang", "Chrome Teeth" },
+                            { "Obsidian", "Deep Core", "Basalt Hymn", "Tectonic", "Grave Orbit" },
+                            { "Bowed Void", "Event Horizon", "Dark Matter Bow", "Ghost Signal", "Infinite Night" },
+                            { "Neon Rain", "Night City Harp", "Hologram Rain", "Synthwave Lyre", "Electric Dusk" },
+                            { "Monolith", "Ancient Machine", "Stone Engine", "Colossus", "Temple of Rust" },
+                            { "Ion Storm", "Plasma Harp", "Circuit Storm", "Fractured Signal", "Static Storm" } };
+                        const int arch = i / 5, var = i % 5;
+                        p.name = harpNames[arch][var];
+                        b.set ("harpVoice", 14.0f);
                         b.set ("harpRange", 3.0f);
-                        b.set ("strumRate", (float) b.pick ({ 2, 2, 1 }));
-                        b.set ("strumFeel", b.range (0.45f, 0.65f));
-                        b.set ("strumSpeed", b.range (16.0f, 26.0f));
-                        if (b.chance (0.3f)) { b.set ("dual", 1.0f); b.set ("harpVoice2", (float) b.pick ({ 9, 5, 1 })); b.set ("morph", b.range (0.2f, 0.35f)); }
-                        if (b.chance (0.3f)) { b.set ("chordType", 2.0f); b.set ("chordLevel", b.range (-24.0f, -18.0f)); b.set ("chordFilter", 0.45f); }
+                        b.set ("strumRate", (float) b.pick ({ 2, 2, 1, 3 }));
+                        b.set ("strumFeel", b.range (0.4f, 0.7f));
+                        b.set ("strumSpeed", b.range (14.0f, 30.0f));
+                        auto fx = [&b] (int slot, int type, float mix, float a, float bb)
+                        {
+                            const juce::String n ("fx" + juce::String (slot));
+                            b.set (n + "Type", (float) type); b.set (n + "On", 1.0f); b.set (n + "Mix", mix); b.set (n + "A", a); b.set (n + "B", bb);
+                        };
+                        switch (arch)
+                        {
+                            case 0: // concert steel: nail on wood, crisp and proud
+                                b.set ("strExciter", 1.0f); b.set ("strHard", b.range (0.45f, 0.7f)); b.set ("strPos", b.range (0.15f, 0.35f));
+                                b.set ("bodyMat", 0.0f); b.set ("bodySize", b.range (0.4f, 0.7f)); b.set ("bodyRing", b.range (0.3f, 0.5f)); b.set ("bodyMix", b.range (0.3f, 0.45f)); b.set ("bodyDamp", 0.25f);
+                                b.set ("harpTone", b.range (0.6f, 0.8f)); b.set ("harpDecay", b.range (2.5f, 4.0f)); b.set ("harpShape", b.range (0.1f, 0.3f));
+                                fx (4, 2, 0.6f, 0.4f, 0.4f);
+                                break;
+                            case 1: // glass cathedral: felt on a glass bar that rings forever
+                                b.set ("strExciter", 3.0f); b.set ("strHard", b.range (0.2f, 0.5f)); b.set ("strPos", b.range (0.3f, 0.6f));
+                                b.set ("bodyMat", 1.0f); b.set ("bodySize", b.range (0.2f, 0.6f)); b.set ("bodyRing", b.range (0.6f, 0.95f)); b.set ("bodyMix", b.range (0.5f, 0.75f)); b.set ("bodyDamp", 0.1f);
+                                b.set ("harpTone", b.range (0.65f, 0.9f)); b.set ("harpDecay", b.range (4.0f, 6.0f)); b.set ("harpShape", b.range (0.2f, 0.5f));
+                                fx (4, 15, b.range (0.3f, 0.45f), 0.8f, 0.6f);
+                                b.set ("fx3Mix", b.range (0.45f, 0.6f)); b.set ("fx3A", 0.85f);
+                                break;
+                            case 2: // razor wire: a pick on a steel plate, stiff strings, driven
+                                b.set ("strExciter", 2.0f); b.set ("strHard", b.range (0.8f, 1.0f)); b.set ("strPos", b.range (0.02f, 0.15f));
+                                b.set ("bodyMat", 2.0f); b.set ("bodySize", b.range (0.3f, 0.7f)); b.set ("bodyRing", b.range (0.3f, 0.6f)); b.set ("bodyMix", b.range (0.35f, 0.55f)); b.set ("bodyDamp", 0.3f);
+                                b.set ("harpTone", b.range (0.75f, 0.95f)); b.set ("harpDecay", b.range (1.4f, 2.6f)); b.set ("harpShape", b.range (0.6f, 0.95f));
+                                fx (4, 3, b.range (0.35f, 0.6f), b.range (0.4f, 0.7f), 0.6f);
+                                fx (5, 13, 0.25f, 0.35f, 0.45f);
+                                break;
+                            case 3: // obsidian: fingers on stone, low and heavy, close to the ear
+                                b.set ("strExciter", 0.0f); b.set ("strHard", b.range (0.1f, 0.35f)); b.set ("strPos", b.range (0.45f, 0.8f));
+                                b.set ("bodyMat", 3.0f); b.set ("bodySize", b.range (0.6f, 1.0f)); b.set ("bodyRing", b.range (0.4f, 0.8f)); b.set ("bodyMix", b.range (0.45f, 0.7f)); b.set ("bodyDamp", 0.4f);
+                                b.set ("harpTone", b.range (0.3f, 0.5f)); b.set ("harpDecay", b.range (2.0f, 3.5f)); b.set ("harpShape", b.range (0.0f, 0.2f));
+                                b.set ("harpOctave", -1.0f);
+                                fx (4, 11, 0.5f, 0.5f, 0.2f);
+                                break;
+                            case 4: // bowed void: the bow keeps the strings singing in an endless space
+                                b.set ("strExciter", 4.0f); b.set ("strHard", b.range (0.3f, 0.6f)); b.set ("strPos", b.range (0.2f, 0.5f));
+                                b.set ("bodyMat", (float) b.pick ({ 1, 2 })); b.set ("bodySize", b.range (0.3f, 0.8f)); b.set ("bodyRing", b.range (0.5f, 0.9f)); b.set ("bodyMix", b.range (0.3f, 0.5f)); b.set ("bodyDamp", 0.2f);
+                                b.set ("harpTone", b.range (0.45f, 0.7f)); b.set ("harpDecay", b.range (5.0f, 7.0f)); b.set ("harpSustain", b.range (0.5f, 0.9f)); b.set ("harpAttack", b.range (0.08f, 0.3f));
+                                b.set ("harpShape", b.range (0.2f, 0.5f));
+                                fx (4, 15, b.range (0.35f, 0.5f), 0.9f, 0.7f);
+                                b.set ("fx3Mix", b.range (0.5f, 0.65f)); b.set ("fx3A", 0.92f);
+                                break;
+                            case 5: // neon rain: nails on steel through wide chorus and ping-pong echoes
+                                b.set ("strExciter", 1.0f); b.set ("strHard", b.range (0.55f, 0.85f)); b.set ("strPos", b.range (0.1f, 0.3f));
+                                b.set ("bodyMat", 2.0f); b.set ("bodySize", b.range (0.1f, 0.4f)); b.set ("bodyRing", b.range (0.4f, 0.7f)); b.set ("bodyMix", b.range (0.3f, 0.5f)); b.set ("bodyDamp", 0.2f);
+                                b.set ("harpTone", b.range (0.7f, 0.9f)); b.set ("harpDecay", b.range (2.0f, 3.5f)); b.set ("harpShape", b.range (0.3f, 0.6f));
+                                fx (4, 13, b.range (0.3f, 0.45f), (float) b.pick ({ 2, 3 }) / 6.0f + 0.01f, 0.5f);
+                                fx (5, 20, 0.7f, 0.8f, 0.6f);
+                                b.set ("fx1Mix", b.range (0.35f, 0.5f));
+                                break;
+                            case 6: // monolith: felt on stone and a slow tape, an old machine in a cave
+                                b.set ("strExciter", 3.0f); b.set ("strHard", b.range (0.2f, 0.45f)); b.set ("strPos", b.range (0.35f, 0.7f));
+                                b.set ("bodyMat", 3.0f); b.set ("bodySize", b.range (0.7f, 1.0f)); b.set ("bodyRing", b.range (0.6f, 1.0f)); b.set ("bodyMix", b.range (0.55f, 0.8f)); b.set ("bodyDamp", 0.15f);
+                                b.set ("harpTone", b.range (0.35f, 0.55f)); b.set ("harpDecay", b.range (3.0f, 5.0f)); b.set ("harpShape", b.range (0.4f, 0.7f));
+                                fx (4, 11, 0.7f, 0.7f, 0.6f);
+                                fx (5, 14, 0.5f, 0.9f, 0.3f);
+                                break;
+                            default: // ion storm: picks on glass through crushed and torn space
+                                b.set ("strExciter", 2.0f); b.set ("strHard", b.range (0.7f, 1.0f)); b.set ("strPos", b.range (0.05f, 0.25f));
+                                b.set ("bodyMat", 1.0f); b.set ("bodySize", b.range (0.0f, 0.4f)); b.set ("bodyRing", b.range (0.5f, 0.8f)); b.set ("bodyMix", b.range (0.4f, 0.6f)); b.set ("bodyDamp", 0.2f);
+                                b.set ("harpTone", b.range (0.7f, 0.95f)); b.set ("harpDecay", b.range (1.5f, 3.0f)); b.set ("harpShape", b.range (0.5f, 0.9f));
+                                fx (4, 4, b.range (0.3f, 0.5f), b.range (0.4f, 0.6f), 0.5f);
+                                fx (5, 9, 0.5f, 0.4f, 0.6f);
+                                fx (6, 18, 0.4f, 0.5f, 0.5f);
+                                break;
+                        }
+                        static const float trims[40] = { 2.8f, 1.0f, 3.9f, 13.4f, 1.9f, -1.7f, 0.3f, -1.5f, 0.8f, -2.0f, 1.6f, 14.0f, 2.2f, 10.0f, 2.6f, -3.9f, -5.1f, -5.8f, -5.1f, -4.2f, 14.0f, -1.1f, 9.6f, 5.6f, 0.1f, 1.6f, 5.2f, -1.3f, -2.7f, -5.7f, 8.6f, 14.0f, 14.0f, 6.4f, 14.0f, 14.0f, 14.0f, 14.0f, 14.0f, -2.7f };   // measured: every harp preset as loud as the others
+                        b.set ("presetTrim", trims[i]);
+                        if (var == 4) { b.set ("dual", 1.0f); b.set ("harpVoice2", (float) b.pick ({ 9, 13, 11 })); b.set ("morph", b.range (0.2f, 0.35f)); }
+                        if (var == 3 && arch % 2 == 0) { b.set ("strumMode", 1.0f); b.set ("arpPattern", (float) b.pick ({ 0, 2, 3, 4 })); }
                         break;
+                    }
                     case 1: // Pluck: short, rhythmic, dry
                         b.set ("harpVoice", (float) b.pick ({ 4, 4, 4, 6, 7, 2 }));
                         b.set ("harpTone", b.range (0.5f, 0.75f));
