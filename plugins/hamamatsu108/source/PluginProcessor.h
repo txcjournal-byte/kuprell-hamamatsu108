@@ -104,11 +104,13 @@ public:
     // PLATE tuning: every string has its own pluck point, bend, level and timing (0..1), and can be switched off
     std::array<std::atomic<float>, numStrings> plTone, plBend, plLevel, plTime;
     std::atomic<std::uint32_t> plMute { 0 };
+    std::array<std::atomic<int>, numStrings> plFx {};   // STRING FX: one effect per string (0 off .. 9 dead)
     void resetPlate (int s = -1)
     {
         for (int i = 0; i < numStrings; ++i)
             if (s < 0 || s == i) { plTone[(size_t) i].store (0.35f); plBend[(size_t) i].store (0.0f); plLevel[(size_t) i].store (0.0f); plTime[(size_t) i].store (0.0f); }
         if (s < 0) plMute.store (0);
+        if (s < 0) for (auto& f : plFx) f.store (0);
     }
     // KEYS: the on-screen keyboard in the strum window
     juce::MidiKeyboardState keyboardState;
@@ -240,7 +242,7 @@ private:
     juce::int64 patOrigin = 0;
     void patternStep (int offset, juce::int64 k);
     void scheduleNote (int delay, int toneIndex, float velocity, int visualOverride = -1);
-    void schedulePitch (int delay, int note, float velocity, bool record = false);
+    void schedulePitch (int delay, int note, float velocity, bool record = false, int forceVisual = -1);
     std::array<int, 32> pressOrder {};   // held notes in the order they were pressed (ARP "As Played")
     int pressCount = 0;
     float bendPos = -1.0f;              // pitch wheel strum: last position on the strings (0..1, -1 = not moved yet)

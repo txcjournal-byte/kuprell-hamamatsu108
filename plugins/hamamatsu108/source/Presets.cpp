@@ -47,6 +47,167 @@ namespace presets
         };
     }
 
+
+    // ---- DESIGNED SOUNDS: every category has 8 characters far apart, each in 5 variations ----
+    namespace design
+    {
+        enum Flag : int { arp = 1, gate = 2, ratchet = 4, buzz = 8, harmonic = 16, bow = 32, sweep = 64, vibrato = 128, filterLfo = 256,
+                          synthB = 512, bass = 1024, chord = 2048, octDown = 4096, reverse = 8192, hpf = 16384, wood = 32768,
+                          bright = 65536, sympath = 131072, mono = 262144, tape = 524288, crush = 1048576, shimmer = 2097152, octUp = 4194304 };
+        struct Arch
+        {
+            const char* names[5];
+            int engine, touch, mat;              // engine (14 = HARP STRING), touch, body material
+            float tone, decay, shape;            // centre values, varied per preset
+            int room; float space;               // SPACE room and mix
+            int flags;
+            int synth;                           // layer B engine when synthB
+        };
+        // 7 categories x 8 characters
+        static const Arch arches[7][8] = {
+            { // PLUCK: short, rhythmic, every one a different object being struck
+                { { "Carbon Fiber", "Kevlar Snap", "Graphite Tick", "Composite Pop", "Fiber Burst" }, 14, 2, 2, 0.85f, 0.7f, 0.8f, 1, 0.12f, bright | ratchet, 0 },
+                { { "Wet Concrete", "Gravel Drop", "Cement Knock", "Brutal Slab", "Rebar" }, 14, 0, 3, 0.35f, 0.5f, 0.1f, 2, 0.15f, wood | octDown, 0 },
+                { { "Kalimba 2099", "Tine Matrix", "Thumb Circuit", "Iron Thumb", "Lamella Code" }, 14, 1, 1, 0.7f, 1.2f, 0.5f, 1, 0.2f, harmonic, 0 },
+                { { "Sitar Wire", "Bridge Buzz", "Desert Signal", "Raga Machine", "Copper Drone" }, 14, 2, 0, 0.75f, 1.6f, 0.6f, 0, 0.2f, buzz | sympath, 0 },
+                { { "Laser Pluck", "Photon Snap", "Beam Cutter", "Pulse Gun", "Tracer" }, 4, 1, 0, 0.9f, 0.6f, 0.4f, 1, 0.18f, sweep | synthB, 12 },
+                { { "Marimba Riot", "Wooden Army", "Log Drum Unit", "Rosewood Fire", "Mallet Squad" }, 6, 0, 0, 0.55f, 0.9f, 0.3f, 2, 0.15f, arp, 0 },
+                { { "Glitch Picker", "Error String", "Bit Plucker", "Packet Loss", "Corrupt Pick" }, 14, 2, 1, 0.85f, 0.8f, 0.7f, 3, 0.2f, crush | gate, 0 },
+                { { "Muted Nylon", "Palm Mute", "Dead String", "Damped Gut", "Soft Thud" }, 14, 0, 0, 0.3f, 0.35f, 0.0f, 0, 0.12f, mono | wood, 0 } },
+            { // BELL: struck metal and glass in different worlds
+                { { "Orbital Bell", "Satellite Chime", "Low Orbit", "Station Ring", "Docking Bell" }, 1, 1, 1, 0.8f, 4.5f, 0.4f, 3, 0.35f, shimmer, 0 },
+                { { "Temple Steel", "Iron Gong", "Bronze Oath", "Monastery Engine", "Ritual Plate" }, 14, 3, 2, 0.55f, 5.5f, 0.8f, 2, 0.4f, octDown | sympath, 0 },
+                { { "Ice Spire", "Frozen Lattice", "Cryo Chime", "Glacier Code", "Polar Glass" }, 3, 1, 1, 0.9f, 4.0f, 0.5f, 1, 0.35f, bright | harmonic, 0 },
+                { { "Reverse Bell", "Backwards Hour", "Time Inversion", "Rewind Chime", "Anti Bell" }, 1, 1, 1, 0.7f, 3.5f, 0.3f, 0, 0.55f, reverse, 0 },
+                { { "FM Cathedral", "Digital Steeple", "Algorithm Bell", "Carrier Ring", "Sideband Choir" }, 12, 1, 0, 0.7f, 4.0f, 0.6f, 0, 0.35f, synthB | vibrato, 11 },
+                { { "Tubular Storm", "Pipe Thunder", "Steel Column", "Chrome Tubes", "Foundry Bell" }, 7, 2, 2, 0.75f, 4.5f, 0.7f, 2, 0.3f, ratchet, 0 },
+                { { "Music Box Zero", "Clockwork Ghost", "Tin Lullaby", "Broken Carousel", "Wind-up Star" }, 1, 2, 1, 0.85f, 2.0f, 0.2f, 1, 0.25f, tape | arp, 0 },
+                { { "Cosmic Gamelan", "Bronze Nebula", "Gamelan Drift", "Kettle Galaxy", "Gong Signal" }, 6, 1, 2, 0.6f, 3.5f, 0.6f, 3, 0.45f, filterLfo | octUp, 0 } },
+            { // KEYS: played instruments with hands and pedals
+                { { "Velvet Rhodes", "Night Tines", "Satin Electric", "Lounge Reactor", "Smoke Keys" }, 8, 0, 0, 0.5f, 2.2f, 0.4f, 1, 0.2f, vibrato | bass, 0 },
+                { { "Clav Funk", "Rubber Clav", "Snap Board", "Wah Machine", "Pickup Clav" }, 14, 2, 0, 0.85f, 0.6f, 0.9f, 0, 0.1f, buzz | sweep, 0 },
+                { { "Harpsichord X", "Baroque Engine", "Quill Matrix", "Gilded Wire", "Court Machine" }, 14, 2, 0, 0.8f, 1.4f, 0.6f, 0, 0.25f, harmonic | bright, 0 },
+                { { "Vibes Noir", "Motor Vibes", "Jazz Reactor", "Blue Bars", "Late Show" }, 2, 1, 2, 0.6f, 3.0f, 0.4f, 1, 0.25f, filterLfo, 0 },
+                { { "Toy Piano Punk", "Plastic Keys", "Broken Toy", "Mini Grand", "Nursery Rave" }, 1, 2, 1, 0.9f, 1.2f, 0.7f, 0, 0.15f, crush | ratchet, 0 },
+                { { "Organ Strum", "Chapel Hands", "Drawbar Harp", "Church Machine", "Pipe Hands" }, 14, 0, 0, 0.55f, 2.0f, 0.2f, 2, 0.3f, chord | bass, 0 },
+                { { "FM Keys 84", "Digital Grand", "Algorithm Keys", "Sine Piano", "DX Ghost" }, 12, 1, 0, 0.65f, 2.0f, 0.5f, 1, 0.2f, synthB, 10 },
+                { { "Pedal Steel Keys", "Slide Board", "Western Glide", "Lap Steel Unit", "Bend Keys" }, 14, 1, 2, 0.6f, 2.5f, 0.4f, 0, 0.2f, vibrato | sympath, 0 } },
+            { // PAD: slow, bowed, breathing
+                { { "Bowed Glass Pad", "Crystal Bow", "Frozen Strings", "Glass Choir", "Shard Bow" }, 14, 4, 1, 0.6f, 6.0f, 0.4f, 3, 0.45f, bow | shimmer, 0 },
+                { { "Analog Dawn", "Warm Horizon", "Tube Sunrise", "Velvet Ocean", "Amber Field" }, 10, 0, 0, 0.45f, 6.0f, 0.5f, 0, 0.4f, synthB | chord | filterLfo, 11 },
+                { { "Choir of Strings", "Silent Mass", "Voices Below", "Cathedral Air", "Requiem Strum" }, 9, 0, 0, 0.5f, 6.0f, 0.3f, 2, 0.45f, chord | vibrato, 0 },
+                { { "Wavetable Storm", "Morphing Sky", "Data Cloud", "Spectral Tide", "Table Rider" }, 11, 0, 0, 0.6f, 5.0f, 0.7f, 3, 0.4f, synthB | filterLfo, 13 },
+                { { "Breath Machine", "Air Organ", "Lung Pad", "Wind Engine", "Exhale" }, 13, 0, 0, 0.5f, 5.0f, 0.5f, 3, 0.45f, vibrato, 0 },
+                { { "Bowed Stone", "Granite Drone", "Earth Bow", "Bedrock", "Deep Bow" }, 14, 4, 3, 0.35f, 6.5f, 0.3f, 2, 0.4f, bow | octDown | bass, 0 },
+                { { "Reverse Pad", "Inhale Pad", "Backward Sky", "Tide Reversed", "Return Signal" }, 9, 0, 0, 0.55f, 5.0f, 0.4f, 0, 0.6f, reverse | filterLfo, 0 },
+                { { "Steel Aurora", "Northern Bow", "Magnetic Field", "Solar Wind", "Ion Veil" }, 14, 4, 2, 0.65f, 6.0f, 0.6f, 3, 0.45f, bow | shimmer | octUp, 0 } },
+            { // TEXTURE: broken, worn, moving
+                { { "Dusty Archive", "VHS Memory", "Old Signal", "Found Tape", "Lost Broadcast" }, 0, 0, 0, 0.5f, 2.5f, 0.4f, 1, 0.3f, tape | arp, 0 },
+                { { "Rust Belt", "Corroded Wire", "Oxide Field", "Scrap Harp", "Junkyard Strum" }, 14, 2, 2, 0.6f, 2.0f, 0.9f, 2, 0.3f, buzz | crush, 0 },
+                { { "Radio Ghosts", "Shortwave Harp", "Number Station", "Static Prayer", "AM Dreams" }, 4, 1, 0, 0.6f, 1.6f, 0.5f, 1, 0.25f, gate | tape, 0 },
+                { { "Granular Rain", "Particle Storm", "Grain Cloud", "Dust Engine", "Pollen Code" }, 14, 1, 1, 0.75f, 1.2f, 0.6f, 3, 0.4f, ratchet | arp | filterLfo, 0 },
+                { { "Underwater City", "Sunken Strings", "Pressure Zone", "Abyss Signal", "Deep Current" }, 14, 0, 3, 0.3f, 3.0f, 0.3f, 2, 0.5f, filterLfo | octDown, 0 },
+                { { "Wire Fence", "Barbed Song", "Wind on Wire", "Border Harp", "Cold Fence" }, 14, 4, 2, 0.7f, 4.0f, 0.8f, 3, 0.35f, bow | buzz, 0 },
+                { { "Clock Factory", "Gear Harp", "Mechanism", "Escapement", "Watchmaker" }, 6, 2, 2, 0.7f, 0.8f, 0.5f, 0, 0.2f, ratchet | gate | arp, 0 },
+                { { "Haunted Nursery", "Doll Song", "Attic Box", "Faded Lullaby", "Ghost Toy" }, 1, 1, 1, 0.7f, 2.5f, 0.3f, 0, 0.45f, tape | reverse | vibrato, 0 } },
+            { // HYBRID: a string engine and a synth fighting it out
+                { { "Cyber Harp", "Neural Lyre", "Chrome Synapse", "Android Hymn", "Wired Angel" }, 14, 1, 2, 0.75f, 2.5f, 0.5f, 3, 0.35f, synthB | vibrato, 11 },
+                { { "Acid String", "Squelch Harp", "303 Lyre", "Resonant Wire", "Rubber Acid" }, 14, 2, 0, 0.8f, 1.2f, 0.7f, 0, 0.15f, synthB | sweep | arp, 10 },
+                { { "FM Harp Wars", "Algorithm Strum", "Operator Six", "Carrier Wave", "Modulator Zero" }, 14, 1, 1, 0.7f, 2.0f, 0.6f, 1, 0.3f, synthB | ratchet, 12 },
+                { { "Air Harp", "Breathing Wire", "Ghost Lung", "Whisper Engine", "Vapor Strum" }, 14, 3, 1, 0.6f, 3.5f, 0.4f, 3, 0.45f, synthB | shimmer, 13 },
+                { { "Bass Harp Hybrid", "Sub Wire", "Low End Harp", "Floor Shaker", "808 Lyre" }, 14, 0, 3, 0.45f, 2.0f, 0.3f, 2, 0.2f, synthB | bass | octDown, 10 },
+                { { "Trance Gate Harp", "Sidechain Strum", "Pump Harp", "Euphoria Wire", "Gate Runner" }, 14, 1, 2, 0.8f, 2.5f, 0.5f, 1, 0.3f, synthB | gate | arp, 11 },
+                { { "Dub Harp", "Echo Chamber", "Spring Wire", "Delay Ritual", "Version Strum" }, 4, 0, 0, 0.5f, 1.5f, 0.4f, 1, 0.3f, synthB | tape, 13 },
+                { { "Hyperpop Harp", "Sugar Rush", "Pitch Candy", "Glitter Bomb", "Bubble Wire" }, 14, 2, 1, 0.95f, 1.0f, 0.8f, 0, 0.25f, synthB | crush | octUp | ratchet, 12 } },
+            { // CINEMATIC: big, slow, dangerous
+                { { "Titan Fall", "Colossus Rising", "Giant Steps", "Mountain Hall", "Godzilla Strum" }, 14, 3, 3, 0.4f, 6.0f, 0.5f, 2, 0.5f, octDown | bass | synthB, 10 },
+                { { "Interstellar Harp", "Wormhole", "Light Year", "Deep Space Strum", "Gravity Well" }, 14, 4, 1, 0.6f, 6.5f, 0.4f, 3, 0.6f, bow | shimmer | synthB, 11 },
+                { { "Tension Wire", "Suspense Unit", "Danger Close", "Countdown", "Tripwire" }, 14, 2, 2, 0.7f, 2.5f, 0.9f, 2, 0.35f, ratchet | gate | buzz, 0 },
+                { { "Hero Theme", "Rise of Steel", "Victory Strings", "Last Stand", "Sunrise March" }, 9, 0, 0, 0.6f, 5.0f, 0.5f, 0, 0.45f, chord | bass | synthB, 10 },
+                { { "Desert Planet", "Spice Wind", "Dune Strings", "Sand Prophet", "Arrakis Air" }, 14, 1, 0, 0.6f, 4.0f, 0.6f, 3, 0.45f, sympath | buzz | filterLfo, 0 },
+                { { "Black Hole Bell", "Event Silence", "Singularity", "Collapse", "Dark Star" }, 12, 1, 2, 0.5f, 6.0f, 0.7f, 3, 0.55f, octDown | reverse | synthB, 13 },
+                { { "Elegy", "Fallen Kingdom", "Ashes", "Requiem Wire", "Last Light" }, 14, 0, 0, 0.45f, 6.0f, 0.2f, 2, 0.5f, vibrato | sympath | chord, 0 },
+                { { "Alien Contact", "First Signal", "Xeno Harp", "Mothership", "Abduction" }, 14, 2, 1, 0.8f, 4.0f, 0.9f, 3, 0.5f, octUp | filterLfo | crush, 12 } } };
+
+        inline void build (Builder& b, int cat, int i)
+        {
+            const auto& a = arches[cat - 1][i / 5];
+            const int var = i % 5;
+            auto jit = [&b] (float v, float amt, float lo, float hi) { return juce::jlimit (lo, hi, v + b.range (-amt, amt)); };
+            auto fx = [&b] (int slot, int type, float mix, float x, float y)
+            {
+                const juce::String n ("fx" + juce::String (slot));
+                b.set (n + "Type", (float) type); b.set (n + "On", 1.0f); b.set (n + "Mix", mix); b.set (n + "A", x); b.set (n + "B", y);
+            };
+            int f = a.flags;
+            // the five variations: plain, moving (arp), chopped (gate / ratchet), layered (a synth under it), far away (huge space)
+            if (var == 1) f |= arp;
+            if (var == 2) f |= (cat % 2 ? gate : ratchet);
+            if (var == 3) f |= synthB;
+            if (var == 4) f |= (cat % 2 ? reverse : shimmer);
+            b.set ("harpVoice", (float) a.engine);
+            b.set ("harpTone", jit (a.tone, 0.08f, 0.05f, 1.0f));
+            b.set ("harpDecay", jit (a.decay, a.decay * 0.2f, 0.2f, 8.0f));
+            b.set ("harpShape", jit (a.shape, 0.12f, 0.0f, 1.0f));
+            b.set ("harpRange", cat == 1 ? 2.0f : 3.0f);
+            if (a.engine == 14)
+            {
+                b.set ("strExciter", (float) a.touch);
+                b.set ("strHard", jit (a.touch == 2 ? 0.85f : a.touch == 3 ? 0.25f : 0.55f, 0.12f, 0.0f, 1.0f));
+                b.set ("strPos", b.range (0.05f, 0.7f));
+                b.set ("bodyMat", (float) a.mat);
+                b.set ("bodySize", b.range (0.15f, 0.9f));
+                b.set ("bodyRing", b.range (0.3f, 0.9f));
+                b.set ("bodyMix", b.range (0.3f, 0.65f));
+                b.set ("bodyDamp", b.range (0.1f, 0.5f));
+            }
+            if (f & bow) { b.set ("harpSustain", b.range (0.5f, 0.9f)); b.set ("harpAttack", b.range (0.05f, 0.4f)); }
+            if (cat == 4 && ! (f & bow)) { b.set ("harpAttack", b.range (0.15f, 0.6f)); b.set ("harpSustain", b.range (0.3f, 0.6f)); }
+            // the hand
+            b.set ("strumRate", (float) (cat == 4 || cat == 7 ? b.pick ({ 0, 1 }) : b.pick ({ 2, 4, 2, 1 })));
+            b.set ("strumFeel", b.range (0.35f, 0.75f));
+            b.set ("strumSpeed", cat == 4 || cat == 7 ? b.range (35.0f, 70.0f) : b.range (10.0f, 28.0f));
+            if (f & arp) { b.set ("strumMode", 1.0f); b.set ("arpPattern", (float) b.pick ({ 0, 1, 2, 3, 4, 5, 6, 7 })); b.set ("arpOctaves", (float) b.pick ({ 1, 2, 2, 3 })); b.set ("arpSwing", b.range (0.0f, 0.35f)); }
+            if (f & gate) { b.set ("gateOn", 1.0f); b.set ("gateRate", (float) b.pick ({ 0, 1, 1, 4 })); b.set ("gateDepth", b.range (0.6f, 1.0f)); }
+            if (f & ratchet) b.set ("ratchet", b.range (0.34f, 0.7f));
+            // the string itself
+            if (f & buzz) b.set ("strBuzz", b.range (0.35f, 0.8f));
+            if (f & harmonic) b.set ("strHarmonic", b.range (0.4f, 0.9f));
+            if (f & sympath) b.set ("strSympath", b.range (0.3f, 0.7f));
+            if (f & mono) b.set ("mono", 1.0f);
+            if (f & octDown) b.set ("harpOctave", -1.0f);
+            if (f & octUp) b.set ("harpOctave", 1.0f);
+            if (f & sweep)   // the pluck envelope: a filter that snaps shut
+            {
+                b.set ("pT1", 0.02f); b.set ("pL1", 1.0f); b.set ("pT2", b.range (0.15f, 0.35f)); b.set ("pL2", b.range (0.25f, 0.45f));
+                b.set ("pT3", b.range (0.3f, 0.6f)); b.set ("pL3", b.range (0.2f, 0.4f)); b.set ("pT4", 0.5f); b.set ("pTail", b.range (0.15f, 0.35f)); b.set ("pVelo", b.range (0.3f, 0.8f));
+            }
+            if (f & vibrato) { b.set ("pitchModSrc", 0.0f); b.set ("pitchModAmt", b.range (0.12f, 0.25f)); b.set ("lfo1Rate", b.range (4.5f, 6.0f)); b.set ("lfo1Delay", b.range (0.1f, 0.3f)); b.set ("lfo1Fade", b.range (0.2f, 0.5f)); b.set ("lfo1Trig", 1.0f); }
+            if (f & filterLfo) { b.set ("filtLfoSel", 1.0f); b.set ("filtLfoAmt", b.range (0.25f, 0.55f)); b.set ("lfo2Rate", b.range (0.06f, 0.4f)); b.set ("filterCutoff", b.range (2500.0f, 7000.0f)); b.set ("filterReso", b.range (0.15f, 0.45f)); }
+            if (f & hpf) { b.set ("filtMode", 0.0f); b.set ("filterCutoff", b.range (300.0f, 900.0f)); }
+            if (f & wood) b.set ("morphWood", b.range (0.3f, 0.7f));
+            if (f & bright) b.set ("bodyTilt", b.range (0.25f, 0.6f));
+            // layers
+            if (f & synthB) { b.set ("dual", 1.0f); b.set ("harpVoice2", (float) (a.synth > 0 ? a.synth : b.pick ({ 10, 11, 12, 13 }))); b.set ("bShape", b.range (0.15f, 0.85f)); b.set ("bTone", b.range (0.35f, 0.75f)); b.set ("bDecay", b.range (1.0f, 5.0f)); b.set ("bOctave", (float) b.pick ({ 0, -1, 1, 0 })); b.set ("bDetune", b.range (-6.0f, 6.0f)); b.set ("morph", b.range (0.25f, 0.6f)); }
+            if (f & bass) { b.set ("bassType", (float) b.pick ({ 1, 3, 1 })); b.set ("bassLevel", b.range (-16.0f, -10.0f)); b.set ("bassTone", b.range (0.3f, 0.6f)); }
+            if (f & chord) { b.set ("chordType", (float) b.pick ({ 1, 2, 3, 4 })); b.set ("chordLevel", b.range (-20.0f, -14.0f)); b.set ("chordFilter", b.range (0.35f, 0.6f)); }
+            // colour
+            if (f & tape) fx (4, 11, b.range (0.45f, 0.8f), b.range (0.4f, 0.8f), b.range (0.3f, 0.6f));
+            if (f & crush) fx (5, 4, b.range (0.3f, 0.55f), b.range (0.35f, 0.7f), 0.5f);
+            if (f & shimmer) fx (6, 15, b.range (0.3f, 0.5f), 0.85f, 0.6f);
+            // the room
+            b.set ("spRoom", (float) a.room);
+            b.set ("spSize", b.range (0.35f, 0.95f));
+            b.set ("spTone", b.range (0.3f, 0.8f));
+            b.set ("spPre", b.range (0.0f, 0.45f));
+            b.set ("spMix", juce::jlimit (0.0f, 0.85f, a.space + (var == 4 ? 0.25f : 0.0f) + b.range (-0.05f, 0.05f)));
+            b.set ("spMod", b.range (0.1f, 0.6f));
+            b.set ("spDuck", cat == 1 || cat == 3 ? b.range (0.2f, 0.6f) : 0.0f);
+            if (f & reverse) b.set ("spReverse", 1.0f);
+            b.set ("fx3Mix", 0.0f);   // the old reverb steps aside for SPACE
+        }
+    }
+
     std::vector<Preset> makeFactory()
     {
         std::vector<Preset> out;
@@ -58,6 +219,7 @@ namespace presets
                 b.r.setSeed ((juce::int64) (1081 + c * 977 + i * 31));
                 Preset p;
                 p.name = extra ? juce::String (extraNames[(size_t) c][(size_t) (c >= 6 ? i : i - 24)]) : juce::String (names[c][i]);
+                if (c >= 1) p.name = design::arches[c - 1][i / 5].names[i % 5];
                 p.category = categories()[c];
                 p.model = c == 5 ? 4 : 1;   // presets are not tied to a character: Classic for all, Lo-fi for textures
                 b.set ("model", (float) p.model);
@@ -146,9 +308,9 @@ namespace presets
                                 b.set ("fx1Mix", b.range (0.35f, 0.5f));
                                 break;
                             case 6: // monolith: felt on stone and a slow tape, an old machine in a cave
-                                b.set ("strExciter", 3.0f); b.set ("strHard", b.range (0.2f, 0.45f)); b.set ("strPos", b.range (0.35f, 0.7f));
-                                b.set ("bodyMat", 3.0f); b.set ("bodySize", b.range (0.7f, 1.0f)); b.set ("bodyRing", b.range (0.6f, 1.0f)); b.set ("bodyMix", b.range (0.55f, 0.8f)); b.set ("bodyDamp", 0.15f);
-                                b.set ("harpTone", b.range (0.35f, 0.55f)); b.set ("harpDecay", b.range (3.0f, 5.0f)); b.set ("harpShape", b.range (0.4f, 0.7f));
+                                b.set ("strExciter", 3.0f); b.set ("strHard", b.range (0.35f, 0.55f)); b.set ("strPos", b.range (0.25f, 0.5f));
+                                b.set ("bodyMat", 3.0f); b.set ("bodySize", b.range (0.35f, 0.65f)); b.set ("bodyRing", b.range (0.6f, 1.0f)); b.set ("bodyMix", b.range (0.4f, 0.6f)); b.set ("bodyDamp", 0.15f);
+                                b.set ("harpTone", b.range (0.45f, 0.65f)); b.set ("harpDecay", b.range (3.0f, 5.0f)); b.set ("harpShape", b.range (0.4f, 0.7f));
                                 fx (4, 11, 0.7f, 0.7f, 0.6f);
                                 fx (5, 14, 0.5f, 0.9f, 0.3f);
                                 break;
@@ -161,13 +323,14 @@ namespace presets
                                 fx (6, 18, 0.4f, 0.5f, 0.5f);
                                 break;
                         }
-                        static const float trims[40] = { 2.8f, 1.0f, 3.9f, 13.4f, 1.9f, -1.7f, 0.3f, -1.5f, 0.8f, -2.0f, 1.6f, 14.0f, 2.2f, 10.0f, 2.6f, -3.9f, -5.1f, -5.8f, -5.1f, -4.2f, 14.0f, -1.1f, 9.6f, 5.6f, 0.1f, 1.6f, 5.2f, -1.3f, -2.7f, -5.7f, 8.6f, 14.0f, 14.0f, 6.4f, 14.0f, 14.0f, 14.0f, 14.0f, 14.0f, -2.7f };   // measured: every harp preset as loud as the others
-                        b.set ("presetTrim", trims[i]);
                         if (var == 4) { b.set ("dual", 1.0f); b.set ("harpVoice2", (float) b.pick ({ 9, 13, 11 })); b.set ("morph", b.range (0.2f, 0.35f)); }
                         if (var == 3 && arch % 2 == 0) { b.set ("strumMode", 1.0f); b.set ("arpPattern", (float) b.pick ({ 0, 2, 3, 4 })); }
                         break;
                     }
-                    case 1: // Pluck: short, rhythmic, dry
+                    case 1: case 2: case 3: case 4: case 5: case 6: case 7:
+                        design::build (b, c, i);
+                        break;
+                    case 100: // (the older recipes, kept for reference)
                         b.set ("harpVoice", (float) b.pick ({ 4, 4, 4, 6, 7, 2 }));
                         b.set ("harpTone", b.range (0.5f, 0.75f));
                         b.set ("harpDecay", b.range (0.6f, 1.3f));
@@ -179,7 +342,7 @@ namespace presets
                         b.set ("fx2Mix", b.range (0.15f, 0.28f));
                         b.set ("fx3Mix", b.range (0.15f, 0.28f));
                         break;
-                    case 2: // Bell: long, glassy, spacious
+                    case 102: // Bell: long, glassy, spacious
                         b.set ("harpVoice", (float) b.pick ({ 1, 3, 2, 1, 7, 0 }));
                         b.set ("harpTone", b.range (0.6f, 0.8f));
                         b.set ("harpDecay", b.range (3.0f, 5.0f));
@@ -193,7 +356,7 @@ namespace presets
                         b.set ("fx3Mix", b.range (0.38f, 0.5f));
                         b.set ("fx3A", b.range (0.75f, 0.88f));
                         break;
-                    case 3: // Keys: tines or vibes over a soft organ and a round bass
+                    case 103: // Keys: tines or vibes over a soft organ and a round bass
                         b.set ("harpVoice", (float) b.pick ({ 8, 8, 2, 8, 6, 2 }));
                         b.set ("harpTone", b.range (0.45f, 0.65f));
                         b.set ("harpDecay", b.range (1.4f, 2.4f));
@@ -210,7 +373,7 @@ namespace presets
                         if (b.chance (0.4f)) { b.set ("fx4Type", 11.0f); b.set ("fx4Mix", b.range (0.25f, 0.45f)); b.set ("fx4A", 0.3f); b.set ("fx4B", 0.25f); }
                         if (b.chance (0.45f)) { b.set ("lfo1QDst", 22.0f); b.set ("lfo1QAmt", b.range (0.12f, 0.22f)); b.set ("lfo1Rate", b.range (3.8f, 5.6f)); }   // tine tremolo
                         break;
-                    case 4: // Pad: slow strums over a warm layer
+                    case 104: // Pad: slow strums over a warm layer
                         b.set ("harpVoice", (float) b.pick ({ 9, 5, 9, 1, 0, 9 }));
                         b.set ("harpTone", b.range (0.4f, 0.6f));
                         b.set ("harpDecay", b.range (4.0f, 6.5f));
@@ -228,7 +391,7 @@ namespace presets
                         b.set ("fx3A", 0.85f);
                         if (b.chance (0.5f)) { b.set ("dual", 1.0f); b.set ("harpVoice2", (float) b.pick ({ 9, 5 })); b.set ("morph", b.range (0.35f, 0.55f)); }
                         break;
-                    case 6: // Hybrid: a harp engine on A, a synth engine on B, MORPH between them
+                    case 106: // Hybrid: a harp engine on A, a synth engine on B, MORPH between them
                         b.set ("harpVoice", (float) b.pick ({ 0, 0, 1, 3, 4, 7, 2, 6 }));
                         b.set ("harpTone", b.range (0.5f, 0.75f));
                         b.set ("harpDecay", b.range (1.6f, 3.5f));
@@ -250,7 +413,7 @@ namespace presets
                         else
                         { b.set ("lfo1QDst", (float) mod::targetIds().indexOf ("bShape")); b.set ("lfo1QAmt", b.range (0.15f, 0.35f)); b.set ("lfo1Rate", b.range (0.08f, 0.3f)); }
                         break;
-                    case 7: // Cinematic: slow, wide, a low layer and a shimmering tail
+                    case 107: // Cinematic: slow, wide, a low layer and a shimmering tail
                         b.set ("harpVoice", (float) b.pick ({ 0, 3, 1, 9, 7, 4 }));
                         b.set ("harpTone", b.range (0.45f, 0.7f));
                         b.set ("harpDecay", b.range (3.5f, 6.5f));
@@ -276,7 +439,7 @@ namespace presets
                         b.set ("harpTone", b.range (0.4f, 0.6f));
                         b.set ("lfo2QDst", (float) mod::targetIds().indexOf ("filterCutoff")); b.set ("lfo2QAmt", b.range (0.08f, 0.18f)); b.set ("lfo2Rate", b.range (0.04f, 0.12f));
                         break;
-                    default: // Texture: well-loved tape, gentle movement
+                    case 105: // Texture: well-loved tape, gentle movement
                         b.set ("harpVoice", (float) b.pick ({ 0, 1, 2, 3, 8, 4 }));
                         b.set ("harpTone", b.range (0.45f, 0.7f));
                         b.set ("harpDecay", b.range (1.2f, 3.0f));
@@ -293,7 +456,7 @@ namespace presets
                         break;
                 }
                 // the added presets of the classic types get a synth layer under the harp
-                if (c < 6 && i >= 24)
+                if (c == 0 && i >= 24 && false)
                 {
                     static const int engines[6][4] = { { 13, 11, 10, 12 }, { 12, 10, 11, 13 }, { 12, 11, 13, 12 }, { 10, 12, 11, 10 }, { 10, 11, 13, 10 }, { 13, 11, 10, 12 } };
                     b.set ("dual", 1.0f);
@@ -317,29 +480,29 @@ namespace presets
                     }
                 }
                 // modern colour on top of the era sound
-                if (p.model == 0 || p.model == 4)   // Warm and Lo-fi are narrow by nature: open them up (mono-safe)
+                if (c == 0 && (p.model == 0 || p.model == 4))   // Warm and Lo-fi are narrow by nature: open them up (mono-safe)
                 {
                     b.set ("fx5Type", 20.0f); b.set ("fx5On", 1.0f); b.set ("fx5A", b.range (0.5f, 0.7f)); b.set ("fx5B", b.range (0.35f, 0.6f)); b.set ("fx5Mix", 1.0f);
                 }
-                if (i % 6 == 3 && (c == 2 || c == 4 || c == 5 || c == 0))   // PRISM: the sound glows on the chord, a slow LFO scans it
+                if (i % 6 == 3 && c == 0)   // PRISM: the sound glows on the chord, a slow LFO scans it
                 {
                     b.set ("fx4Type", 17.0f); b.set ("fx4On", 1.0f);
                     b.set ("fx4A", b.range (0.3f, 0.7f)); b.set ("fx4B", b.range (0.35f, 0.7f)); b.set ("fx4Mix", b.range (0.35f, 0.6f));
                     b.set ("lfo2QDst", (float) mod::targetIds().indexOf ("fx4A")); b.set ("lfo2QAmt", b.range (0.2f, 0.35f));
                     b.set ("lfo2Rate", b.range (0.05f, 0.25f));
                 }
-                if (i % 6 == 5 && (c == 1 || c == 2))   // DISPERSE: laser-like attack on plucks and bells
+                if (false && i % 6 == 5 && (c == 1 || c == 2))   // DISPERSE: laser-like attack on plucks and bells
                 {
                     b.set ("fx4Type", 18.0f); b.set ("fx4On", 1.0f);
                     b.set ("fx4A", b.range (0.3f, 0.6f)); b.set ("fx4B", b.range (0.3f, 0.6f)); b.set ("fx4Mix", b.range (0.35f, 0.6f));
                 }
-                if (i % 6 == 1 && (c == 5 || c == 3))   // SHAPE: morphing grit on textures and keys
+                if (false && i % 6 == 1 && (c == 5 || c == 3))   // SHAPE: morphing grit on textures and keys
                 {
                     b.set ("fx4Type", 19.0f); b.set ("fx4On", 1.0f);
                     b.set ("fx4A", b.range (0.2f, 0.8f)); b.set ("fx4B", b.range (0.15f, 0.35f)); b.set ("fx4Mix", b.range (0.25f, 0.45f));
                 }
                 // harp bent into strings and into bass: the same instrument, a different job
-                if (c == 4 && i < 4)
+                if (false && c == 4 && i < 4)
                 {
                     static const char* sn[] = { "String Harp", "String Harp Wide", "String Harp Warm", "String Harp Glow" };
                     p.name = sn[i];
@@ -347,7 +510,7 @@ namespace presets
                     b.set ("harpRelease", b.range (0.8f, 1.6f)); b.set ("drive", b.range (0.2f, 0.4f)); b.set ("filterCutoff", b.range (6000.0f, 12000.0f));
                     b.set ("fx5Type", 20.0f); b.set ("fx5On", 1.0f); b.set ("fx5A", 0.65f); b.set ("fx5B", 0.5f); b.set ("fx5Mix", 1.0f);
                 }
-                if (c == 1 && i >= 20 && i < 24)
+                if (false && c == 1 && i >= 20 && i < 24)
                 {
                     // EPIC HARP: big modern cinematic harp, wide, glowing on the chord, shimmering tail
                     static const char* en[] = { "Epic Harp", "Epic Harp Rise", "Cinematic Harp", "Epic Harp Low" };
@@ -361,6 +524,11 @@ namespace presets
                     b.set ("fx4Type", 17.0f); b.set ("fx4On", 1.0f); b.set ("fx4A", 0.55f); b.set ("fx4B", 0.5f); b.set ("fx4Mix", 0.35f);   // prism
                     b.set ("lfo2QDst", (float) mod::targetIds().indexOf ("fx4A")); b.set ("lfo2QAmt", 0.3f); b.set ("lfo2Rate", 0.08f);
                     b.set ("fx5Type", 20.0f); b.set ("fx5On", 1.0f); b.set ("fx5A", 0.75f); b.set ("fx5B", 0.55f); b.set ("fx5Mix", 1.0f);     // wide
+                }
+                {
+                    // measured: every preset as loud as the others (a C major chord, 100 velocity)
+                    static const float trims[320] = { -0.9f, 1.9f, 2.0f, 9.4f, -0.2f, -5.9f, 1.3f, 0.5f, 1.1f, -2.6f, 6.1f, 0.9f, 1.1f, 9.5f, -2.3f, -3.9f, -2.0f, -5.4f, -5.3f, -6.7f, 2.5f, -10.6f, -4.6f, 3.4f, 5.0f, 0.5f, -2.6f, -2.2f, -2.8f, -0.2f, 8.0f, 24.0f, 22.3f, 9.7f, 17.6f, 12.5f, 1.1f, 18.0f, 18.0f, -3.0f, 9.3f, -3.1f, 7.9f, 6.1f, 3.8f, -2.7f, -3.1f, -4.9f, -4.5f, 0.6f, -5.3f, 1.5f, -2.9f, 0.3f, -4.9f, 14.1f, 18.0f, 18.0f, 5.9f, 15.8f, 9.2f, 4.4f, 4.2f, 7.8f, 10.9f, 11.0f, 11.2f, 12.1f, 5.6f, 12.7f, 1.2f, 3.8f, 8.8f, 5.5f, -3.0f, -3.2f, 2.4f, 2.5f, -0.9f, -1.7f, 8.4f, 4.8f, 4.3f, 5.8f, 7.9f, -12.0f, -12.0f, -12.0f, -10.4f, -8.4f, 0.2f, 6.6f, 5.8f, 6.5f, 11.0f, 6.7f, 7.4f, 4.9f, 4.2f, 8.7f, 3.1f, 2.8f, 1.4f, 4.1f, 4.4f, 0.5f, 2.1f, 3.2f, 1.8f, 4.4f, 4.1f, 2.1f, -0.1f, 0.3f, 0.4f, 11.3f, 9.6f, 10.7f, 4.9f, 14.6f, 4.8f, 4.8f, 5.3f, 5.9f, 6.7f, 13.5f, 10.8f, 15.7f, 9.8f, 14.5f, 17.5f, 14.8f, 18.0f, 10.5f, 18.4f, 6.8f, 5.6f, 6.4f, 2.5f, 6.5f, 8.8f, 7.1f, 6.1f, 0.3f, 7.0f, -7.0f, -4.9f, 4.8f, -0.4f, -3.5f, 4.0f, 5.3f, 4.5f, 4.8f, 4.8f, -1.6f, -1.8f, -12.0f, 0.1f, -4.0f, -6.6f, -0.9f, -1.6f, -2.3f, 0.3f, -2.8f, -3.6f, -3.0f, -4.4f, -2.0f, -5.2f, -5.1f, -4.9f, -3.8f, -3.0f, -4.0f, -4.7f, -4.6f, -3.9f, -2.7f, -6.6f, -6.1f, -7.7f, -7.2f, -5.6f, 1.7f, 3.0f, 4.7f, 21.7f, 13.0f, 1.3f, 2.3f, -1.8f, -2.1f, 2.6f, 6.1f, 3.8f, 6.4f, -1.7f, -4.4f, -1.0f, 11.8f, 13.2f, 16.5f, 12.0f, 10.8f, 0.2f, -4.7f, 5.0f, 3.3f, 5.8f, 6.0f, 9.3f, -1.6f, 4.5f, -7.7f, -4.0f, -3.0f, -3.8f, -4.1f, -5.0f, -4.8f, -6.3f, -4.7f, -6.9f, -6.8f, -12.0f, -12.0f, -12.0f, -7.0f, -6.0f, 9.5f, 10.0f, 2.1f, 11.6f, 0.8f, -0.2f, 1.5f, 0.2f, 1.9f, -7.5f, -7.4f, -4.4f, -5.5f, 4.4f, 6.4f, 8.5f, 4.4f, 9.4f, 11.4f, -5.0f, -3.3f, -5.2f, -6.2f, -1.2f, -3.5f, -2.0f, -6.2f, -4.9f, -6.8f, -4.6f, -3.9f, -4.7f, -6.8f, 0.7f, -2.8f, -4.0f, -7.4f, -5.6f, -2.6f, -4.7f, -1.7f, 0.4f, 0.4f, 0.5f, 3.9f, 9.0f, 3.8f, 4.5f, 7.6f, -4.2f, -2.0f, -5.7f, -2.1f, -0.4f, 4.1f, 1.7f, -3.9f, -2.6f, -4.3f, -1.0f, -2.4f, 11.1f, -3.8f, 6.0f, 5.1f, 1.9f, 1.1f, 0.6f, 5.5f, -2.8f, -5.5f, 5.1f, 3.5f, -2.9f, 2.8f, 2.1f, 3.8f, 2.9f, 1.7f, -5.7f, -6.8f, -1.1f, -6.7f, -5.6f, -7.4f, -7.0f, 9.6f, 4.5f, 3.9f };
+                    b.set ("presetTrim", trims[c * 40 + i]);
                 }
                 p.values = std::move (b.v);
                 out.push_back (std::move (p));

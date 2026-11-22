@@ -1176,6 +1176,12 @@ void Hamamatsu108Processor::scheduleNote (int delay, int toneIndex, float veloci
     if ((plMute.load() >> (unsigned) visual) & 1u) return;
     delay += (int) (plTime[(size_t) visual].load() * 0.12f * (float) sr);
     velocity *= 1.0f - 0.85f * plLevel[(size_t) visual].load();
+    if (plFx[(size_t) visual].load() == 5)   // STUT: the string fires 4 times at 1/32
+        for (int r = 3; r >= 1; --r)
+            if (numEvents < (int) events.size() - 1)
+                events[(size_t) numEvents++] = { juce::jmax (0, delay) + (int) (r * sr * 60.0 / juce::jmax (30.0, lastBpm) / 8.0),
+                                                 juce::jlimit (0, 127, tones[(size_t) toneIndex] + 12 * juce::roundToInt (param (apvts, "harpOctave"))),
+                                                 juce::jlimit (0.05f, 1.0f, velocity * (1.0f - 0.15f * (float) r)), visual, false };
     events[(size_t) numEvents++] = { juce::jmax (0, delay), juce::jlimit (0, 127, tones[(size_t) toneIndex] + 12 * juce::roundToInt (param (apvts, "harpOctave"))), juce::jlimit (0.05f, 1.0f, velocity), visual, ! eventsFromHost };
     // RATCHET: the string is struck again, fast, softer each time
     if (const int reps = juce::roundToInt (param (apvts, "ratchet") * 3.0f); reps > 0)
@@ -1188,7 +1194,7 @@ void Hamamatsu108Processor::scheduleNote (int delay, int toneIndex, float veloci
         }
 }
 
-void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity, bool record)
+void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity, bool record, int forceVisual)
 {
     if (numEvents >= (int) events.size()) return;
     int visual = numStrings / 2;
@@ -1201,6 +1207,9 @@ void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity, 
     }
     else
         visual = juce::jlimit (0, numStrings - 1, (note - 48) * (numStrings - 1) / 48);
+    if (forceVisual >= 0) visual = juce::jlimit (0, numStrings - 1, forceVisual);
+    // the strings of the console play along: a string taken off is silent in runs and patterns too
+    if (record && ((plMute.load() >> (unsigned) visual) & 1u)) return;
     delay += (int) (plTime[(size_t) visual].load() * 0.12f * (float) sr);
     velocity *= 1.0f - 0.85f * plLevel[(size_t) visual].load();
     // HUMAN: a little looseness in time and touch
@@ -1209,6 +1218,12 @@ void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity, 
         delay += humanRng.nextInt (juce::jmax (1, (int) (h * 0.025 * getSampleRate())));
         velocity *= 1.0f - h * 0.35f * humanRng.nextFloat();
     }
+    if (plFx[(size_t) visual].load() == 5)   // STUT
+        for (int r = 3; r >= 1; --r)
+            if (numEvents < (int) events.size() - 1)
+                events[(size_t) numEvents++] = { juce::jmax (0, delay) + (int) (r * sr * 60.0 / juce::jmax (30.0, lastBpm) / 8.0),
+                                                 juce::jlimit (0, 127, note + 12 * juce::roundToInt (param (apvts, "harpOctave"))),
+                                                 juce::jlimit (0.05f, 1.0f, velocity * (1.0f - 0.15f * (float) r)), visual, false };
     events[(size_t) numEvents++] = { juce::jmax (0, delay), juce::jlimit (0, 127, note + 12 * juce::roundToInt (param (apvts, "harpOctave"))), juce::jlimit (0.05f, 1.0f, velocity), visual, record && ! eventsFromHost };
     if (const int reps = juce::roundToInt (param (apvts, "ratchet") * 3.0f); reps > 0)   // RATCHET on single notes too
         for (int r = 1; r <= reps && numEvents < (int) events.size(); ++r)
@@ -1361,7 +1376,8 @@ void Hamamatsu108Processor::flourish (int samplePos, int key, float velocity, bo
     {
         const float f = run.size() > 1 ? (float) i / (float) (run.size() - 1) : 0.0f;
         const float vel = (0.45f + 0.5f * v) * (0.85f + 0.3f * std::sin (f * juce::MathConstants<float>::pi)) * (1.0f + (rng.nextFloat() - 0.5f) * 0.2f * feel);
-        schedulePitch (juce::roundToInt (t), run[i], vel, true);
+        // the run sweeps across the 26 strings: their handles, mutes and FX shape it
+        schedulePitch (juce::roundToInt (t), run[i], vel, true, juce::roundToInt ((up ? f : 1.0f - f) * (float) (numStrings - 1)));
         t += stepMs * 0.001f * (float) sr * (1.0f + (rng.nextFloat() - 0.5f) * 0.3f * feel);
     }
 }
@@ -1533,6 +1549,12 @@ void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note,
         const float basePick = s.model == harp::Model::harp ? 0.04f + 0.42f * s.pos : 1.0f / 7.0f;
         s.pick = juce::jlimit (0.02f, 0.5f, basePick + (t - 0.35f) * 0.5f);
         if (b > 0.001f) { s.bend = -2.0f * b; s.bendTime = 0.06f + 0.3f * b; }
+        // STRING FX of this string
+        s.stringFx = plFx[(size_t) curString].load();
+        s.chopSamples = (int) (sr * 60.0 / juce::jmax (30.0, lastBpm) / 4.0);
+        if (s.stringFx == 3) s.pitchMul *= 0.5f;                                  // HALF
+        if (s.stringFx == 8) s.pitchMul *= 2.0f;                                  // OCT
+        if (s.stringFx == 9) { s.decay = juce::jmin (s.decay, 0.12f); s.tone *= 0.5f; s.sustain = 0.0f; }   // DEAD
         target->start (note, velocity, pan, s, rng, noteHz (note));
     }
     else
@@ -3020,6 +3042,9 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
             pl.add (juce::String (plTone[(size_t) i].load(), 3) + ":" + juce::String (plBend[(size_t) i].load(), 3) + ":" + juce::String (plLevel[(size_t) i].load(), 3) + ":" + juce::String (plTime[(size_t) i].load(), 3));
         state.setProperty ("plate", pl.joinIntoString (","), nullptr);
         state.setProperty ("plateMute", (juce::int64) plMute.load(), nullptr);
+        juce::StringArray fxs;
+        for (auto& f : plFx) fxs.add (juce::String (f.load()));
+        state.setProperty ("plateFx", fxs.joinIntoString (","), nullptr);
         juce::StringArray sp;
         for (auto& v : consoleSpare) sp.add (juce::String (v.load(), 3));
         state.setProperty ("consoleSpare", sp.joinIntoString (","), nullptr);
@@ -3185,6 +3210,8 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
                     }
                 }
                 plMute.store ((std::uint32_t) (juce::int64) state.getProperty ("plateMute", 0));
+                const auto fxs = juce::StringArray::fromTokens (state.getProperty ("plateFx").toString(), ",", {});
+                for (int i = 0; i < numStrings; ++i) plFx[(size_t) i].store (i < fxs.size() ? juce::jlimit (0, 9, fxs[i].getIntValue()) : 0);
                 const auto sp = juce::StringArray::fromTokens (state.getProperty ("consoleSpare").toString(), ",", {});
                 for (int i = 0; i < numSpare; ++i) consoleSpare[(size_t) i].store (i < sp.size() ? sp[i].getFloatValue() : -1.0f);
             }

@@ -66,6 +66,14 @@ namespace hama
         juce::int64 lastSig = 0;
         juce::Rectangle<float> resetKey() const;
         void resetMenu();
+        // STRING FX: a lit pad above every string, click to step through the effects, drag to paint
+        juce::Rectangle<float> fxPad (int s) const;
+        int fxPadAt (juce::Point<float>) const;
+        juce::Rectangle<float> fxRandomKey() const;
+        void fxMenu (int s);
+        void fxRandom();
+        void paintFx (juce::Graphics&);
+        int fxPaint = -1;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ConsoleView)
     };

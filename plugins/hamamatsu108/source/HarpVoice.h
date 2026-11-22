@@ -82,6 +82,8 @@ namespace harp
         float hold = 0.0f;       // seconds at full level before the decay
         float buzz = 0.0f;       // a buzzing bridge 0..1
         float harmonic = 0.0f;   // 0..1: the octave flageolet rises over the fundamental
+        int stringFx = 0;        // STRING FX of the string this note belongs to: 0 off, 1 chop, 2 stop, 3 half, 4 rev, 5 stut, 6 scratch, 7 crush, 8 oct, 9 dead
+        int chopSamples = 6000;  // CHOP: one 1/16 at the song tempo
     };
 
     // 2-pole resonator: one mode of a vibrating body
@@ -177,6 +179,8 @@ namespace harp
             sr = (float) newSampleRate;
             for (auto& s : strings) s.prepare ((int) (sr / 20.0f) + 8);
             burst.assign ((size_t) (sr / 20.0f) + 8, 0.0f);
+            fxL.assign ((size_t) (sr * 0.5f) + 8, 0.0f);
+            fxR.assign ((size_t) (sr * 0.5f) + 8, 0.0f);
             active = pending = false;
         }
 
@@ -278,10 +282,12 @@ namespace harp
                                 note, (int) model, (long long) age, n, fadeOutLeft, (int) pending, attack, env, d2, out, exciteLeft);
                 }
                #endif
-                const float dd = d * gain;
-                left[n]  += (out + dd) * panL;
-                right[n] += (out - dd) * panR;
-                peak = juce::jmax (peak, std::abs (out));
+                float dd = d * gain;
+                float o2 = out;
+                if (sfx != 0) applyStringFx (o2, dd);
+                left[n]  += (o2 + dd) * panL;
+                right[n] += (o2 - dd) * panR;
+                peak = juce::jmax (peak, std::abs (o2) + (sfx == 2 || sfx == 6 ? std::abs (out) : 0.0f));
             }
             level = peak;
             age += numSamples;
@@ -290,6 +296,58 @@ namespace harp
         }
 
     private:
+        // STRING FX on one note: CHOP, STOP (tape stop), REV (swell and cut), SCRATCH, CRUSH
+        void applyStringFx (float& o, float& dd)
+        {
+            const int len = (int) fxL.size() - 4;
+            switch (sfx)
+            {
+                case 1:   // CHOP: on, off, on, off at 1/16
+                {
+                    const bool on = ((fxN / (chopLen / 2)) & 1) == 0;
+                    chopG += ((on ? 1.0f : 0.0f) - chopG) * 0.03f;
+                    o *= chopG; dd *= chopG;
+                    break;
+                }
+                case 2:   // STOP: a moment of the note, then the tape slows to a halt
+                case 6:   // SCRATCH: the note rocks back and forth under a hand
+                {
+                    fxL[(size_t) fxW] = o; fxR[(size_t) fxW] = dd;
+                    const float t = (float) fxN / sr;
+                    float delay = 0.0f, g = 1.0f;
+                    if (sfx == 2)
+                    {
+                        const float tt = juce::jmax (0.0f, t - 0.1f), T = 0.55f;
+                        if (tt >= T) g = 0.0f;
+                        else { delay = tt * tt / (2.0f * T) * sr; g = 1.0f - tt / T; }
+                    }
+                    else delay = (0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * 3.2f * t)) * 0.07f * sr;
+                    delay = juce::jlimit (0.0f, (float) len - 2.0f, delay);
+                    float rp = (float) fxW - delay;
+                    if (rp < 0.0f) rp += (float) len;
+                    const int i0 = (int) rp; const float fr = rp - (float) i0; const int i1 = (i0 + 1) % len;
+                    o = (fxL[(size_t) i0] * (1.0f - fr) + fxL[(size_t) i1] * fr) * g;
+                    dd = (fxR[(size_t) i0] * (1.0f - fr) + fxR[(size_t) i1] * fr) * g;
+                    fxW = (fxW + 1) % len;
+                    break;
+                }
+                case 4:   // REV: grows like a reversed note, then is cut
+                    o *= attack * attack; dd *= attack * attack;
+                    if (attack >= 1.0f && fadeOutLeft == 0) release (0.04f);
+                    break;
+                case 7:   // CRUSH: fewer samples, fewer bits
+                    if (crushCount++ % 7 == 0) crushHold = std::round (o * 24.0f) / 24.0f;
+                    o = crushHold; dd *= 0.3f;
+                    break;
+                default: break;
+            }
+            ++fxN;
+        }
+
+        std::vector<float> fxL, fxR;
+        int sfx = 0, fxN = 0, fxW = 0, chopLen = 6000, crushCount = 0;
+        float chopG = 1.0f, crushHold = 0.0f;
+
         struct Args { int note = 60; float velocity = 1.0f, pan = 0.0f; Settings s; float hz = 440.0f; };
 
         void begin (const Args& a, juce::Random& rng)
@@ -556,6 +614,10 @@ namespace harp
                 penvOn = penvLevels[0] < 0.995f || penvLevels[1] < 0.995f || penvLevels[2] < 0.995f || penvLevels[3] < 0.995f;
                 penvStage = 0; penvPos = 0; penvFrom = penvLevels[0] * 0.3f + 0.7f; penvValue = penvFrom; penvLp = 0.0f; penvLpR = 0.0f;
                 holdLeft = (int) (juce::jmax (0.0f, a.s.hold) * sr);
+                sfx = juce::jlimit (0, 9, a.s.stringFx);
+                fxN = 0; fxW = 0; chopLen = juce::jmax (64, a.s.chopSamples); chopG = 1.0f; crushHold = 0.0f; crushCount = 0;
+                if (sfx == 2 || sfx == 6) { std::fill (fxL.begin(), fxL.end(), 0.0f); std::fill (fxR.begin(), fxR.end(), 0.0f); }
+                if (sfx == 4) { attack = 0.0f; attackInc = 1.0f / (0.38f * sr); }   // REV: the note swells in, then stops
                 buzzAmt = juce::jlimit (0.0f, 1.0f, a.s.buzz);
             }
             driftPhase = rng.nextFloat();

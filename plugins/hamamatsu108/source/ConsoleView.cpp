@@ -609,7 +609,7 @@ namespace hama
             }
         }
 
-        if (keysView) paintKeys (g); else paintStrings (g);
+        if (keysView) paintKeys (g); else { paintStrings (g); paintFx (g); }
         // RESET: the strings back to clean
         if (! keysView)
         {
@@ -620,7 +620,107 @@ namespace hama
             g.drawRoundedRectangle (k.reduced (0.5f), 3.0f, 1.0f);
             g.setFont (ui (10.0f));
             g.drawText ("RESET", k, juce::Justification::centred, false);
+            auto rk = fxRandomKey();
+            g.setColour (juce::Colours::black.withAlpha (0.35f));
+            g.fillRoundedRectangle (rk, 3.0f);
+            g.setColour (bone.withAlpha (0.7f));
+            g.drawRoundedRectangle (rk.reduced (0.5f), 3.0f, 1.0f);
+            g.drawText ("FX RND", rk, juce::Justification::centred, false);
         }
+    }
+
+    //==============================================================================
+    // STRING FX: the effect each string plays with. Colours of hardware LEDs, one per effect.
+    namespace stringfx
+    {
+        constexpr int count = 10;
+        const char* const names[count] = { "", "CHOP", "STOP", "HALF", "REV", "STUT", "SCRT", "CRSH", "OCT", "DEAD" };
+        const char* const longNames[count] = { "Off", "Chop: gated in 1/16", "Stop: tape slows to a halt", "Half: one octave down",
+                                               "Rev: swells in like a reversed note", "Stutter: fires 4x at 1/32", "Scratch: rocks under a hand",
+                                               "Crush: fewer bits, fewer samples", "Oct: one octave up", "Dead: muted, short and dark" };
+        const juce::uint32 colours[count] = { 0xff3a3a38, 0xffe8a13a, 0xffd9442e, 0xff3c78c8, 0xff52ad4f, 0xffe3cf3b,
+                                              0xffe2692a, 0xffcc5670, 0xff38b0bd, 0xffc9c7bd };
+    }
+
+    juce::Rectangle<float> ConsoleView::fxPad (int s) const
+    {
+        auto b = bed();
+        const float step = (b.getWidth() - 28.0f) / (float) (Hamamatsu108Processor::numStrings - 1);
+        return juce::Rectangle<float> (step - 6.0f, 16.0f).withCentre ({ stringX (s), b.getY() - 12.0f });
+    }
+    int ConsoleView::fxPadAt (juce::Point<float> p) const
+    {
+        if (keysView) return -1;
+        for (int s = 0; s < Hamamatsu108Processor::numStrings; ++s)
+            if (fxPad (s).expanded (3.0f, 2.0f).contains (p)) return s;
+        return -1;
+    }
+    juce::Rectangle<float> ConsoleView::fxRandomKey() const { return resetKey().translated (0.0f, -24.0f); }
+
+    void ConsoleView::paintFx (juce::Graphics& g)
+    {
+        g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)).withExtraKerningFactor (0.06f));
+        for (int s = 0; s < Hamamatsu108Processor::numStrings; ++s)
+        {
+            const int f = juce::jlimit (0, stringfx::count - 1, processor.plFx[(size_t) s].load());
+            auto r = fxPad (s);
+            // the rubber pad
+            g.setColour (juce::Colours::black.withAlpha (0.55f));
+            g.fillRoundedRectangle (r.translated (1.0f, 2.0f), 2.5f);
+            g.setColour (juce::Colour (0xff1d1d1c));
+            g.fillRoundedRectangle (r, 2.5f);
+            if (f == 0)
+            {
+                g.setColour (juce::Colour (0xff2c2c2a));
+                g.fillRoundedRectangle (r.reduced (2.0f), 1.5f);
+                continue;
+            }
+            // the lit window: flat colour, brighter while the string sounds
+            const auto col = juce::Colour (stringfx::colours[f]);
+            const float v = glow[(size_t) s];
+            g.setColour (col.withAlpha (0.18f + 0.22f * v));
+            g.fillRoundedRectangle (r.expanded (2.0f), 3.5f);
+            g.setColour (col.withMultipliedBrightness (0.82f + 0.18f * v));
+            g.fillRoundedRectangle (r.reduced (2.0f), 1.5f);
+            g.setColour (juce::Colours::white.withAlpha (0.18f));
+            g.fillRect (r.reduced (3.0f).withHeight (1.5f));
+            g.setColour (juce::Colour (0xff141414));
+            g.drawText (stringfx::names[f], r, juce::Justification::centred, false);
+        }
+    }
+
+    void ConsoleView::fxRandom()
+    {
+        juce::Random rnd;
+        for (int s = 0; s < Hamamatsu108Processor::numStrings; ++s)
+            processor.plFx[(size_t) s].store (rnd.nextFloat() < 0.4f ? 1 + rnd.nextInt (stringfx::count - 1) : 0);
+        repaint();
+    }
+
+    void ConsoleView::fxMenu (int s)
+    {
+        juce::PopupMenu m;
+        const int cur = s >= 0 ? processor.plFx[(size_t) s].load() : -1;
+        if (s >= 0)
+        {
+            m.addSectionHeader ("STRING " + juce::String (s + 1));
+            for (int f = 0; f < stringfx::count; ++f) m.addItem (1 + f, stringfx::longNames[f], true, f == cur);
+            m.addSeparator();
+            m.addItem (40, "Set this effect on every string");
+        }
+        m.addItem (41, "Random effects");
+        m.addItem (42, "Clear every string");
+        juce::Component::SafePointer<ConsoleView> safe (this);
+        m.showMenuAsync (juce::PopupMenu::Options(), [safe, s, cur] (int r)
+        {
+            if (safe == nullptr || r <= 0) return;
+            auto& fx = safe->processor.plFx;
+            if (r >= 1 && r <= stringfx::count && s >= 0) fx[(size_t) s].store (r - 1);
+            if (r == 40) for (auto& f : fx) f.store (cur);
+            if (r == 41) safe->fxRandom();
+            if (r == 42) for (auto& f : fx) f.store (0);
+            safe->repaint();
+        });
     }
 
     juce::Rectangle<float> ConsoleView::resetKey() const
@@ -636,6 +736,7 @@ namespace hama
         m.addItem (1, bedLayer == 0 ? "Reset TONE and BEND on every string" : "Reset TIME and LEVEL on every string");
         m.addItem (2, "Reset every string (all handles, all strings on)");
         m.addItem (3, "All strings on");
+        m.addItem (4, "Clear STRING FX");
         juce::Component::SafePointer<ConsoleView> safe (this);
         m.showMenuAsync (juce::PopupMenu::Options(), [safe] (int r)
         {
@@ -648,6 +749,7 @@ namespace hama
             }
             if (r == 2) pr.resetPlate();
             if (r == 3) pr.plMute.store (0);
+            if (r == 4) for (auto& f : pr.plFx) f.store (0);
             safe->repaint();
         });
     }
@@ -656,8 +758,8 @@ namespace hama
     // STRINGS: 26 metal strings, each with a handle at the top and at the bottom
     juce::Rectangle<float> ConsoleView::bed() const
     {
-        for (auto& c : controls) if (juce::String (c->def->kind) == "strings") return c->r.withTrimmedBottom (14.0f).withWidth (1170.0f);
-        return { 115.0f, 728.0f, 1180.0f, 150.0f };
+        for (auto& c : controls) if (juce::String (c->def->kind) == "strings") return c->r.withTrimmedTop (keysView ? 0.0f : 24.0f).withTrimmedBottom (14.0f).withWidth (1170.0f);
+        return { 115.0f, 752.0f, 1180.0f, 126.0f };
     }
     float ConsoleView::stringX (int s) const
     {
@@ -824,6 +926,17 @@ namespace hama
         const auto d = toDesign (e.position);
         dragging = -1; dragHandle = -1; lastStrumX = -1.0f;
         if (! keysView && resetKey().contains (d)) { resetMenu(); return; }
+        if (! keysView && fxRandomKey().contains (d)) { if (e.mods.isPopupMenu()) fxMenu (-1); else fxRandom(); return; }
+        if (const int s = fxPadAt (d); s >= 0)
+        {
+            if (e.mods.isPopupMenu()) { fxMenu (s); return; }
+            auto& f = processor.plFx[(size_t) s];
+            const int next = e.mods.isShiftDown() || e.mods.isAltDown() ? 0 : (f.load() + 1) % stringfx::count;
+            f.store (next);
+            fxPaint = next;   // drag on: the next pads get the same effect
+            if (onStatus) onStatus ("STRING " + juce::String (s + 1) + " FX", stringfx::longNames[next]);
+            repaint(); return;
+        }
         if (e.mods.isPopupMenu() && bed().contains (d) && ! keysView) { resetMenu(); return; }
         const int i = hitControl (d);
         if (i >= 0)
@@ -877,6 +990,11 @@ namespace hama
     void ConsoleView::mouseDrag (const juce::MouseEvent& e)
     {
         const auto d = toDesign (e.position);
+        if (fxPaint >= 0)
+        {
+            if (const int s = stringAt (d.x); s >= 0 && processor.plFx[(size_t) s].load() != fxPaint) { processor.plFx[(size_t) s].store (fxPaint); repaint(); }
+            return;
+        }
         if (dragging >= 0)
         {
             auto& c = *controls[(size_t) dragging];
@@ -936,7 +1054,7 @@ namespace hama
         if (dragging >= 0) gesture (processor, *controls[(size_t) dragging], false);
         dragging = -1;
         if (heldKey >= 0) { processor.keyboardState.noteOff (1, heldKey, 0.0f); heldKey = -1; }
-        dragHandle = -1; lastStrumX = -1.0f;
+        dragHandle = -1; lastStrumX = -1.0f; fxPaint = -1;
         repaint();
     }
 
