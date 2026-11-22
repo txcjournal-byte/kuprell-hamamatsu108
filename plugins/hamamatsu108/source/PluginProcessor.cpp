@@ -191,6 +191,18 @@ void Hamamatsu108Processor::updateModulation (int numSamples, bool hostPlaying, 
         }
     }
     for (int i = 0; i < 2; ++i) lfoPhase[(size_t) i].store ((float) lfos[(size_t) i].phase);
+    // CONSOLE LFO shaping: wait (DELAY), grow in (FADE) after each key, and sit above, around or below zero (OFFSET)
+    keyTime += secs;
+    for (int i = 0; i < 2; ++i)
+    {
+        const juce::String id ("lfo" + juce::String (i + 1));
+        const double d = P (id + "Delay") * 3.0, f = P (id + "Fade") * 3.0;
+        const float env = keyTime < d ? 0.0f : f <= 0.001 ? 1.0f : (float) juce::jmin (1.0, (keyTime - d) / f);
+        float v = src[(size_t) (mod::lfo1 + i)];
+        const int off = juce::roundToInt (P (id + "Offset"));
+        if (off == 0) v = 0.5f * (v + 1.0f); else if (off == 2) v = 0.5f * (v - 1.0f);
+        src[(size_t) (mod::lfo1 + i)] = v * env;
+    }
     std::array<float, mod::funcPoints> pts {}, xs {};
     funcShape (xs, pts);
     src[mod::function] = func.advance (active ? P ("funcRate") * secs : 0.0, juce::roundToInt (P ("funcMode")), xs, pts);
@@ -230,6 +242,23 @@ void Hamamatsu108Processor::updateModulation (int numSamples, bool hostPlaying, 
                 modOffset[(size_t) dIdx] += amt * src[(size_t) srcIdx[i]];
                 modRouted[(size_t) dIdx] = true;
             }
+        }
+    }
+    {
+        // CONSOLE routes: STRING Mod + Amt to the pitch, FILTER LFO to the cutoff
+        const int ps = juce::roundToInt (P ("pitchModSrc"));
+        const float pa = P ("pitchModAmt");
+        if (std::abs (pa) > 1.0e-4f)
+        {
+            const float sv = ps == 0 ? src[mod::lfo1] : ps == 1 ? src[mod::lfo2] : src[mod::function];
+            modOffset[mod::tPitch] += pa * std::abs (pa) * 0.25f * sv;   // up to 3 semitones, fine near the middle
+            modRouted[mod::tPitch] = true;
+        }
+        const float fa = P ("filtLfoAmt");
+        if (std::abs (fa) > 1.0e-4f)
+        {
+            modOffset[mod::tFilter] += fa * 0.6f * (juce::roundToInt (P ("filtLfoSel")) == 0 ? src[mod::lfo1] : src[mod::lfo2]);
+            modRouted[mod::tFilter] = true;
         }
     }
     const float morphValue = P ("morph");
@@ -521,6 +550,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     // HARP STRING engine: the touch and the body
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strExciter", 1 }, "Touch", StringArray { "Finger", "Nail", "Pick", "Felt", "Bow" }, 1));
     fl ("strHard", "Hardness", 0.0f, 1.0f, 0.5f, pct);
+    // CONSOLE LFOs: delay, fade-in, offset and key trigger; where they go (pitch, filter)
+    for (int i = 1; i <= 2; ++i)
+    {
+        const String n ("lfo" + String (i));
+        fl ((n + "Delay").toRawUTF8(), ("LFO " + String (i) + " Delay").toRawUTF8(), 0.0f, 1.0f, 0.0f, [] (float v, int) { return String (v * 3.0f, 2) + " s"; });
+        fl ((n + "Fade").toRawUTF8(), ("LFO " + String (i) + " Fade").toRawUTF8(), 0.0f, 1.0f, 0.0f, [] (float v, int) { return String (v * 3.0f, 2) + " s"; });
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { n + "Offset", 1 }, "LFO " + String (i) + " Offset", StringArray { "+", "0", "-" }, 1));
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { n + "Trig", 1 }, "LFO " + String (i) + " Key Trig", false));
+    }
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "pitchModSrc", 1 }, "Pitch Mod Source", StringArray { "LFO 1", "LFO 2", "Env" }, 0));
+    fl ("pitchModAmt", "Pitch Mod Depth", -1.0f, 1.0f, 0.0f, [] (float v, int) { return String (v * 3.0f, 2) + " st"; });
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "filtLfoSel", 1 }, "Filter LFO", StringArray { "LFO 1", "LFO 2" }, 0));
+    fl ("filtLfoAmt", "Filter LFO Depth", -1.0f, 1.0f, 0.0f, [] (float v, int) { return (v > 0 ? "+" : "") + String (roundToInt (v * 100.0f)) + " %"; });
     fl ("strPos", "Pluck Position", 0.0f, 1.0f, 0.3f, pct);
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "bodyMat", 1 }, "Body Material", StringArray { "Wood", "Glass", "Steel", "Stone" }, 0));
     fl ("bodySize", "Body Size", 0.0f, 1.0f, 0.5f, pct);
@@ -1331,6 +1373,9 @@ float Hamamatsu108Processor::noteRelease() { return juce::jmin (param (apvts, "h
 
 void Hamamatsu108Processor::startVoice (int note, float velocity)
 {
+    keyTime = 0.0;   // console LFOs: DELAY and FADE count from here
+    for (int i = 0; i < 2; ++i)
+        if (param (apvts, (juce::String ("lfo") + juce::String (i + 1) + "Trig").toRawUTF8()) > 0.5f) lfos[(size_t) i].phase = 0.0;
     keyNow = note;   // every string this key starts (layers, SPARKLE, SUB...) belongs to it, so its release finds them all
     if (! dualOn) { startHarp (voiceSettings, note, velocity); startSwitchVoices (note, velocity); return; }
     // MORPH blends layer A and layer B (equal power)

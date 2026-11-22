@@ -75,7 +75,7 @@ S['string'] = ('<div class="sec" style="width:352px"><div class="tb"><h2>String<
   + f'<div class="cl"><div class="lb">Mod</div>{leds(["LFO 1","LFO 2","Env"],{0,2})}{btn()}</div>' + fader('Amt',.6,150,True) + '</div></div>')
 S['filter'] = ('<div class="sec" style="width:262px"><div class="tb"><h2>Filter</h2></div><div class="row">'
   + f'<div class="cl"><div class="lb">Mode</div>{leds(["HPF","BPF","LPF"],2)}{btn()}</div>'
-  + fader('Freq',.64,150) + fader('Reso',.3,150) + fader('Env',.6,150,True) + fader('Key',.5,150)
+  + fader('Freq',.64,150) + fader('Reso',.3,150) + fader('LFO',.5,150,True) + fader('Key',.5,150)
   + f'<div class="cl"><div class="lb">LFO sel</div>{leds(["LFO 1","LFO 2"],1)}{btn()}</div>' + '</div></div>')
 S['space'] = ('<div class="sec" style="width:290px"><div class="tb"><h2>Space</h2></div><div class="row">'
   + f'<div class="cl"><div class="lb">Room</div>{leds(["Hall","Plate","Cave","Void"],3)}{btn()}</div>'

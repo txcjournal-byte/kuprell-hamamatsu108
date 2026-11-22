@@ -49,7 +49,7 @@ namespace hama::console
         { "fader", "String", "Amt", 920, 353, 30, 150, true, 0, { { "", 0, 0, 0, 0 } } },
         { "fader", "Filter", "Freq", 1020, 353, 30, 150, false, 0, { { "", 0, 0, 0, 0 } } },
         { "fader", "Filter", "Reso", 1052, 353, 30, 150, false, 0, { { "", 0, 0, 0, 0 } } },
-        { "fader", "Filter", "Env", 1084, 353, 30, 150, true, 0, { { "", 0, 0, 0, 0 } } },
+        { "fader", "Filter", "LFO", 1084, 353, 30, 150, true, 0, { { "", 0, 0, 0, 0 } } },
         { "fader", "Filter", "Key", 1116, 353, 30, 150, false, 0, { { "", 0, 0, 0, 0 } } },
         { "fader", "Space", "Size", 1300, 353, 30, 150, false, 0, { { "", 0, 0, 0, 0 } } },
         { "fader", "Space", "Tone", 1332, 353, 30, 150, false, 0, { { "", 0, 0, 0, 0 } } },

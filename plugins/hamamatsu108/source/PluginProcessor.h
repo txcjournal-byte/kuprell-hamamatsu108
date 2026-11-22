@@ -111,7 +111,8 @@ public:
     }
     // KEYS: the on-screen keyboard in the strum window
     juce::MidiKeyboardState keyboardState;
-    std::atomic<int> stringsMode { 0 };   // what the strings hold: 0 the chord, 1 the whole scale of the key, 2 only the notes you hold
+    std::atomic<int> stringsMode { 0 };
+    double keyTime = 1.0e9;   // seconds since the last key (console LFO delay / fade)   // what the strings hold: 0 the chord, 1 the whole scale of the key, 2 only the notes you hold
     // console controls whose sound comes in a later step: their positions are kept with the session (-1 = untouched)
     static constexpr int numSpare = 192;
     std::array<std::atomic<float>, numSpare> consoleSpare;

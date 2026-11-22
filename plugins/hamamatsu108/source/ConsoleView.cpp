@@ -148,6 +148,32 @@ namespace hama
             }
         }
         par ("LFO 2", "Depth", "lfo2QAmt", "LFO 2 depth", "knob");
+        for (int n = 1; n <= 2; ++n)
+        {
+            const char* sec = n == 1 ? "LFO 1" : "LFO 2";
+            const juce::String id ("lfo" + juce::String (n));
+            par (sec, "Delay", (id + "Delay").toRawUTF8(), "DELAY: the LFO waits after each key");
+            par (sec, "Fade", (id + "Fade").toRawUTF8(), "FADE: then it grows in");
+            choice (sec, "Offset", (id + "Offset").toRawUTF8(), 0, "OFFSET: the wave above zero, around it, or below");
+            // KEY TRIG: one LED, its key switches it on and off
+            const juce::String tid = id + "Trig";
+            if (auto* list = find (sec, "Keytrig", "leds"))
+            {
+                list->selected = [&pr, tid] { return plainOf (pr, tid.toRawUTF8()) > 0.5f ? 0 : -1; };
+                list->pick = [&pr, tid] (int) { setPlain (pr, tid.toRawUTF8(), plainOf (pr, tid.toRawUTF8()) > 0.5f ? 0.0f : 1.0f); };
+                list->tip = "KEY TRIG: the wave starts again with every key";
+            }
+            if (auto* key = find (sec, "Keytrig select", "button"))
+            {
+                key->press = [&pr, tid] { setPlain (pr, tid.toRawUTF8(), plainOf (pr, tid.toRawUTF8()) > 0.5f ? 0.0f : 1.0f); };
+                key->tip = "KEY TRIG on / off";
+            }
+        }
+        // where the LFOs go: the pitch (STRING Mod + Amt) and the cutoff (FILTER LFO sel + LFO)
+        choice ("String", "Mod", "pitchModSrc", 0, "Which LFO bends the pitch (Env: the function envelope)");
+        par ("String", "Amt", "pitchModAmt", "Pitch modulation: vibrato, up to 3 semitones");
+        choice ("Filter", "LFO sel", "filtLfoSel", 0, "Which LFO moves the filter");
+        par ("Filter", "LFO", "filtLfoAmt", "How much the LFO moves the filter");
 
         // AMP ENV
         par ("Amp env", "Atk", "harpAttack", "Attack: how the string starts");
@@ -168,14 +194,25 @@ namespace hama
         if (auto* c = find ("Hand", "Arp", "button"))
         {
             c->lit = [&pr] { return juce::roundToInt (plainOf (pr, "strumMode")) == 1; };
-            c->press = [&pr] { const bool on = juce::roundToInt (plainOf (pr, "strumMode")) != 1; setPlain (pr, "strumMode", on ? 1.0f : 3.0f); if (on) setPlain (pr, "gridOn", 0.0f); };
+            c->press = [&pr]
+            {
+                const bool on = juce::roundToInt (plainOf (pr, "strumMode")) != 1;
+                setPlain (pr, "strumMode", on ? 1.0f : 3.0f);
+                if (on) { setPlain (pr, "gridOn", 0.0f); const int k = juce::roundToInt (plainOf (pr, "keysPlay")); if (k == 4 || k == 5) setPlain (pr, "keysPlay", 0.0f); }   // ARP and FLOURISH take turns
+            };
             c->tip = "ARP: the held chord plays note by note";
         }
         toggle ("Hand", "Gate", "gateOn", "GATE: the sound is chopped in rhythm");
         if (auto* c = find ("Hand", "Flourish", "button"))
         {
             c->lit = [&pr] { const int k = juce::roundToInt (plainOf (pr, "keysPlay")); return k == 4 || k == 5; };
-            c->press = [&pr] { const int k = juce::roundToInt (plainOf (pr, "keysPlay")); setPlain (pr, "keysPlay", (k == 4 || k == 5) ? 0.0f : 4.0f); };
+            c->press = [&pr]
+            {
+                const int k = juce::roundToInt (plainOf (pr, "keysPlay"));
+                const bool on = ! (k == 4 || k == 5);
+                setPlain (pr, "keysPlay", on ? 4.0f : 0.0f);
+                if (on && juce::roundToInt (plainOf (pr, "strumMode")) == 1) setPlain (pr, "strumMode", 3.0f);   // the arp would swallow the run
+            };
             c->tip = "FLOURISH: one key plays a whole run";
         }
         if (auto* c = find ("Hand", "Notes", "button"))
@@ -346,7 +383,7 @@ namespace hama
                 for (int k = 0; k < c.def->numItems; ++k)
                 {
                     const auto& it = c.def->items[k];
-                    if (juce::Rectangle<float> (it.x - 4.0f, it.y - 4.0f, 60.0f, it.h + 8.0f).contains (d)) return i;
+                    if (juce::Rectangle<float> (it.x - 4.0f, it.y - 3.0f, 40.0f, it.h + 6.0f).contains (d)) return i;
                 }
                 continue;
             }
