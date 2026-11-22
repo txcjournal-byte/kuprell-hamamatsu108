@@ -260,6 +260,10 @@ namespace hama
         }
         if (auto* c = find ("CONSOLE", "Status", "screen")) c->text = [] { return juce::String(); };
 
+        // STRUM: what the strings hold
+        if (auto* c = find ("CONSOLE", "Chord", "button")) { c->lit = [&pr] { return pr.stringsMode.load() == 0; }; c->press = [&pr] { pr.stringsMode.store (0); }; c->tip = "CHORD: the strings hold the notes of the chord"; }
+        if (auto* c = find ("CONSOLE", "Scale", "button")) { c->lit = [&pr] { return pr.stringsMode.load() == 1; }; c->press = [&pr] { pr.stringsMode.store (1); }; c->tip = "SCALE: the strings hold every note of the key"; }
+        if (auto* c = find ("CONSOLE", "Notes", "button")) { c->lit = [&pr] { return pr.stringsMode.load() == 2; }; c->press = [&pr] { pr.stringsMode.store (2); }; c->tip = "NOTES: the strings hold only the notes you hold"; }
         // STRINGS
         if (auto* c = find ("STRINGS", "Tone | Bend", "button")) { c->lit = [this] { return ! keysView && bedLayer == 0; }; c->press = [this] { keysView = false; bedLayer = 0; }; c->tip = "Handles: bottom = where the string is plucked, top = how slack it is"; }
         if (auto* c = find ("STRINGS", "Time | Level", "button")) { c->lit = [this] { return ! keysView && bedLayer == 1; }; c->press = [this] { keysView = false; bedLayer = 1; }; c->tip = "Handles: bottom = how late the string comes in the strum, top = its level"; }
@@ -269,8 +273,19 @@ namespace hama
             c->press = [this] { if (heldKey >= 0) processor.keyboardState.noteOff (1, heldKey, 0.0f); heldKey = -1; keysView = ! keysView; };
             c->tip = "KEYS: a keyboard instead of the strings";
         }
-        if (auto* c = find ("STRINGS", "Rec", "button")) { c->lit = [this] { return takeLive && takeLive(); }; c->press = [this] { if (onTakeMenu) onTakeMenu (this); }; c->tip = "The take: everything you play is recorded (click: options)"; }
-        if (auto* c = find ("STRINGS", "Drag MIDI", "button")) { c->lit = [this] { return hasTake && hasTake(); }; c->press = [] {}; c->tip = "Drag the take into your DAW as a MIDI clip"; }
+        if (auto* c = find ("STRINGS", "Rec", "button"))
+        {
+            // REC on: a new take starts, everything you play is kept; REC off: the take waits under DRAG MIDI
+            c->lit = [this] { return takeArmed && takeArmed() && ((juce::Time::getMillisecondCounter() / 400) % 2 == 0 || (takeLive && takeLive())); };
+            c->press = [this] { if (onArmTake && takeArmed) onArmTake (! takeArmed()); };
+            c->tip = "REC: click, play, click again. Then drag the take from DRAG MIDI";
+        }
+        if (auto* c = find ("STRINGS", "Drag MIDI", "button"))
+        {
+            c->lit = [this] { return takeCount && takeCount() > 0 && ! (takeArmed && takeArmed()); };
+            c->press = [] {};
+            c->tip = "Drag the take into your DAW as a MIDI clip (right-click: clean or exact timing)";
+        }
         if (auto* c = find ("STRINGS", "MIDI out", "button"))
         {
             c->lit = [&pr] { return pr.midiOut.load(); };
@@ -458,7 +473,10 @@ namespace hama
                 {
                     auto a = r.reduced (10.0f, 7.0f);
                     g.setFont (ui (11.0f));
-                    g.drawText ("HAND: Strings", a.removeFromTop (14.0f), juce::Justification::centredLeft, false);
+                    const bool armed = takeArmed && takeArmed();
+                    const int count = takeCount ? takeCount() : 0;
+                    g.drawText (armed ? "REC  " + juce::String (count) + " notes" : count > 0 ? "TAKE  " + juce::String (count) + " notes" : juce::String (processor.stringsMode.load() == 1 ? "STRINGS: Scale" : processor.stringsMode.load() == 2 ? "STRINGS: Notes" : "STRINGS: Chord"),
+                                a.removeFromTop (14.0f), juce::Justification::centredLeft, false);
                     const bool on[] = { true, plainOf (processor, "dual") > 0.5f, plainOf (processor, "bassType") > 0.5f, plainOf (processor, "chordType") > 0.5f };
                     a.removeFromTop (12.0f);
                     auto row = a.removeFromTop (18.0f);
@@ -497,6 +515,46 @@ namespace hama
         }
 
         if (keysView) paintKeys (g); else paintStrings (g);
+        // RESET: the strings back to clean
+        if (! keysView)
+        {
+            auto k = resetKey();
+            g.setColour (juce::Colours::black.withAlpha (0.35f));
+            g.fillRoundedRectangle (k, 3.0f);
+            g.setColour (mint.withAlpha (0.75f));
+            g.drawRoundedRectangle (k.reduced (0.5f), 3.0f, 1.0f);
+            g.setFont (ui (10.0f));
+            g.drawText ("RESET", k, juce::Justification::centred, false);
+        }
+    }
+
+    juce::Rectangle<float> ConsoleView::resetKey() const
+    {
+        for (auto& c : controls)
+            if (juce::String (c->def->label) == "Tone | Bend") return { c->r.getX() - 2.0f, c->r.getY() - 34.0f, 64.0f, 18.0f };
+        return { 1316.0f, 760.0f, 64.0f, 18.0f };
+    }
+
+    void ConsoleView::resetMenu()
+    {
+        juce::PopupMenu m;
+        m.addItem (1, bedLayer == 0 ? "Reset TONE and BEND on every string" : "Reset TIME and LEVEL on every string");
+        m.addItem (2, "Reset every string (all handles, all strings on)");
+        m.addItem (3, "All strings on");
+        juce::Component::SafePointer<ConsoleView> safe (this);
+        m.showMenuAsync (juce::PopupMenu::Options(), [safe] (int r)
+        {
+            if (safe == nullptr || r <= 0) return;
+            auto& pr = safe->processor;
+            for (int s = 0; s < Hamamatsu108Processor::numStrings; ++s)
+            {
+                if (r == 1 && safe->bedLayer == 0) { pr.plTone[(size_t) s].store (0.35f); pr.plBend[(size_t) s].store (0.0f); }
+                if (r == 1 && safe->bedLayer == 1) { pr.plTime[(size_t) s].store (0.0f); pr.plLevel[(size_t) s].store (0.0f); }
+            }
+            if (r == 2) pr.resetPlate();
+            if (r == 3) pr.plMute.store (0);
+            safe->repaint();
+        });
     }
 
     //==============================================================================
@@ -670,6 +728,8 @@ namespace hama
     {
         const auto d = toDesign (e.position);
         dragging = -1; dragHandle = -1; lastStrumX = -1.0f;
+        if (! keysView && resetKey().contains (d)) { resetMenu(); return; }
+        if (e.mods.isPopupMenu() && bed().contains (d) && ! keysView) { resetMenu(); return; }
         const int i = hitControl (d);
         if (i >= 0)
         {
@@ -695,7 +755,7 @@ namespace hama
                     if (std::abs (d.y - (c.def->items[k].y + c.def->items[k].h * 0.5f)) < 8.0f) { c.pick (k); break; }
                 repaint(); return;
             }
-            if (juce::String (c.def->label) == "Drag MIDI") { dragging = i; return; }
+            if (juce::String (c.def->label) == "Drag MIDI") { if (e.mods.isPopupMenu()) { if (onTakeMenu) onTakeMenu (this); } else dragging = i; return; }
             if (c.press) { c.press(); repaint(); return; }
             return;
         }

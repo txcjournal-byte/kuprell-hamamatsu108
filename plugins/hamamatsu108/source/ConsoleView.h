@@ -25,7 +25,9 @@ namespace hama
 
         std::function<void()> onMenu, onSetup, onPrev, onNext, onEffects;
         std::function<void (juce::Component*)> onDragTake, onTakeMenu;
-        std::function<bool()> takeLive, hasTake;
+        std::function<bool()> takeLive, hasTake, takeArmed;
+        std::function<void (bool)> onArmTake;
+        std::function<int()> takeCount;
         std::function<void (const juce::String&, const juce::String&)> onStatus;
         bool effectsOpen = false;
 
@@ -61,6 +63,8 @@ namespace hama
         int dragHandle = -1, heldKey = -1;
         float lastStrumX = -1.0f;
         juce::String lastSig;
+        juce::Rectangle<float> resetKey() const;
+        void resetMenu();
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ConsoleView)
     };

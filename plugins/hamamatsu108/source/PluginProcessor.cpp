@@ -1027,8 +1027,15 @@ void Hamamatsu108Processor::wheelStrum (int samplePos, float pos, float& last)
 
 void Hamamatsu108Processor::updateTones (int chordIndex, int transpose, int rangeOctaves)
 {
-    if (chordIndex == tonesChord && transpose == tonesTranspose && rangeOctaves == tonesRange)
+    const int smode = stringsMode.load();
+    const int scaleKey = juce::roundToInt (param (apvts, "keyRoot")) * 2 + (param (apvts, "keyMode") > 0.5f ? 1 : 0);
+    int heldMask = 0;
+    if (smode == 2) for (int n = 0; n < 128; ++n) if (heldMelodic[(size_t) n]) heldMask |= 1 << (n % 12);
+    if (chordIndex == tonesChord && transpose == tonesTranspose && rangeOctaves == tonesRange && smode == tonesMode && (smode == 0 || scaleKey == tonesScaleKey) && heldMask == tonesHeld)
         return;
+    tonesHeld = heldMask;
+    tonesMode = smode;
+    tonesScaleKey = scaleKey;
 
     tonesChord = chordIndex;
     tonesTranspose = transpose;
@@ -1037,7 +1044,15 @@ void Hamamatsu108Processor::updateTones (int chordIndex, int transpose, int rang
 
     if (chordIndex < 0) return;
 
-    const int mask = chords::pitchClassMask (chordIndex, transpose);
+    int mask = chords::pitchClassMask (chordIndex, transpose);
+    if (smode == 2 && heldMask != 0) mask = heldMask;   // NOTES: only the notes you hold
+    if (smode == 1)   // SCALE: every note of the key on the strings
+    {
+        static const int major[] = { 0, 2, 4, 5, 7, 9, 11 }, minor[] = { 0, 2, 3, 5, 7, 8, 10 };
+        const int root = scaleKey / 2 + transpose;
+        mask = 0;
+        for (int k = 0; k < 7; ++k) mask |= 1 << ((((scaleKey & 1) ? minor[k] : major[k]) + root + 120) % 12);
+    }
     // never below C3 (MIDI 48), so recorded strums never land in the chord zones
     static const int lows[] = { 60, 60, 54, 48, 48 };
     const int low = lows[juce::jlimit (1, 4, rangeOctaves)];
@@ -2819,6 +2834,7 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
     state.setProperty ("keysV2", 1, nullptr);
     state.setProperty ("keysV3", 1, nullptr);
     state.setProperty ("stringsPick", stringsPick.load(), nullptr);
+    state.setProperty ("stringsMode", stringsMode.load(), nullptr);
     {
         juce::StringArray pl;
         for (int i = 0; i < numStrings; ++i)
@@ -2976,6 +2992,7 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
             const bool presetModified = (bool) state.getProperty ("presetModified", false);
             apvts.replaceState (state);
             stringsPick.store ((int) state.getProperty ("stringsPick", -1));
+            stringsMode.store (juce::jlimit (0, 2, (int) state.getProperty ("stringsMode", 0)));
             resetPlate();
             {
                 const auto pl = juce::StringArray::fromTokens (state.getProperty ("plate").toString(), ",", {});

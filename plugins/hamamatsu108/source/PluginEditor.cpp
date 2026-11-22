@@ -94,6 +94,10 @@ Hamamatsu108Editor::Hamamatsu108Editor (Hamamatsu108Processor& p)
     console.onNext = [this] { browser.refresh(); audioProcessor.presetManager->loadNext (1, browser.filtered()); audioProcessor.previewPreset(); };
     console.takeLive = [this] { return instrument.takeLive(); };
     console.hasTake = [this] { return instrument.hasTake(); };
+    console.takeArmed = [this] { return instrument.takeArmed(); };
+    console.onArmTake = [this] (bool on) { instrument.armTake (on); };
+    console.takeCount = [this] { return instrument.takeCount(); };
+    instrument.armTake (false);   // the console records only while REC is on
     console.onDragTake = [this] (juce::Component* c) { instrument.dragTake (c); };
     console.onTakeMenu = [this] (juce::Component* c) { instrument.takeMenu (c); };
     console.onStatus = [this] (const juce::String& n, const juce::String& v) { status.setText (n, v); };

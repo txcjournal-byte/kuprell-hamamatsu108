@@ -1275,6 +1275,7 @@ namespace hama
                 {
                     for (int i = 0; i < size; ++i)
                     {
+                        if (! armed) continue;   // only what is played while REC is on
                         const auto n = processor.captureBuffer[(size_t) (start + i)];
                         if (! notes.empty() && n.seconds - notes.back().seconds > 4.0)
                             notes.clear();   // a pause of 4 s starts a new take
@@ -1382,6 +1383,9 @@ namespace hama
         void mouseUp (const juce::MouseEvent&) override { dragging = false; repaint(); }
 
         bool isLive() const { return live; }
+        bool armed = true;   // the console arms it with REC; the old page records all the time
+        void setArmed (bool on) { if (on && ! armed) notes.clear(); armed = on; }
+        int count() const { int c = 0; for (auto& n : notes) if (n.on && n.layer == 0) ++c; return c; }
         bool hasNotes() const { return ! notes.empty(); }
         void dragFrom (juce::Component* source)
         {
@@ -3534,6 +3538,9 @@ namespace hama
 
     bool InstrumentView::takeLive() const { return capture->isLive(); }
     bool InstrumentView::hasTake() const { return capture->hasNotes(); }
+    void InstrumentView::armTake (bool on) { capture->setArmed (on); }
+    bool InstrumentView::takeArmed() const { return capture->armed; }
+    int InstrumentView::takeCount() const { return capture->count(); }
     void InstrumentView::dragTake (juce::Component* source) { capture->dragFrom (source); }
     void InstrumentView::takeMenu (juce::Component*) { capture->showMenu(); }
 

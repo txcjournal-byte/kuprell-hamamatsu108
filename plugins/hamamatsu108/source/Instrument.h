@@ -170,6 +170,9 @@ namespace hama
         std::function<void (std::uint32_t)> onFlashes;
         bool takeLive() const;
         bool hasTake() const;
+        void armTake (bool on);
+        bool takeArmed() const;
+        int takeCount() const;
         void dragTake (juce::Component* source);
         void takeMenu (juce::Component* target);
 

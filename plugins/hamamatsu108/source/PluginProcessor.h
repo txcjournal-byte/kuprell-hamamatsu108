@@ -111,6 +111,7 @@ public:
     }
     // KEYS: the on-screen keyboard in the strum window
     juce::MidiKeyboardState keyboardState;
+    std::atomic<int> stringsMode { 0 };   // what the strings hold: 0 the chord, 1 the whole scale of the key, 2 only the notes you hold
     // console controls whose sound comes in a later step: their positions are kept with the session (-1 = untouched)
     static constexpr int numSpare = 192;
     std::array<std::atomic<float>, numSpare> consoleSpare;
@@ -318,7 +319,7 @@ private:
     bool hostDriven = false;
     std::array<std::array<bool, 128>, 4> capturedOn {};   // note-offs are recorded only for recorded note-ons          // the piano roll is playing the plugin: MIDI capture records nothing            // chord layer + bass sound while the harp is being played, then release      // chord layer / bass following piano-roll notes: never captured
     int chordFromHeldNotes();   // chord that fits the held MIDI notes (for chord layer and bass)
-    int tonesChord = -2, tonesTranspose = 0, tonesRange = 0;
+    int tonesChord = -2, tonesTranspose = 0, tonesRange = 0, tonesMode = 0, tonesScaleKey = -1, tonesHeld = 0;
 
     // strum clock
     double samplesToNextStrum = 0.0;
