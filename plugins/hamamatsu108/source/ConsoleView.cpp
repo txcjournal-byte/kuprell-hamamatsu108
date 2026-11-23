@@ -609,7 +609,8 @@ namespace hama
             }
         }
 
-        if (keysView) paintKeys (g); else { paintStrings (g); paintFx (g); }
+        if (keysView) paintKeys (g); else if (stepsView()) paintSteps (g); else { paintStrings (g); paintFx (g); }
+        paintHarpTypes (g);
         // RESET: the strings back to clean
         if (! keysView)
         {
@@ -619,13 +620,16 @@ namespace hama
             g.setColour (mint.withAlpha (0.75f));
             g.drawRoundedRectangle (k.reduced (0.5f), 3.0f, 1.0f);
             g.setFont (ui (10.0f));
-            g.drawText ("RESET", k, juce::Justification::centred, false);
-            auto rk = fxRandomKey();
+            g.drawText (stepsView() ? "PATTERN" : "RESET", k, juce::Justification::centred, false);
+            auto rk = stepsView() ? autoKey() : fxRandomKey();
+            const bool autoOn = stepsView() && processor.flAuto.load();
+            if (autoOn) { g.setColour (mint.withAlpha (0.25f)); g.fillRoundedRectangle (rk, 3.0f); }
             g.setColour (juce::Colours::black.withAlpha (0.35f));
             g.fillRoundedRectangle (rk, 3.0f);
             g.setColour (bone.withAlpha (0.7f));
             g.drawRoundedRectangle (rk.reduced (0.5f), 3.0f, 1.0f);
-            g.drawText ("FX RND", rk, juce::Justification::centred, false);
+            g.setColour (autoOn ? mint : bone.withAlpha (0.7f));
+            g.drawText (stepsView() ? "AUTO" : "FX RND", rk, juce::Justification::centred, false);
         }
     }
 
@@ -650,7 +654,7 @@ namespace hama
     }
     int ConsoleView::fxPadAt (juce::Point<float> p) const
     {
-        if (keysView) return -1;
+        if (keysView || bedLayer == 2) return -1;
         for (int s = 0; s < Hamamatsu108Processor::numStrings; ++s)
             if (fxPad (s).expanded (3.0f, 2.0f).contains (p)) return s;
         return -1;
@@ -758,7 +762,7 @@ namespace hama
     // STRINGS: 26 metal strings, each with a handle at the top and at the bottom
     juce::Rectangle<float> ConsoleView::bed() const
     {
-        for (auto& c : controls) if (juce::String (c->def->kind) == "strings") return c->r.withTrimmedTop (keysView ? 0.0f : 24.0f).withTrimmedBottom (14.0f).withWidth (1170.0f);
+        for (auto& c : controls) if (juce::String (c->def->kind) == "strings") return c->r.withTrimmedTop (keysView || bedLayer == 2 ? 0.0f : 24.0f).withTrimmedBottom (14.0f).withWidth (1170.0f);
         return { 115.0f, 752.0f, 1180.0f, 126.0f };
     }
     float ConsoleView::stringX (int s) const
@@ -921,10 +925,270 @@ namespace hama
     }
 
     //==============================================================================
+    //==============================================================================
+    // HARP TYPES: six instruments, each with its own strum, flourish and touch
+    namespace harptypes
+    {
+        const char* const tips[Hamamatsu108Processor::numHarpTypes] = {
+            "Concert harp: wide even glissando, round touch",
+            "Paraguayan harp: fast nails, the bass drops under every stroke",
+            "Kora: thumb and finger take turns left and right, buzzing bridge",
+            "Chord zither: one fast even sweep over the chord bars, short and dry",
+            "Wire harp: slow strokes, metal strings that ring and ring",
+            "Laser harp: beams locked to the tempo grid, every note the same" };
+    }
+
+    juce::Rectangle<float> ConsoleView::harpTypeKey (int t) const { return { 1487.0f, 748.0f + 20.0f * (float) t, 64.0f, 17.0f }; }
+    juce::Rectangle<float> ConsoleView::flourishKey() const { return { 1487.0f, 873.0f, 62.0f, 20.0f }; }
+    juce::Rectangle<float> ConsoleView::autoKey() const { return fxRandomKey(); }
+
+    void ConsoleView::paintHarpTypes (juce::Graphics& g)
+    {
+        const int cur = processor.harpType();
+        g.setColour (bone.withAlpha (0.55f));
+        g.setFont (ui (9.0f));
+        g.drawText ("HARP TYPE", juce::Rectangle<float> (1487.0f, 731.0f, 64.0f, 14.0f), juce::Justification::centredLeft, false);
+        for (int t = 0; t < Hamamatsu108Processor::numHarpTypes; ++t)
+        {
+            auto r = harpTypeKey (t);
+            const bool on = t == cur;
+            auto led = juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ r.getX() + 6.0f, r.getCentreY() });
+            g.setColour (juce::Colours::black.withAlpha (0.6f));
+            g.fillEllipse (led.expanded (1.5f));
+            if (on) { g.setColour (ledRed.withAlpha (0.28f)); g.fillEllipse (led.expanded (4.0f)); }
+            g.setColour (on ? ledRed : juce::Colour (0xff4a1d1f));
+            g.fillEllipse (led);
+            g.setColour (on ? bone : bone.withAlpha (0.5f));
+            g.setFont (ui (8.5f, on));
+            g.drawText (Hamamatsu108Processor::harpTypeName (t), r.withTrimmedLeft (13.0f), juce::Justification::centredLeft, false);
+        }
+        auto k = flourishKey();
+        const bool lit = stepsView();
+        g.setColour (juce::Colours::black.withAlpha (0.4f));
+        g.fillRoundedRectangle (k, 3.0f);
+        if (lit) { g.setColour (mint.withAlpha (0.22f)); g.fillRoundedRectangle (k, 3.0f); }
+        g.setColour (lit ? mint : bone.withAlpha (0.7f));
+        g.drawRoundedRectangle (k.reduced (0.5f), 3.0f, 1.0f);
+        g.setFont (ui (9.0f));
+        g.drawText ("FLOURISH", k, juce::Justification::centred, false);
+    }
+
+    void ConsoleView::selectHarpType (int t, bool withPattern)
+    {
+        if (auto* q = P (processor, "harpType"))
+        {
+            q->beginChangeGesture();
+            q->setValueNotifyingHost (q->convertTo0to1 ((float) t));
+            q->endChangeGesture();
+        }
+        if (withPattern) processor.loadFlourishDefault (t);
+        processor.lastHarpType = t;   // the audio thread must not swap the steps again
+        if (onStatus) onStatus (Hamamatsu108Processor::harpTypeName (t), harptypes::tips[t]);
+        repaint();
+    }
+
+    // FLOURISH STEPS: 16 columns over the bed, note height up and down, level as brightness
+    juce::Rectangle<float> ConsoleView::stepColumn (int i) const
+    {
+        auto b = bed().withTrimmedLeft (34.0f).withTrimmedRight (8.0f);
+        const float w = b.getWidth() / (float) Hamamatsu108Processor::maxFlSteps;
+        return { b.getX() + w * (float) i, b.getY(), w, b.getHeight() };
+    }
+    int ConsoleView::stepAt (float x) const
+    {
+        for (int i = 0; i < Hamamatsu108Processor::maxFlSteps; ++i)
+            if (const auto c = stepColumn (i); x >= c.getX() && x < c.getRight()) return i;
+        return -1;
+    }
+    float ConsoleView::semiToY (int semi) const
+    {
+        const auto b = bed();
+        const float top = b.getY() + 28.0f, bottom = b.getBottom() - 22.0f;
+        return bottom - (float) (semi + 12) / 48.0f * (bottom - top);
+    }
+    int ConsoleView::yToSemi (float y) const
+    {
+        const auto b = bed();
+        const float top = b.getY() + 28.0f, bottom = b.getBottom() - 22.0f;
+        return juce::jlimit (-12, 36, juce::roundToInt ((bottom - y) / (bottom - top) * 48.0f) - 12);
+    }
+
+    void ConsoleView::paintSteps (juce::Graphics& g)
+    {
+        const auto b = bed();
+        const int count = juce::jlimit (1, Hamamatsu108Processor::maxFlSteps, processor.flSteps.load());
+        const bool autoOn = processor.flAuto.load();
+        const int key = processor.flKey.load();
+        const float x0 = stepColumn (0).getX(), x1 = stepColumn (Hamamatsu108Processor::maxFlSteps - 1).getRight();
+        // octave guides
+        for (int o = -12; o <= 36; o += 12)
+        {
+            const float y = semiToY (o);
+            g.setColour (mint.withAlpha (o == 0 ? 0.25f : 0.1f));
+            g.fillRect (x0, y - 0.5f, x1 - x0, 1.0f);
+            g.setColour (bone.withAlpha (o == 0 ? 0.6f : 0.35f));
+            g.setFont (ui (9.0f, o == 0));
+            g.drawText (o == 0 ? juce::String ("KEY") : (o > 0 ? "+" : "") + juce::String (o), juce::Rectangle<float> (b.getX() + 2.0f, y - 6.0f, 28.0f, 12.0f), juce::Justification::centredRight, false);
+        }
+        for (int i = 0; i < Hamamatsu108Processor::maxFlSteps; ++i)
+        {
+            const auto c = stepColumn (i);
+            const bool inRun = i < count;
+            const float vel = i == 0 ? juce::jmax (0.3f, processor.flVel[0].load()) : processor.flVel[(size_t) i].load();
+            const int semi = i == 0 ? 0 : processor.flSemi[(size_t) i].load();
+            const bool on = inRun && vel > 0.001f;
+            const int vis = juce::roundToInt ((count > 1 ? (float) i / (float) (count - 1) : 0.0f) * (float) (Hamamatsu108Processor::numStrings - 1));
+            const float hot = inRun ? glow[(size_t) juce::jlimit (0, Hamamatsu108Processor::numStrings - 1, vis)] : 0.0f;
+            // the lane
+            const auto lane = juce::Rectangle<float> (c.getX() + 3.0f, b.getY() + 22.0f, c.getWidth() - 6.0f, b.getHeight() - 38.0f);
+            g.setColour (juce::Colours::black.withAlpha (inRun ? 0.24f : 0.08f));
+            g.fillRect (lane);
+            if (hot > 0.0f) { g.setColour (mint.withAlpha (0.14f * hot)); g.fillRect (lane); }
+            // the note
+            auto block = juce::Rectangle<float> (c.getWidth() - 14.0f, 8.0f).withCentre ({ c.getCentreX(), semiToY (semi) });
+            if (on)
+            {
+                const auto col = i == 0 ? bone : mint;
+                const float dim = autoOn ? 0.35f : 1.0f;
+                g.setColour (col.withAlpha ((0.1f + 0.3f * hot) * dim));
+                g.fillRoundedRectangle (block.expanded (3.0f), 3.0f);
+                g.setColour (col.withAlpha ((0.35f + 0.65f * vel) * dim));
+                g.fillRoundedRectangle (block, 2.0f);
+            }
+            else if (inRun)
+            {
+                g.setColour (mint.withAlpha (0.35f));
+                g.drawRoundedRectangle (block, 2.0f, 1.0f);
+            }
+            // the note name on top, the level at the bottom
+            g.setColour (inRun ? (i == 0 ? bone : bone.withAlpha (on ? 0.85f : 0.35f)) : bone.withAlpha (0.2f));
+            g.setFont (ui (9.5f, i == 0));
+            g.drawText (inRun ? juce::MidiMessage::getMidiNoteName (juce::jlimit (0, 127, key + semi), true, true, 5) : juce::String (i + 1),
+                        c.withHeight (18.0f).translated (0.0f, 3.0f), juce::Justification::centred, false);
+            if (inRun)
+            {
+                auto lv = juce::Rectangle<float> (c.getWidth() - 16.0f, 4.0f).withCentre ({ c.getCentreX(), b.getBottom() - 9.0f });
+                g.setColour (juce::Colours::black.withAlpha (0.45f));
+                g.fillRect (lv);
+                if (on) { g.setColour (mint.withAlpha (0.8f)); g.fillRect (lv.withWidth (lv.getWidth() * vel)); }
+            }
+        }
+        // the end of the run
+        const float endX = stepColumn (count - 1).getRight();
+        g.setColour (mint.withAlpha (0.75f));
+        g.fillRect (endX - 1.0f, b.getY() + 20.0f, 2.0f, b.getHeight() - 34.0f);
+        if (autoOn)
+        {
+            auto msg = b.withSizeKeepingCentre (560.0f, 24.0f);
+            g.setColour (juce::Colours::black.withAlpha (0.7f));
+            g.fillRoundedRectangle (msg, 3.0f);
+            g.setColour (bone);
+            g.setFont (ui (11.0f));
+            g.drawText ("AUTO: the run follows the chord of the key. Switch AUTO off for your steps.", msg, juce::Justification::centred, false);
+        }
+    }
+
+    void ConsoleView::stepStatus (int i)
+    {
+        if (! onStatus || i < 0) return;
+        const int semi = i == 0 ? 0 : processor.flSemi[(size_t) i].load();
+        const float vel = processor.flVel[(size_t) i].load();
+        onStatus ("FLOURISH STEP " + juce::String (i + 1),
+                  i == 0 ? juce::String ("The key you play, level ") + juce::String (juce::roundToInt (juce::jmax (0.3f, vel) * 100.0f)) + "%" :
+                  vel <= 0.001f ? juce::String ("Off") :
+                  juce::MidiMessage::getMidiNoteName (juce::jlimit (0, 127, processor.flKey.load() + semi), true, true, 5)
+                      + "  (" + (semi >= 0 ? "+" : "") + juce::String (semi) + ")  level " + juce::String (juce::roundToInt (vel * 100.0f)) + "%");
+    }
+
+    void ConsoleView::stepMenu (int i)
+    {
+        juce::PopupMenu m;
+        const int type = processor.harpType();
+        if (i >= 0) m.addItem (1, "End the run here (" + juce::String (i + 1) + " steps)");
+        m.addItem (2, "Back to the " + juce::String (Hamamatsu108Processor::harpTypeName (type)).toLowerCase() + " pattern");
+        m.addItem (3, "Random notes");
+        m.addItem (4, "Every step up an octave");
+        m.addItem (5, "Every step down an octave");
+        m.addItem (6, "Every step on, full level");
+        m.addItem (7, "Only the key (clear the steps)");
+        m.addSeparator();
+        m.addItem (8, "AUTO: the run through the chord of the key", true, processor.flAuto.load());
+        juce::Component::SafePointer<ConsoleView> safe (this);
+        m.showMenuAsync (juce::PopupMenu::Options(), [safe, i, type] (int r)
+        {
+            if (safe == nullptr || r <= 0) return;
+            auto& p = safe->processor;
+            const int n = Hamamatsu108Processor::maxFlSteps;
+            if (r == 1) { p.flSteps.store (juce::jmax (1, i + 1)); p.flEdited.store (true); }
+            if (r == 2) p.loadFlourishDefault (type);
+            if (r == 3)
+            {
+                static const int pool[] = { -12, -5, 0, 2, 3, 5, 7, 9, 10, 12, 14, 15, 17, 19, 21, 22, 24, 26, 31 };
+                juce::Random rnd;
+                for (int k = 1; k < n; ++k)
+                {
+                    p.flSemi[(size_t) k].store (pool[rnd.nextInt ((int) std::size (pool))]);
+                    p.flVel[(size_t) k].store (rnd.nextFloat() < 0.15f ? 0.0f : 0.55f + 0.45f * rnd.nextFloat());
+                }
+            }
+            if (r == 4 || r == 5) for (int k = 1; k < n; ++k) p.flSemi[(size_t) k].store (juce::jlimit (-12, 36, p.flSemi[(size_t) k].load() + (r == 4 ? 12 : -12)));
+            if (r == 6) for (int k = 0; k < n; ++k) p.flVel[(size_t) k].store (1.0f);
+            if (r == 7) for (int k = 1; k < n; ++k) p.flVel[(size_t) k].store (0.0f);
+            if (r == 8) p.flAuto.store (! p.flAuto.load());
+            else if (r != 1 && r != 2) { p.flAuto.store (false); p.flEdited.store (true); }
+            safe->repaint();
+        });
+    }
+
     void ConsoleView::mouseDown (const juce::MouseEvent& e)
     {
         const auto d = toDesign (e.position);
-        dragging = -1; dragHandle = -1; lastStrumX = -1.0f;
+        dragging = -1; dragHandle = -1; lastStrumX = -1.0f; stepDrag = -1;
+        for (int t = 0; t < Hamamatsu108Processor::numHarpTypes; ++t)
+            if (harpTypeKey (t).expanded (0.0f, 1.5f).contains (d))
+            {
+                if (e.mods.isPopupMenu())
+                {
+                    juce::PopupMenu m;
+                    m.addItem (1, "Switch to " + juce::String (Hamamatsu108Processor::harpTypeName (t)) + " with its flourish");
+                    m.addItem (2, "Switch, keep my flourish steps");
+                    juce::Component::SafePointer<ConsoleView> safe (this);
+                    m.showMenuAsync (juce::PopupMenu::Options(), [safe, t] (int r) { if (safe != nullptr && r > 0) safe->selectHarpType (t, r == 1); });
+                }
+                else selectHarpType (t, true);
+                return;
+            }
+        if (flourishKey().contains (d))
+        {
+            keysView = false;
+            bedLayer = bedLayer == 2 ? 0 : 2;
+            if (onStatus && bedLayer == 2) onStatus ("FLOURISH STEPS", "Step 1 is the key you play. Drag a step up or down, click to switch it off, Shift-drag for its level");
+            repaint(); return;
+        }
+        if (stepsView())
+        {
+            if (resetKey().contains (d)) { stepMenu (-1); return; }
+            if (autoKey().contains (d)) { processor.flAuto.store (! processor.flAuto.load()); repaint(); return; }
+            if (bed().contains (d))
+            {
+                const int i = stepAt (d.x);
+                if (i < 0) return;
+                if (e.mods.isPopupMenu()) { stepMenu (i); return; }
+                const int count = processor.flSteps.load();
+                if (i >= count)   // a click past the end makes the run longer
+                {
+                    processor.flSteps.store (i + 1);
+                    for (int k = count; k <= i; ++k) if (processor.flVel[(size_t) k].load() <= 0.001f) processor.flVel[(size_t) k].store (0.8f);
+                    processor.flAuto.store (false); processor.flEdited.store (true);
+                    stepStatus (i); repaint(); return;
+                }
+                stepDrag = i; stepMoved = false; stepVelDrag = e.mods.isShiftDown() || i == 0;
+                stepStartY = d.y; stepStartVel = processor.flVel[(size_t) i].load();
+                stepStatus (i);
+                return;
+            }
+        }
+
         if (! keysView && resetKey().contains (d)) { resetMenu(); return; }
         if (! keysView && fxRandomKey().contains (d)) { if (e.mods.isPopupMenu()) fxMenu (-1); else fxRandom(); return; }
         if (const int s = fxPadAt (d); s >= 0)
@@ -990,6 +1254,27 @@ namespace hama
     void ConsoleView::mouseDrag (const juce::MouseEvent& e)
     {
         const auto d = toDesign (e.position);
+        if (stepDrag >= 0)
+        {
+            if (std::abs (d.y - stepStartY) > 2.0f) stepMoved = true;
+            if (! stepMoved) return;
+            processor.flAuto.store (false); processor.flEdited.store (true);
+            if (stepVelDrag)
+                processor.flVel[(size_t) stepDrag].store (juce::jlimit (stepDrag == 0 ? 0.3f : 0.05f, 1.0f, stepStartVel + (stepStartY - d.y) / 90.0f));
+            else if (processor.flSteps.load() > 1)
+            {
+                // drag the note; across the steps it draws a line of notes
+                const int at = stepAt (d.x);
+                const int i = juce::jlimit (1, processor.flSteps.load() - 1, at < 0 ? stepDrag : at);
+                processor.flSemi[(size_t) i].store (yToSemi (d.y));
+                if (processor.flVel[(size_t) i].load() <= 0.001f) processor.flVel[(size_t) i].store (0.8f);
+                stepDrag = i;
+            }
+            stepStatus (stepDrag);
+            repaint();
+            return;
+        }
+
         if (fxPaint >= 0)
         {
             if (const int s = stringAt (d.x); s >= 0 && processor.plFx[(size_t) s].load() != fxPaint) { processor.plFx[(size_t) s].store (fxPaint); repaint(); }
@@ -1051,6 +1336,14 @@ namespace hama
 
     void ConsoleView::mouseUp (const juce::MouseEvent&)
     {
+        if (stepDrag > 0 && ! stepMoved)   // a click switches a step off and on
+        {
+            auto& v = processor.flVel[(size_t) stepDrag];
+            v.store (v.load() > 0.001f ? 0.0f : 0.85f);
+            processor.flAuto.store (false); processor.flEdited.store (true);
+            stepStatus (stepDrag);
+        }
+        stepDrag = -1;
         if (dragging >= 0) gesture (processor, *controls[(size_t) dragging], false);
         dragging = -1;
         if (heldKey >= 0) { processor.keyboardState.noteOff (1, heldKey, 0.0f); heldKey = -1; }
@@ -1071,7 +1364,7 @@ namespace hama
             else if (c.spare >= 0) processor.consoleSpare[(size_t) c.spare].store (-1.0f);
             repaint(); return;
         }
-        if (keysView || ! bed().contains (d)) return;
+        if (keysView || stepsView() || ! bed().contains (d)) return;
         if (const int h = handleAt (d); h >= 0) handleRef (h / 2, h & 1).store (bedLayer == 0 && ! (h & 1) ? 0.35f : 0.0f);
         else if (const int s = stringAt (d.x); s >= 0) processor.plMute.fetch_xor (1u << (unsigned) s);
         repaint();
@@ -1079,6 +1372,17 @@ namespace hama
 
     void ConsoleView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
     {
+        if (stepsView() && bed().contains (toDesign (e.position)))
+        {
+            const int i = stepAt (toDesign (e.position).x);
+            if (i >= 1 && i < processor.flSteps.load())
+            {
+                processor.flSemi[(size_t) i].store (juce::jlimit (-12, 36, processor.flSemi[(size_t) i].load() + (w.deltaY > 0 ? 1 : -1)));
+                processor.flAuto.store (false); processor.flEdited.store (true);
+                stepStatus (i); repaint();
+            }
+            return;
+        }
         if (const int i = hitControl (toDesign (e.position)); i >= 0)
         {
             auto& c = *controls[(size_t) i];
@@ -1097,7 +1401,8 @@ namespace hama
         const int i = hitControl (toDesign (e.position));
         juce::String tip = i >= 0 ? controls[(size_t) i]->tip : juce::String();
         if (i < 0 && bed().contains (toDesign (e.position)))
-            tip = keysView ? "Click and slide over the keys" : "Drag across the strings to strum. Drag a handle to tune that string (Shift: all strings), double-click a string to switch it off";
+            tip = keysView ? "Click and slide over the keys" :
+                  stepsView() ? "FLOURISH STEPS: step 1 is the key you play. Drag a step up or down (across the steps to draw), click to switch it off, Shift-drag for its level, wheel for one semitone, right-click for more" : "Drag across the strings to strum. Drag a handle to tune that string (Shift: all strings), double-click a string to switch it off";
         if (tip != getTooltip()) setTooltip (tip);
     }
 
@@ -1122,7 +1427,7 @@ namespace hama
             if (c->selected) mix (c->selected());
         }
         mix (processor.presetManager->currentName().hashCode64());
-        mix (processor.activeChord.load()); mix (processor.detectedChord.load()); mix (keysView ? 1 : 0); mix (bedLayer);
+        mix (processor.activeChord.load()); mix (processor.detectedChord.load()); mix (keysView ? 1 : 0); mix (bedLayer); mix (processor.harpType()); mix (processor.flAuto.load() ? 1 : 0); mix (processor.flSteps.load());
         mix (processor.stringsMode.load()); mix ((juce::int64) processor.plMute.load());
         if (sig != lastSig) { lastSig = sig; repaint(); }
         else if (any || keysView)

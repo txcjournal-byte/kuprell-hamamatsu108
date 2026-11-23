@@ -105,6 +105,22 @@ public:
     std::array<std::atomic<float>, numStrings> plTone, plBend, plLevel, plTime;
     std::atomic<std::uint32_t> plMute { 0 };
     std::array<std::atomic<int>, numStrings> plFx {};   // STRING FX: one effect per string (0 off .. 9 dead)
+
+    // HARP TYPES: every type has its own strum, its own flourish and its own touch
+    enum HarpType { concert = 0, paraguay, kora, zither, wire, laser, numHarpTypes };
+    static const char* harpTypeName (int t);
+    int harpType() const;
+
+    // FLOURISH STEPS: step 1 is the key you play, every other step is yours (semitones from the key, level 0 = off)
+    static constexpr int maxFlSteps = 16;
+    std::array<std::atomic<int>, maxFlSteps> flSemi {};
+    std::array<std::atomic<float>, maxFlSteps> flVel {};
+    std::atomic<int> flSteps { 10 };
+    std::atomic<bool> flAuto { false };      // AUTO: the old run through the chord of the key
+    std::atomic<int> flKey { 60 };           // the last key that started a flourish (shown in the editor)
+    std::atomic<bool> flEdited { false };    // you changed the steps: presets keep them
+    std::atomic<int> lastHarpType { -1 };
+    void loadFlourishDefault (int type);
     void resetPlate (int s = -1)
     {
         for (int i = 0; i < numStrings; ++i)

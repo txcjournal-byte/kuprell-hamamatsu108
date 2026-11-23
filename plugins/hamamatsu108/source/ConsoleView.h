@@ -74,6 +74,21 @@ namespace hama
         void fxRandom();
         void paintFx (juce::Graphics&);
         int fxPaint = -1;
+        // HARP TYPES (a column of LEDs right of the strings) and the FLOURISH STEPS editor (third view of the bed)
+        juce::Rectangle<float> harpTypeKey (int t) const;
+        juce::Rectangle<float> flourishKey() const;
+        juce::Rectangle<float> autoKey() const;
+        bool stepsView() const { return ! keysView && bedLayer == 2; }
+        void paintHarpTypes (juce::Graphics&);
+        void paintSteps (juce::Graphics&);
+        juce::Rectangle<float> stepColumn (int i) const;
+        int stepAt (float x) const;
+        float semiToY (int semi) const;
+        int yToSemi (float y) const;
+        void stepMenu (int i);
+        void selectHarpType (int t, bool withPattern);
+        void stepStatus (int i);
+        int stepDrag = -1; bool stepMoved = false, stepVelDrag = false; float stepStartY = 0.0f, stepStartVel = 0.0f;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ConsoleView)
     };

@@ -60,6 +60,62 @@ juce::String Hamamatsu108Processor::patternString (int index) const
     return s;
 }
 
+//==============================================================================
+// HARP TYPES
+namespace harpstyle
+{
+    struct Style
+    {
+        float strumSpeed, flSpeed;        // how fast a strum / a flourish crosses the strings
+        float tone, hard, pick, decay, sustain, buzz, harmonic;   // the touch (added / multiplied on the sound)
+        bool bassFirst, swing, grid, flat;   // Paraguay bass on the first beat, Kora thumb swing, Laser on the grid, Zither even
+        float pan;                        // Kora: strings alternate left and right
+        int steps; int semi[16]; float vel[16];
+    };
+    static const Style styles[Hamamatsu108Processor::numHarpTypes] =
+    {
+        // Concert: a wide glissando through fifths and octaves
+        { 1.0f, 1.0f,   0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,   false, false, false, false, 0.0f,
+          10, { 0, 2, 7, 12, 14, 19, 24, 26, 31, 36 }, { 1, .8f, .85f, .9f, .8f, .85f, .9f, .8f, .85f, 1 } },
+        // Paraguay: fast nails, the bass drops under the run, accents on the beat
+        { 0.5f, 1.25f,  0.15f, 0.3f, -0.06f, 0.7f, 0.0f, 0.05f, 0.0f,   true, false, false, false, 0.0f,
+          10, { 0, -12, 7, 12, -5, 7, 12, 19, 12, 7 }, { 1, .95f, .55f, .8f, .9f, .55f, .8f, 1, .65f, .55f } },
+        // Kora: thumb and finger take turns, left and right, a buzzing bridge
+        { 1.15f, 1.6f,  0.1f, 0.2f, 0.0f, 0.8f, 0.0f, 0.3f, 0.0f,   false, true, false, false, 0.55f,
+          10, { 0, 7, 12, 7, 14, 7, 12, 19, 12, 7 }, { 1, .6f, .85f, .6f, .9f, .6f, .85f, 1, .7f, .6f } },
+        // Zither: one fast even sweep over chord bars, short and dry
+        { 0.3f, 0.5f,   -0.05f, 0.0f, 0.04f, 0.6f, -0.5f, 0.0f, 0.0f,   false, false, false, true, 0.0f,
+          10, { 0, 5, 7, 12, 17, 19, 24, 29, 31, 36 }, { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 } },
+        // Wire: slow, metal strings that ring and ring
+        { 1.8f, 2.2f,   0.2f, 0.35f, -0.04f, 2.2f, 0.3f, 0.0f, 0.15f,   false, false, false, false, 0.0f,
+          8, { 0, 7, 12, 19, 24, 19, 12, 7 }, { 1, .7f, .8f, .9f, 1, .75f, .65f, .55f } },
+        // Laser: beams on the tempo grid, every note the same, bright and short
+        { 0.0f, 0.0f,   0.25f, 0.4f, -0.08f, 0.9f, 0.1f, 0.1f, 0.4f,   false, false, true, true, 0.0f,
+          10, { 0, 12, 24, 12, 0, 12, 24, 36, 24, 12 }, { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 } },
+    };
+    inline const Style& get (int t) { return styles[juce::jlimit (0, Hamamatsu108Processor::numHarpTypes - 1, t)]; }
+}
+
+const char* Hamamatsu108Processor::harpTypeName (int t)
+{
+    static const char* const names[] = { "CONCERT", "PARAGUAY", "KORA", "ZITHER", "WIRE", "LASER" };
+    return names[juce::jlimit (0, numHarpTypes - 1, t)];
+}
+int Hamamatsu108Processor::harpType() const { return juce::jlimit (0, numHarpTypes - 1, juce::roundToInt (const_cast<Hamamatsu108Processor*> (this)->apvts.getRawParameterValue ("harpType")->load())); }
+
+void Hamamatsu108Processor::loadFlourishDefault (int type)
+{
+    const auto& st = harpstyle::get (type);
+    for (int i = 0; i < maxFlSteps; ++i)
+    {
+        flSemi[(size_t) i].store (i < st.steps ? st.semi[i] : 12);
+        flVel[(size_t) i].store (i < st.steps ? st.vel[i] : 0.8f);
+    }
+    flSteps.store (st.steps);
+    flAuto.store (false);
+    flEdited.store (false);
+}
+
 const juce::StringArray& Hamamatsu108Processor::keysPlayNames()
 {
     static const juce::StringArray n { "Notes", "Strum", "Pattern", "Plate only", "Flourish up", "Flourish down", "Split" };
@@ -398,6 +454,7 @@ Hamamatsu108Processor::Hamamatsu108Processor()
       apvts (*this, &undoManager, "Hamamatsu108", createParameterLayout())
 {
     resetPlate();
+    loadFlourishDefault (concert);
     for (auto& v : consoleSpare) v.store (-1.0f);
     for (auto& sl : progSlots) sl.store (-1);
     progNotes.reserve (256);
@@ -719,7 +776,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumShape", 1 }, "Stroke Shape", StringArray { "Linear", "Natural", "Fast start", "Fast finish" }, 1));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumSpeedMul", 1 }, "Pattern Speed", StringArray { "Half", "Normal", "Double" }, 1));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumRestart", 1 }, "Pattern Start", StringArray { "Follow the bar", "Restart on chord" }, 0));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "keysPlay", 1 }, "Keys Play", keysPlayNames(), 0));   // Notes: every key is exactly one note
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "keysPlay", 1 }, "Keys Play", keysPlayNames(), 0));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "harpType", 1 }, "Harp Type",
+                                                        juce::StringArray { "Concert", "Paraguay", "Kora", "Zither", "Wire", "Laser" }, 0));   // Notes: every key is exactly one note
 
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "hold", 1 }, "Hold", true));
     // STRUM KEYS: one octave of the keyboard plays hand gestures (any keyboard size: pick the octave you can reach)
@@ -1140,7 +1199,7 @@ void Hamamatsu108Processor::wheelStrum (int samplePos, float pos, float& last)
 
 void Hamamatsu108Processor::updateTones (int chordIndex, int transpose, int rangeOctaves)
 {
-    const int smode = stringsMode.load();
+    const int smode = harpType() == zither ? 0 : stringsMode.load();   // ZITHER: the strings are the chord bars
     const int scaleKey = juce::roundToInt (param (apvts, "keyRoot")) * 2 + (param (apvts, "keyMode") > 0.5f ? 1 : 0);
     int heldMask = 0;
     if (smode == 2) for (int n = 0; n < 128; ++n) if (heldMelodic[(size_t) n]) heldMask |= 1 << (n % 12);
@@ -1321,8 +1380,13 @@ void Hamamatsu108Processor::sweep (int offset, bool down, int first, int count, 
         }
     }
     const float feel = mp ("strumFeel");
-    const float speedMs = mp ("strumSpeed") * speedMul;
+    const auto& style = harpstyle::get (harpType());
+    float speedMs = mp ("strumSpeed") * speedMul * style.strumSpeed;
+    if (style.grid) speedMs = (float) (60000.0 / juce::jmax (30.0, lastBpm) / 16.0) * speedMul;   // LASER: 1/64 grid
     auto rnd = [this] { return rng.nextFloat(); };
+    if (style.bassFirst && down && count >= 3 && first >= 0 && first < n)   // PARAGUAY: the bass drops under the stroke
+        schedulePitch (juce::jmax (0, offset), tones[(size_t) first] - 12, juce::jlimit (0.1f, 1.0f, vel * 1.1f), true,
+                       n > 1 ? juce::roundToInt ((float) first * (numStrings - 1) / (float) (n - 1)) : 0);
 
     const int lead = juce::roundToInt ((rnd() - 0.3f) * feel * 0.012f * (float) sr);
     const float stepMs = speedMs * (1.0f + (rnd() - 0.5f) * 0.6f * feel);
@@ -1332,16 +1396,19 @@ void Hamamatsu108Processor::sweep (int offset, bool down, int first, int count, 
     {
         const int tone = down ? first + i : first - i;
         if (tone < 0 || tone >= n) break;
-        const float v = vel * (1.0f - 0.25f * (float) i / (float) count) * (1.0f + (rnd() - 0.5f) * 0.25f * feel);
+        float v = vel * (1.0f - 0.25f * (float) i / (float) count) * (1.0f + (rnd() - 0.5f) * 0.25f * feel);
+        if (style.flat) v = vel;
+        if (style.bassFirst && i == 0) v = juce::jmin (1.0f, v * 1.2f);
         scheduleNote (juce::roundToInt (t), tone, v);
-        const float jitter = 1.0f + (rnd() - 0.5f) * 0.5f * feel;
+        float jitter = style.grid ? 1.0f : 1.0f + (rnd() - 0.5f) * 0.5f * feel;
+        if (style.swing) jitter *= (i % 2 == 0) ? 1.5f : 0.5f;
         // stroke shape: how the hand moves across the strings (even, eased, accelerating, braking)
         const float f = count > 1 ? (float) i / (float) (count - 1) : 0.0f;
         float shapeMul = 1.0f;
         if (shape == 1) shapeMul = 0.55f + 1.8f * (f - 0.5f) * (f - 0.5f) * 2.0f;
         else if (shape == 2) shapeMul = 0.4f + 1.2f * f;
         else if (shape == 3) shapeMul = 1.6f - 1.2f * f;
-        t += stepMs * 0.001f * (float) sr * jitter * shapeMul;
+        t += (style.grid ? speedMs : stepMs) * 0.001f * (float) sr * jitter * (style.grid ? 1.0f : shapeMul);
     }
 }
 
@@ -1371,6 +1438,37 @@ void Hamamatsu108Processor::flourish (int samplePos, int key, float velocity, bo
     if (customMask != 0) chord = chords::index (key % 12, 0);   // the display shows the root of your notes
     flourishChord = chord;
     if (motionActive()) return;   // MOTION is on (GRID / LINES / RHYTHM / STRINGS): the key only picks the chord, the window plays it
+    flKey.store (key);
+    const auto& style = harpstyle::get (harpType());
+    if (customMask == 0 && ! flAuto.load())
+    {
+        // FLOURISH STEPS: the key, then your steps, in the timing of the harp type
+        const int count = juce::jlimit (1, maxFlSteps, flSteps.load());
+        const float v = juce::jlimit (0.05f, 1.0f, velocity);
+        const float feel = mp ("strumFeel");
+        const double grid = sr * 60.0 / juce::jmax (30.0, lastBpm) / 8.0;   // 1/32
+        const float stepSamples = style.grid ? (float) grid
+                                             : (60.0f - 46.0f * v) * style.flSpeed * 0.001f * (float) sr;
+        float t = (float) samplePos;
+        for (int k = 0; k < count; ++k)
+        {
+            const int i = up ? k : count - 1 - k;
+            const float lv = i == 0 ? juce::jmax (0.3f, flVel[0].load()) : flVel[(size_t) i].load();
+            if (lv > 0.001f)
+            {
+                const int note = juce::jlimit (0, 127, key + (i == 0 ? 0 : flSemi[(size_t) i].load()));
+                float vel = (0.45f + 0.55f * v) * lv;
+                if (! style.flat) vel *= 1.0f + (rng.nextFloat() - 0.5f) * 0.2f * feel;
+                const float f = count > 1 ? (float) i / (float) (count - 1) : 0.0f;
+                schedulePitch (juce::roundToInt (t), note, juce::jlimit (0.05f, 1.0f, vel), true, juce::roundToInt (f * (float) (numStrings - 1)));
+            }
+            float dt = stepSamples;
+            if (style.swing) dt *= (k % 2 == 0) ? 1.45f : 0.55f;   // thumb long, finger short
+            if (! style.grid) dt *= 1.0f + (rng.nextFloat() - 0.5f) * 0.3f * feel;
+            t += dt;
+        }
+        return;
+    }
     const int range = juce::jlimit (1, 4, juce::roundToInt (param (apvts, "harpRange")));
     const int mask = customMask != 0 ? customMask : chords::pitchClassMask (chord, juce::roundToInt (param (apvts, "transpose")));
     const int low = juce::jlimit (36, 84, key);   // the run starts on the key you press
@@ -1559,6 +1657,16 @@ void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note,
         const float basePick = s.model == harp::Model::harp ? 0.04f + 0.42f * s.pos : 1.0f / 7.0f;
         s.pick = juce::jlimit (0.02f, 0.5f, basePick + (t - 0.35f) * 0.5f);
         if (b > 0.001f) { s.bend = -2.0f * b; s.bendTime = 0.06f + 0.3f * b; }
+        // HARP TYPE: the touch of the instrument
+        const auto& style = harpstyle::get (harpType());
+        s.tone = juce::jlimit (0.02f, 1.0f, s.tone + style.tone);
+        s.hard = juce::jlimit (0.0f, 1.0f, s.hard + style.hard);
+        s.pick = juce::jlimit (0.02f, 0.5f, s.pick + style.pick);
+        s.decay *= style.decay;
+        s.sustain = juce::jlimit (0.0f, 1.0f, s.sustain + style.sustain);
+        s.buzz = juce::jlimit (0.0f, 1.0f, s.buzz + style.buzz);
+        s.harmonic = juce::jlimit (0.0f, 1.0f, s.harmonic + style.harmonic);
+        if (style.pan > 0.0f) pan = juce::jlimit (-0.9f, 0.9f, (curString % 2 == 0 ? -style.pan : style.pan) + pan * 0.3f);
         // STRING FX of this string
         s.stringFx = plFx[(size_t) curString].load();
         s.chopSamples = (int) (sr * 60.0 / juce::jmax (30.0, lastBpm) / 4.0);
@@ -1888,6 +1996,12 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     buffer.clear();
     const int numSamples = buffer.getNumSamples();
     blockSamples = numSamples;
+    // a preset with another harp type brings that type's flourish, unless you shaped your own steps
+    if (const int ht = harpType(); ht != lastHarpType.load())
+    {
+        if (lastHarpType >= 0 && ! flEdited.load()) loadFlourishDefault (ht);
+        lastHarpType.store (ht);
+    }
     keyboardState.processNextMidiBuffer (midi, 0, numSamples, true);   // KEYS on the strum window
     if ((int) pitchMul.size() < numSamples) pitchMul.resize ((size_t) numSamples, 1.0f);
 
@@ -3055,6 +3169,12 @@ void Hamamatsu108Processor::getStateInformation (juce::MemoryBlock& destData)
         juce::StringArray fxs;
         for (auto& f : plFx) fxs.add (juce::String (f.load()));
         state.setProperty ("plateFx", fxs.joinIntoString (","), nullptr);
+        juce::StringArray fl;
+        for (int i = 0; i < maxFlSteps; ++i) fl.add (juce::String (flSemi[(size_t) i].load()) + ":" + juce::String (flVel[(size_t) i].load(), 2));
+        state.setProperty ("flSteps", fl.joinIntoString (","), nullptr);
+        state.setProperty ("flCount", flSteps.load(), nullptr);
+        state.setProperty ("flAuto", flAuto.load(), nullptr);
+        state.setProperty ("flEdited", flEdited.load(), nullptr);
         juce::StringArray sp;
         for (auto& v : consoleSpare) sp.add (juce::String (v.load(), 3));
         state.setProperty ("consoleSpare", sp.joinIntoString (","), nullptr);
@@ -3222,6 +3342,18 @@ void Hamamatsu108Processor::setStateInformation (const void* data, int sizeInByt
                 plMute.store ((std::uint32_t) (juce::int64) state.getProperty ("plateMute", 0));
                 const auto fxs = juce::StringArray::fromTokens (state.getProperty ("plateFx").toString(), ",", {});
                 for (int i = 0; i < numStrings; ++i) plFx[(size_t) i].store (i < fxs.size() ? juce::jlimit (0, 9, fxs[i].getIntValue()) : 0);
+                if (state.hasProperty ("flSteps"))
+                {
+                    const auto fl = juce::StringArray::fromTokens (state.getProperty ("flSteps").toString(), ",", {});
+                    for (int i = 0; i < maxFlSteps && i < fl.size(); ++i)
+                    {
+                        flSemi[(size_t) i].store (juce::jlimit (-24, 36, fl[i].upToFirstOccurrenceOf (":", false, false).getIntValue()));
+                        flVel[(size_t) i].store (juce::jlimit (0.0f, 1.0f, fl[i].fromFirstOccurrenceOf (":", false, false).getFloatValue()));
+                    }
+                    flSteps.store (juce::jlimit (1, maxFlSteps, (int) state.getProperty ("flCount", 10)));
+                    flAuto.store ((bool) state.getProperty ("flAuto", false));
+                    flEdited.store ((bool) state.getProperty ("flEdited", true));
+                }
                 const auto sp = juce::StringArray::fromTokens (state.getProperty ("consoleSpare").toString(), ",", {});
                 for (int i = 0; i < numSpare; ++i) consoleSpare[(size_t) i].store (i < sp.size() ? sp[i].getFloatValue() : -1.0f);
             }
