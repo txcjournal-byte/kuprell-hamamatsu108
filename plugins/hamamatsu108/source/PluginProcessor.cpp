@@ -71,6 +71,7 @@ namespace harpstyle
         bool bassFirst, swing, grid, flat;   // Paraguay bass on the first beat, Kora thumb swing, Laser on the grid, Zither even
         float pan;                        // Kora: strings alternate left and right
         int steps; int semi[16]; float vel[16];
+        bool chromatic = false, octDown = false;   // Cross: all 12 notes on the strings; Thunder: an octave down
     };
     static const Style styles[Hamamatsu108Processor::numHarpTypes] =
     {
@@ -92,13 +93,22 @@ namespace harpstyle
         // Laser: beams on the tempo grid, every note the same, bright and short
         { 0.0f, 0.0f,   0.25f, 0.4f, -0.08f, 0.9f, 0.1f, 0.1f, 0.4f,   false, false, true, true, 0.0f,
           10, { 0, 12, 24, 12, 0, 12, 24, 36, 24, 12 }, { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 } },
+        // Celtic: lever harp, warm gut strings, a gentle lilting run
+        { 0.9f, 1.15f,  -0.12f, -0.15f, 0.04f, 0.9f, 0.05f, 0.0f, 0.0f,   false, false, false, false, 0.0f,
+          9, { 0, 2, 7, 9, 12, 14, 19, 21, 24 }, { 1, .6f, .8f, .6f, .9f, .6f, .8f, .6f, .9f }, false, false },
+        // Cross: chromatic cross-strung harp, every semitone on the strings, a fast cluster glissando
+        { 0.4f, 0.7f,   0.05f, 0.1f, 0.0f, 0.8f, 0.0f, 0.0f, 0.0f,   false, false, false, true, 0.25f,
+          10, { 0, 1, 3, 4, 6, 7, 9, 10, 12, 13 }, { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }, true, false },
+        // Thunder: the bass strings an octave down, a wide rattling sweep that rolls like thunder
+        { 0.35f, 0.8f,  -0.05f, 0.35f, 0.06f, 1.6f, 0.2f, 0.6f, 0.0f,   false, false, false, false, 0.0f,
+          8, { 0, -5, -12, -17, -24, -12, -5, 0 }, { 1, .9f, 1, .85f, 1, .8f, .7f, .9f }, false, true },
     };
     inline const Style& get (int t) { return styles[juce::jlimit (0, Hamamatsu108Processor::numHarpTypes - 1, t)]; }
 }
 
 const char* Hamamatsu108Processor::harpTypeName (int t)
 {
-    static const char* const names[] = { "CONCERT", "PARAGUAY", "KORA", "ZITHER", "WIRE", "LASER" };
+    static const char* const names[] = { "CONCERT", "PARAGUAY", "KORA", "ZITHER", "WIRE", "LASER", "CELTIC", "CROSS", "THUNDER" };
     return names[juce::jlimit (0, numHarpTypes - 1, t)];
 }
 int Hamamatsu108Processor::harpType() const { return juce::jlimit (0, numHarpTypes - 1, juce::roundToInt (const_cast<Hamamatsu108Processor*> (this)->apvts.getRawParameterValue ("harpType")->load())); }
@@ -778,7 +788,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout Hamamatsu108Processor::creat
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "strumRestart", 1 }, "Pattern Start", StringArray { "Follow the bar", "Restart on chord" }, 0));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "keysPlay", 1 }, "Keys Play", keysPlayNames(), 0));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { "harpType", 1 }, "Harp Type",
-                                                        juce::StringArray { "Concert", "Paraguay", "Kora", "Zither", "Wire", "Laser" }, 0));   // Notes: every key is exactly one note
+                                                        juce::StringArray { "Concert", "Paraguay", "Kora", "Zither", "Wire", "Laser", "Celtic", "Cross", "Thunder" }, 0));   // Notes: every key is exactly one note
 
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "hold", 1 }, "Hold", true));
     // STRUM KEYS: one octave of the keyboard plays hand gestures (any keyboard size: pick the octave you can reach)
@@ -1203,10 +1213,10 @@ void Hamamatsu108Processor::updateTones (int chordIndex, int transpose, int rang
     const int scaleKey = juce::roundToInt (param (apvts, "keyRoot")) * 2 + (param (apvts, "keyMode") > 0.5f ? 1 : 0);
     int heldMask = 0;
     if (smode == 2) for (int n = 0; n < 128; ++n) if (heldMelodic[(size_t) n]) heldMask |= 1 << (n % 12);
-    if (chordIndex == tonesChord && transpose == tonesTranspose && rangeOctaves == tonesRange && smode == tonesMode && (smode == 0 || scaleKey == tonesScaleKey) && heldMask == tonesHeld)
+    if (chordIndex == tonesChord && transpose == tonesTranspose && rangeOctaves == tonesRange && smode + (harpType() == cross ? 100 : 0) == tonesMode && (smode == 0 || scaleKey == tonesScaleKey) && heldMask == tonesHeld)
         return;
     tonesHeld = heldMask;
-    tonesMode = smode;
+    tonesMode = smode + (harpType() == cross ? 100 : 0);
     tonesScaleKey = scaleKey;
 
     tonesChord = chordIndex;
@@ -1218,6 +1228,7 @@ void Hamamatsu108Processor::updateTones (int chordIndex, int transpose, int rang
 
     int mask = chords::pitchClassMask (chordIndex, transpose);
     if (smode == 2 && heldMask != 0) mask = heldMask;   // NOTES: only the notes you hold
+    const bool chromatic = harpType() == cross;            // CROSS: all twelve notes on the strings
     if (smode == 1)   // SCALE: every note of the key on the strings
     {
         static const int major[] = { 0, 2, 4, 5, 7, 9, 11 }, minor[] = { 0, 2, 3, 5, 7, 8, 10 };
@@ -1230,7 +1241,7 @@ void Hamamatsu108Processor::updateTones (int chordIndex, int transpose, int rang
     const int low = lows[juce::jlimit (1, 4, rangeOctaves)];
     const int high = low + 12 * rangeOctaves;
     for (int n = low; n <= high; ++n)
-        if (mask & (1 << (n % 12)))
+        if (chromatic || (mask & (1 << (n % 12))))
             tones.push_back (n);
 }
 
@@ -1666,6 +1677,7 @@ void Hamamatsu108Processor::startHarp (const harp::Settings& settings, int note,
         s.sustain = juce::jlimit (0.0f, 1.0f, s.sustain + style.sustain);
         s.buzz = juce::jlimit (0.0f, 1.0f, s.buzz + style.buzz);
         s.harmonic = juce::jlimit (0.0f, 1.0f, s.harmonic + style.harmonic);
+        if (style.octDown) s.pitchMul *= 0.5f;   // THUNDER: the bass strings
         if (style.pan > 0.0f) pan = juce::jlimit (-0.9f, 0.9f, (curString % 2 == 0 ? -style.pan : style.pan) + pan * 0.3f);
         // STRING FX of this string
         s.stringFx = plFx[(size_t) curString].load();

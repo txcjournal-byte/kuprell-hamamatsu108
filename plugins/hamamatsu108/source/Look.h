@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "KuprellLookAndFeel.h"
 #include "Instrument.h"
+#include "ConsoleStyle.h"
 
 // Shared drawing helpers for the Hamamatsu 144 views (hardware look).
 namespace hama::look
@@ -47,9 +48,9 @@ namespace hama::look
     // recessed area with an inner shadow
     inline void drawWell (juce::Graphics& g, juce::Rectangle<float> r, float radius)
     {
-        if (th().concrete)
+        if (th().concrete) { cs::plate (g, r, {}); return; }   // HARPOLOGY console: a raised graphite plate
+        if (false)
         {
-            // a cut into the concrete: flat dark void, one hard edge of shadow on top, one of light below
             g.setColour (juce::Colour (0xff1d1d1c));
             g.fillRect (r);
             g.setColour (juce::Colour (0xff0e0e0d));
@@ -94,9 +95,9 @@ namespace hama::look
     // 3D push button (raised cap with a dark side), optional LED strip or dot
     inline void drawHardButton (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& text, bool lit, bool enabled, bool stripLed)
     {
-        if (th().concrete)
+        if (th().concrete) { cs::key (g, r, text, lit, enabled, 10.5f); return; }   // rubber key with its LED
+        if (false)
         {
-            // a flat cast tile: in the light when on, with the red lamp
             g.setColour (juce::Colours::black.withAlpha (0.5f));
             g.fillRect (r.translated (1.5f, 2.0f));
             g.setColour (lit ? page::lit() : juce::Colour (0xff4b4a46));
@@ -164,7 +165,8 @@ namespace hama::look
    #endif
     inline void drawDisplay (juce::Graphics& g, juce::Rectangle<float> r, float radius)
     {
-        if (th().concrete)
+        if (th().concrete) { cs::lcd (g, r); return; }   // the green glass of the console
+        if (false)
         {
             g.setColour (page::screen());
             g.fillRect (r);
@@ -199,7 +201,8 @@ namespace hama::look
 
     inline void glowText (juce::Graphics& g, const juce::String& text, juce::Rectangle<float> r, juce::Justification j, float alpha = 1.0f)
     {
-        if (th().concrete)
+        if (th().concrete) { cs::lcdText (g, text, r, j, alpha); return; }
+        if (false)
         {
             g.setColour (page::phosphor().withAlpha (0.16f * alpha));
             g.drawText (text, r.translated (0.0f, 0.8f), j, false);

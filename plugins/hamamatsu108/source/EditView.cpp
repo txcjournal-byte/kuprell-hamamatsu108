@@ -19,16 +19,8 @@ namespace hama
         {
             for (auto& pn : panels)
             {
+                if (th().concrete) { cs::plate (g, pn.area.toFloat(), quiet (pn.title)); continue; }   // console plate, mint title strip
                 drawWell (g, pn.area.toFloat(), 14.0f);
-                if (th().concrete)
-                {
-                    g.setFont (LookAndFeel::uiFont (11.0f));
-                    g.setColour (page::ink());
-                    g.drawText (quiet (pn.title), pn.area.toFloat().reduced (14.0f, 0.0f).withHeight (28.0f), juce::Justification::centredLeft, false);
-                    g.setColour (juce::Colour (0xff2e2d2a));
-                    g.fillRect ((float) pn.area.getX() + 14.0f, (float) pn.area.getY() + 28.0f, (float) pn.area.getWidth() - 28.0f, 1.0f);
-                    continue;
-                }
                 g.setFont (spaced (9.0f, true, 0.28f));
                 g.setColour (engrave);
                 g.drawText (pn.title, pn.area.toFloat().reduced (16.0f, 0.0f).withHeight (30.0f), juce::Justification::centredLeft, false);
@@ -2071,29 +2063,17 @@ namespace hama
         if (th().concrete)
         {
             // one cast block under the main header, like settings: dark frame, slab, a row of tools
-            g.fillAll (page::theme().hall);
-            auto slab = getLocalBounds().toFloat().reduced (8.0f);
-            g.setColour (page::theme().slab);
-            g.fillRect (slab);
-            g.setColour (page::theme().slab.brighter (0.45f));
-            g.fillRect (slab.withHeight (2.0f));
+            // HARPOLOGY console: brushed graphite, rubber keys, the value on a strip of LCD
+            cs::pageBackground (g, getLocalBounds().toFloat());
             for (int i = 0; i < 5; ++i)
             {
-                auto t = toolTile (i);
-                g.setColour (juce::Colours::black.withAlpha (0.5f));
-                g.fillRect (t.translated (1.5f, 2.0f));
-                g.setColour (juce::Colour (0xff4b4a46));
-                g.fillRect (t);
-                g.setColour (juce::Colours::white.withAlpha (0.12f));
-                g.fillRect (t.withHeight (1.0f));
-                g.setFont (LookAndFeel::uiFont (12.0f));
-                g.setColour (page::ink());
                 static const char* names[] = { "Save", "A | B", "Random", "Undo", "Redo" };
-                g.drawText (names[i], t, juce::Justification::centred, false);
+                cs::key (g, toolTile (i), names[i], false);
             }
-            g.setFont (LookAndFeel::uiFont (12.0f));
-            g.setColour (page::ink().withAlpha (0.7f));
-            g.drawText (vfdName.isEmpty() ? juce::String() : vfdName + "   " + vfdValue, juce::Rectangle<float> (500.0f, 14.0f, 756.0f, 26.0f), juce::Justification::centredRight, false);
+            auto readout = juce::Rectangle<float> (880.0f, 14.0f, 370.0f, 26.0f);
+            cs::lcd (g, readout);
+            g.setFont (juce::Font (juce::FontOptions (12.0f, juce::Font::bold)));
+            cs::lcdText (g, vfdName.isEmpty() ? juce::String ("EFFECTS AND SOUND") : vfdName.toUpperCase() + "   " + vfdValue, readout.reduced (10.0f, 0.0f), juce::Justification::centredLeft);
             return;
         }
         g.fillAll (juce::Colour (0xff0b0c0d));

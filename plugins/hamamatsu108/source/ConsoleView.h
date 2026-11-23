@@ -56,6 +56,11 @@ namespace hama
         juce::Image bgScaled;   // the panel at the size it is shown: drawn once, then only copied
         std::vector<std::unique_ptr<Control>> controls;
         int dragging = -1;
+        int pressedCtl = -1;                 // a key held down (drawn pressed in)
+        float meterL = 0.0f, meterR = 0.0f;  // the output meter by the volume fader
+        juce::Rectangle<float> meterRect() const { return { 488.0f, 586.0f, 16.0f, 104.0f }; }
+        void paintMeter (juce::Graphics&);
+        void paintValueBubble (juce::Graphics&);
         float dragStartValue = 0.0f, dragStartY = 0.0f;
         std::array<float, Hamamatsu108Processor::numStrings> glow {};
         float phase = 0.0f;

@@ -3499,7 +3499,7 @@ namespace hama
         Knob::themeSoft = sk.accent.soft;
         Knob::themeDeep = sk.accent.deep;
         Knob::concrete = th().concrete;
-        Knob::customDial = [] (juce::Graphics& g, juce::Rectangle<float> r, float v, bool en, juce::Colour ink) { hw::knob (g, r, v, page::phosphor(), ink, en); };
+        Knob::customDial = [] (juce::Graphics& g, juce::Rectangle<float> r, float v, bool en, juce::Colour) { cs::knob (g, r, v, en); };   // the console knob
         kuprell::TopBar::concrete = th().concrete;
         kuprell::LookAndFeel::flat = th().concrete;
         backdrop->skin = skinIndex;

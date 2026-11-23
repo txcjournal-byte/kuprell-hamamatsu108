@@ -45,6 +45,9 @@ namespace hama
         void showRowMenu (int idx);
         void askName (const juce::String& title, const juce::String& name, const juce::String& bank, std::function<void (juce::String, juce::String)> done);
         int model = -1;     // -1 all
+        int harp = -1;      // HARP TYPE filter: -1 all
+        juce::Rectangle<int> harpRow (int i) const;   // 0 = all, 1.. = the harp types
+        int harpOf (int presetIndex) const;
         int lastCurrent = -2;
     };
 }

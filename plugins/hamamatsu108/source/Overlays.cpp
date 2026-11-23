@@ -55,6 +55,7 @@ namespace hama
     {
         void box (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& title)
         {
+            if (th().concrete) { cs::plate (g, r, title); return; }
             drawWell (g, r, 0.0f);
             g.setFont (LookAndFeel::uiFont (13.0f));
             g.setColour (page::ink());
@@ -64,6 +65,7 @@ namespace hama
         }
         void tile (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& t, bool on)
         {
+            if (th().concrete) { cs::key (g, r, t, on, true, 10.5f); return; }
             g.setColour (juce::Colours::black.withAlpha (0.5f));
             g.fillRect (r.translated (1.5f, 2.0f));
             g.setColour (on ? page::lit() : juce::Colour (0xff4b4a46));
@@ -166,15 +168,11 @@ namespace hama
 
     void SettingsView::paint (juce::Graphics& g)
     {
-        g.fillAll (page::theme().hall);
-        g.setColour (page::theme().slab);
-        g.fillRect (getLocalBounds().toFloat().reduced (8.0f));
-        g.setColour (page::theme().slab.brighter (0.45f));
-        g.fillRect (getLocalBounds().toFloat().reduced (8.0f).withHeight (2.0f));
+        cs::pageBackground (g, getLocalBounds().toFloat());
         walk ([&g] (const juce::String& kind, juce::Rectangle<float> r, const juce::String& t, bool on, std::function<void()>)
         {
             if (kind == "box") box (g, r, t);
-            else if (kind == "label") { g.setFont (LookAndFeel::uiFont (12.0f)); g.setColour (page::ink()); g.drawText (t, r, juce::Justification::centredLeft, false); }
+            else if (kind == "label") { g.setFont (juce::Font (juce::FontOptions (11.0f, juce::Font::bold)).withExtraKerningFactor (0.08f)); g.setColour (cs::bone.withAlpha (0.85f)); g.drawText (t, r, juce::Justification::centredLeft, false); }
             else if (kind == "note") { g.setFont (LookAndFeel::uiFont (10.5f)); g.setColour (page::dim().brighter (0.25f)); g.drawText (t, r, juce::Justification::centredRight, false); }
             else if (kind == "display") { drawDisplay (g, r, 0.0f); g.setFont (LookAndFeel::monoFont (13.0f)); glowText (g, t, r, juce::Justification::centred); }
             else tile (g, r, t, on);

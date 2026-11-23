@@ -107,7 +107,7 @@ public:
     std::array<std::atomic<int>, numStrings> plFx {};   // STRING FX: one effect per string (0 off .. 9 dead)
 
     // HARP TYPES: every type has its own strum, its own flourish and its own touch
-    enum HarpType { concert = 0, paraguay, kora, zither, wire, laser, numHarpTypes };
+    enum HarpType { concert = 0, paraguay, kora, zither, wire, laser, celtic, cross, thunder, numHarpTypes };
     static const char* harpTypeName (int t);
     int harpType() const;
 

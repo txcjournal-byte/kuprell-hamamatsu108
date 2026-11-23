@@ -17,7 +17,7 @@ A=/home/claude/kuprell-hamamatsu108/plugins/hamamatsu108/art
 python3 -c "
 from PIL import Image
 b=Image.open('static.png').convert('RGBA'); o=Image.open('ovs.png').convert('RGBA')
-Image.alpha_composite(b,o).convert('RGB').save('$A/console_bg.jpg', quality=90)"
+Image.alpha_composite(b,o).convert('RGB').save('$A/console_bg.jpg', quality=95, subsampling=0)"
 python3 - <<'PY'
 import json
 d=json.load(open('controls.json'))['ctl']

@@ -1,4 +1,5 @@
 #include "ConsoleView.h"
+#include "ConsoleStyle.h"
 #include "ConsoleLayout.h"
 #include "HarpArt.h"
 #include "Chords.h"
@@ -611,6 +612,16 @@ namespace hama
 
         if (keysView) paintKeys (g); else if (stepsView()) paintSteps (g); else { paintStrings (g); paintFx (g); }
         paintHarpTypes (g);
+        paintMeter (g);
+        if (pressedCtl >= 0 && pressedCtl < (int) controls.size())   // the key is held in
+        {
+            auto r = controls[(size_t) pressedCtl]->r;
+            g.setColour (juce::Colours::black.withAlpha (0.3f));
+            g.fillRoundedRectangle (r, 4.0f);
+            g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.55f), r.getX(), r.getY(), juce::Colours::transparentBlack, r.getX(), r.getY() + 7.0f, false));
+            g.fillRoundedRectangle (r.withHeight (7.0f), 4.0f);
+        }
+        paintValueBubble (g);
         // RESET: the strings back to clean
         if (! keysView)
         {
@@ -811,10 +822,31 @@ namespace hama
             // the steel: a lit cylinder
             juce::ColourGradient steel (juce::Colour (muted ? 0xff2a2a29 : 0xff6c6b67), x - th, 0.0f, juce::Colour (muted ? 0xff141414 : 0xff3a3a38), x + th, 0.0f, false);
             steel.addColour (0.38, juce::Colour (muted ? 0xff3c3c3a : 0xffeeeeea));
-            g.setColour (juce::Colours::black.withAlpha (0.55f));
-            g.fillRect (x - th * 0.5f + 2.0f, b.getY(), th, b.getHeight());
+            // a soft double shadow on the bed, the string stands off it
+            g.setColour (juce::Colours::black.withAlpha (0.18f));
+            g.fillRect (x - th * 0.5f + 5.0f, b.getY() + 2.0f, th + 2.0f, b.getHeight() - 2.0f);
+            g.setColour (juce::Colours::black.withAlpha (0.45f));
+            g.fillRect (x - th * 0.5f + 2.5f, b.getY() + 1.0f, th, b.getHeight() - 1.0f);
             g.setGradientFill (steel);
             g.fillRect (x - th * 0.5f, b.getY(), th, b.getHeight());
+            if (s < 10)   // the low strings are wound: a fine winding over the core
+            {
+                g.setColour (juce::Colours::black.withAlpha (muted ? 0.15f : 0.28f));
+                for (float y = b.getY() + 1.0f; y < b.getBottom(); y += 2.0f)
+                    g.fillRect (x - th * 0.5f, y, th, 0.7f);
+            }
+            g.setColour (juce::Colours::white.withAlpha (muted ? 0.12f : 0.55f));   // the specular line
+            g.fillRect (x - th * 0.22f, b.getY(), juce::jmax (0.7f, th * 0.18f), b.getHeight());
+            // the pins that hold the string, top and bottom
+            for (float py : { b.getY() + 4.0f, b.getBottom() - 4.0f })
+            {
+                auto pin = juce::Rectangle<float> (th + 5.0f, th + 5.0f).withCentre ({ x, py });
+                g.setColour (juce::Colours::black.withAlpha (0.6f));
+                g.fillEllipse (pin.translated (1.5f, 2.0f));
+                g.setGradientFill (juce::ColourGradient (juce::Colour (0xffe9e6dc), pin.getX() + pin.getWidth() * 0.35f, pin.getY() + pin.getHeight() * 0.3f,
+                                                         juce::Colour (0xff3d3c38), pin.getRight(), pin.getBottom(), true));
+                g.fillEllipse (pin);
+            }
             // the part between the handles sounds: it lights up when plucked and shivers
             if (! muted)
             {
@@ -926,6 +958,53 @@ namespace hama
 
     //==============================================================================
     //==============================================================================
+    // OUTPUT METER: two LED columns by the volume fader (mint, amber, red at the top)
+    void ConsoleView::paintMeter (juce::Graphics& g)
+    {
+        const auto m = meterRect();
+        g.setColour (juce::Colour (0xff070807));
+        g.fillRoundedRectangle (m, 2.0f);
+        constexpr int segs = 16;
+        const float segH = (m.getHeight() - 4.0f) / (float) segs;
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            const float lvl = ch == 0 ? meterL : meterR;
+            const float db = juce::Decibels::gainToDecibels (lvl, -60.0f);
+            const int lit = juce::roundToInt (juce::jlimit (0.0f, 1.0f, (db + 48.0f) / 51.0f) * (float) segs);
+            const float x = m.getX() + 2.5f + (float) ch * 6.0f;
+            for (int k = 0; k < segs; ++k)
+            {
+                const juce::Colour c = k >= segs - 2 ? cs::ledRed : k >= segs - 5 ? juce::Colour (0xffe8a13a) : mint;
+                const float y = m.getBottom() - 2.0f - (float) (k + 1) * segH;
+                g.setColour (k < lit ? c : c.withAlpha (0.1f));
+                g.fillRect (x, y + 0.6f, 5.0f, segH - 1.2f);
+            }
+        }
+    }
+
+    // the value of the fader or knob in hand, on a little piece of LCD above it
+    void ConsoleView::paintValueBubble (juce::Graphics& g)
+    {
+        if (dragging < 0 || dragging >= (int) controls.size()) return;
+        auto& c = *controls[(size_t) dragging];
+        if (juce::String (c.def->label) == "Drag MIDI") return;
+        juce::String text;
+        if (c.param.isNotEmpty()) { if (auto* q = P (processor, c.param.toRawUTF8())) text = q->getCurrentValueAsText(); }
+        else if (c.spare >= 0) text = juce::String (juce::roundToInt (valueOf (processor, c) * 100.0f)) + " %";
+        if (text.isEmpty()) return;
+        text = juce::String (c.def->label).toUpperCase() + "  " + text;
+        const auto f = juce::Font (juce::FontOptions (11.0f, juce::Font::bold));
+        const float w = (float) juce::GlyphArrangement::getStringWidthInt (f, text) + 18.0f;
+        auto r = juce::Rectangle<float> (w, 20.0f).withCentre ({ c.r.getCentreX(), c.r.getY() - 14.0f });
+        r = r.withX (juce::jlimit (4.0f, designW - w - 4.0f, r.getX())).withY (juce::jmax (4.0f, r.getY()));
+        g.setColour (juce::Colours::black.withAlpha (0.5f));
+        g.fillRoundedRectangle (r.translated (0.0f, 2.0f), 3.0f);
+        cs::lcd (g, r);
+        g.setFont (f);
+        cs::lcdText (g, text, r, juce::Justification::centred);
+    }
+
+    //==============================================================================
     // HARP TYPES: six instruments, each with its own strum, flourish and touch
     namespace harptypes
     {
@@ -935,10 +1014,13 @@ namespace hama
             "Kora: thumb and finger take turns left and right, buzzing bridge",
             "Chord zither: one fast even sweep over the chord bars, short and dry",
             "Wire harp: slow strokes, metal strings that ring and ring",
-            "Laser harp: beams locked to the tempo grid, every note the same" };
+            "Laser harp: beams locked to the tempo grid, every note the same",
+            "Celtic harp: warm gut strings, a gentle lilting run",
+            "Cross harp: all twelve notes on the strings, a fast chromatic glissando",
+            "Thunder: the bass strings an octave down, rattling like a storm" };
     }
 
-    juce::Rectangle<float> ConsoleView::harpTypeKey (int t) const { return { 1487.0f, 748.0f + 20.0f * (float) t, 64.0f, 17.0f }; }
+    juce::Rectangle<float> ConsoleView::harpTypeKey (int t) const { return { 1487.0f, 745.0f + 14.0f * (float) t, 64.0f, 13.0f }; }
     juce::Rectangle<float> ConsoleView::flourishKey() const { return { 1487.0f, 873.0f, 62.0f, 20.0f }; }
     juce::Rectangle<float> ConsoleView::autoKey() const { return fxRandomKey(); }
 
@@ -947,19 +1029,19 @@ namespace hama
         const int cur = processor.harpType();
         g.setColour (bone.withAlpha (0.55f));
         g.setFont (ui (9.0f));
-        g.drawText ("HARP TYPE", juce::Rectangle<float> (1487.0f, 731.0f, 64.0f, 14.0f), juce::Justification::centredLeft, false);
+        g.drawText ("HARP TYPE", juce::Rectangle<float> (1487.0f, 730.0f, 64.0f, 13.0f), juce::Justification::centredLeft, false);
         for (int t = 0; t < Hamamatsu108Processor::numHarpTypes; ++t)
         {
             auto r = harpTypeKey (t);
             const bool on = t == cur;
-            auto led = juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ r.getX() + 6.0f, r.getCentreY() });
+            auto led = juce::Rectangle<float> (6.0f, 6.0f).withCentre ({ r.getX() + 6.0f, r.getCentreY() });
             g.setColour (juce::Colours::black.withAlpha (0.6f));
             g.fillEllipse (led.expanded (1.5f));
             if (on) { g.setColour (ledRed.withAlpha (0.28f)); g.fillEllipse (led.expanded (4.0f)); }
             g.setColour (on ? ledRed : juce::Colour (0xff4a1d1f));
             g.fillEllipse (led);
             g.setColour (on ? bone : bone.withAlpha (0.5f));
-            g.setFont (ui (8.5f, on));
+            g.setFont (ui (8.0f, on));
             g.drawText (Hamamatsu108Processor::harpTypeName (t), r.withTrimmedLeft (13.0f), juce::Justification::centredLeft, false);
         }
         auto k = flourishKey();
@@ -1145,7 +1227,7 @@ namespace hama
         const auto d = toDesign (e.position);
         dragging = -1; dragHandle = -1; lastStrumX = -1.0f; stepDrag = -1;
         for (int t = 0; t < Hamamatsu108Processor::numHarpTypes; ++t)
-            if (harpTypeKey (t).expanded (0.0f, 1.5f).contains (d))
+            if (harpTypeKey (t).expanded (0.0f, 0.5f).contains (d))
             {
                 if (e.mods.isPopupMenu())
                 {
@@ -1228,7 +1310,7 @@ namespace hama
                 repaint(); return;
             }
             if (juce::String (c.def->label) == "Drag MIDI") { if (e.mods.isPopupMenu()) { if (onTakeMenu) onTakeMenu (this); } else dragging = i; return; }
-            if (c.press) { c.press(); repaint(); return; }
+            if (c.press) { pressedCtl = i; c.press(); repaint(); return; }
             return;
         }
         // the strings / the keys
@@ -1344,6 +1426,7 @@ namespace hama
             stepStatus (stepDrag);
         }
         stepDrag = -1;
+        pressedCtl = -1;
         if (dragging >= 0) gesture (processor, *controls[(size_t) dragging], false);
         dragging = -1;
         if (heldKey >= 0) { processor.keyboardState.noteOff (1, heldKey, 0.0f); heldKey = -1; }
@@ -1414,6 +1497,18 @@ namespace hama
 
     void ConsoleView::timerCallback()
     {
+        {
+            // the output meter: falls slowly, rises at once
+            const float l = processor.meterLeft.load(), r = processor.meterRight.load();
+            const float nl = juce::jmax (l, meterL * 0.82f), nr = juce::jmax (r, meterR * 0.82f);
+            if (std::abs (nl - meterL) > 0.002f || std::abs (nr - meterR) > 0.002f)
+            {
+                meterL = nl; meterR = nr;
+                const float sx = (float) getWidth() / designW, sy = (float) getHeight() / designH;
+                auto m = meterRect().expanded (3.0f);
+                repaint (juce::Rectangle<float> (m.getX() * sx, m.getY() * sy, m.getWidth() * sx, m.getHeight() * sy).getSmallestIntegerContainer());
+            }
+        }
         bool any = false;
         for (auto& v : glow) if (v > 0.0f) { v = juce::jmax (0.0f, v - 0.03f); any = true; }
         phase += 0.9f;
