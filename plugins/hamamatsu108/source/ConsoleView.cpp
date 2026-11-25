@@ -610,7 +610,7 @@ namespace hama
             }
         }
 
-        if (keysView) paintKeys (g); else if (stepsView()) paintSteps (g); else { paintStrings (g); paintFx (g); }
+        if (keysView) { paintKeys (g); paintFx (g); } else if (stepsView()) paintSteps (g); else { paintStrings (g); paintFx (g); }
         paintHarpTypes (g);
         paintMeter (g);
         if (pressedCtl >= 0 && pressedCtl < (int) controls.size())   // the key is held in
@@ -678,7 +678,7 @@ namespace hama
     }
     int ConsoleView::fxPadAt (juce::Point<float> p) const
     {
-        if (keysView || bedLayer == 2) return -1;
+        if (stepsView()) return -1;
         for (int s = 0; s < Hamamatsu108Processor::numStrings; ++s)
             if (fxPad (s).expanded (3.0f, 2.0f).contains (p)) return s;
         return -1;
@@ -786,7 +786,7 @@ namespace hama
     // STRINGS: 26 metal strings, each with a handle at the top and at the bottom
     juce::Rectangle<float> ConsoleView::bed() const
     {
-        for (auto& c : controls) if (juce::String (c->def->kind) == "strings") return c->r.withTrimmedTop (keysView || bedLayer == 2 ? 0.0f : 24.0f).withTrimmedBottom (14.0f).withWidth (1170.0f);
+        for (auto& c : controls) if (juce::String (c->def->kind) == "strings") return c->r.withTrimmedTop (! keysView && bedLayer == 2 ? 0.0f : 24.0f).withTrimmedBottom (14.0f).withWidth (1170.0f);
         return { 115.0f, 752.0f, 1180.0f, 126.0f };
     }
     float ConsoleView::stringX (int s) const
@@ -917,7 +917,7 @@ namespace hama
     namespace { constexpr int numKeys = 61; bool isBlack (int n) { const int k = n % 12; return k == 1 || k == 3 || k == 6 || k == 8 || k == 10; } }
     juce::Rectangle<float> ConsoleView::keyRect (int n) const
     {
-        auto a = bed().withTrimmedTop (12.0f).reduced (6.0f, 0.0f);
+        auto a = bed().withTrimmedTop (12.0f).reduced (6.0f, 0.0f);   // under the STRING FX pads and the felt
         const int lo = keyBase, hi = keyBase + numKeys - 1;
         int whites = 0; for (int k = lo; k <= hi; ++k) if (! isBlack (k)) ++whites;
         const float w = a.getWidth() / (float) whites;
@@ -1015,11 +1015,6 @@ namespace hama
                 g.fillRect (face.withTop (face.getBottom() - 3.0f).reduced (1.0f, 0.0f));
             }
         }
-        // the range of the keyboard
-        g.setColour (mint.withAlpha (0.7f));
-        g.setFont (ui (9.0f));
-        g.drawText (juce::MidiMessage::getMidiNoteName (lo, true, true, 5) + " - " + juce::MidiMessage::getMidiNoteName (hi, true, true, 5),
-                    b.withHeight (12.0f).translated (0.0f, -14.0f), juce::Justification::centredRight, false);
     }
 
     //==============================================================================

@@ -1285,7 +1285,7 @@ void Hamamatsu108Processor::schedulePitch (int delay, int note, float velocity, 
         visual = tones.size() > 1 ? juce::roundToInt ((float) bestIdx * (numStrings - 1) / (float) (tones.size() - 1)) : numStrings / 2;
     }
     else
-        visual = juce::jlimit (0, numStrings - 1, (note - 48) * (numStrings - 1) / 48);
+        visual = juce::jlimit (0, numStrings - 1, (note - 36) * (numStrings - 1) / 60);   // C2..C7: the STRING FX pad above the key
     if (forceVisual >= 0) visual = juce::jlimit (0, numStrings - 1, forceVisual);
     // the strings of the console play along: a string taken off is silent in runs and patterns too
     if (record && ((plMute.load() >> (unsigned) visual) & 1u)) return;
