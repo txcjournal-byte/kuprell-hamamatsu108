@@ -36,6 +36,38 @@ namespace presets
             { "Harp Analog", "Harp Wavetable", "Harp FM", "Harp Air", "Glass Analog", "Celesta Wave", "Pluck FM", "Steel Air", "Chime Saw", "Bell Wave", "Vibes Air", "Marimba FM", "Hybrid Strum", "Hybrid Pluck", "Hybrid Bell", "Hybrid Keys", "Morph Strum", "Morph Bell", "Morph Pluck", "Morph Keys", "Wave Harp", "Saw Harp", "Breath Harp", "Digital Harp", "Analog Chime", "FM Chime", "Air Chime", "Wave Chime", "Split Harp", "Dual Harp", "Layer Strum", "Two Engines", "Octave Harp", "Sub Harp", "High Harp", "Detune Harp", "Wide Hybrid", "Soft Hybrid", "Bright Hybrid", "Dark Hybrid" },
             { "Opening Titles", "Epic Rise", "Slow Reveal", "Trailer Harp", "Score Bed", "Main Theme", "Wide Shot", "Night Scene", "Credits", "Big Sky", "Long Road", "Last Light", "Distant Shore", "Snow Scene", "Final Act", "Prologue", "Wonder", "Discovery", "Low Strings Rise", "Hero Harp", "Tension Bed", "Shimmer Harp", "Ambient Score", "Dream Sequence", "Flashback", "Aerial", "Horizon Line", "Deep Space", "Arrival", "Departure", "Memory Lane", "Silent Film", "Dark Forest", "Rising Tide", "Glacier", "Cathedral", "Ocean Scene", "Desert Wind", "Starfield", "Epilogue" } };
 
+        // TAILS: a shorter release, less room and echo, smaller rooms (level 1 a little, 3 a lot)
+        void tame (std::vector<std::pair<juce::String, float>>& v, int level)
+        {
+            if (level <= 0) return;
+            const float mixK = level == 1 ? 0.72f : level == 2 ? 0.5f : 0.33f;
+            const float sizeK = level == 1 ? 0.88f : level == 2 ? 0.72f : 0.55f;
+            const float rel = level == 1 ? 1.3f : level == 2 ? 0.7f : 0.4f;
+            auto last = [&v] (const juce::String& id, float def) { for (auto it = v.rbegin(); it != v.rend(); ++it) if (it->first == id) return it->second; return def; };
+            auto has = [&v] (const juce::String& id) { for (auto& p : v) if (p.first == id) return true; return false; };
+            v.emplace_back ("harpRelease", juce::jmin (last ("harpRelease", 8.0f), rel));
+            if (level >= 3) v.emplace_back ("harpDecay", juce::jmin (last ("harpDecay", 1.8f), 2.5f));
+            if (has ("spMix")) v.emplace_back ("spMix", last ("spMix", 0.0f) * mixK);
+            if (has ("spSize")) v.emplace_back ("spSize", last ("spSize", 0.5f) * sizeK);
+            if (has ("macroDream")) v.emplace_back ("macroDream", last ("macroDream", 0.0f) * mixK);
+            static const int defType[8] = { 7, 12, 14, 0, 0, 0, 0, 0 };          // the slot defaults (chorus, delay, reverb)
+            static const float defA[8] = { 0.3f, 0.45f, 0.8f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+            static const float defMix[8] = { 0.45f, 0.22f, 0.55f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+            for (int k = 1; k <= 8; ++k)
+            {
+                const juce::String n (k);
+                const int type = juce::roundToInt (last ("fx" + n + "Type", (float) defType[k - 1]));
+                if (type < 12 || type > 15) continue;   // delay, ping-pong, reverb, shimmer
+                v.emplace_back ("fx" + n + "Mix", last ("fx" + n + "Mix", defMix[k - 1]) * mixK);
+                v.emplace_back ("fx" + n + "A", last ("fx" + n + "A", defA[k - 1]) * sizeK);
+            }
+            if (level >= 2)
+            {
+                v.emplace_back ("harpSustain", last ("harpSustain", 0.0f) * 0.5f);
+                v.emplace_back ("bodyRing", last ("bodyRing", 0.5f) * (level >= 3 ? 0.7f : 0.85f));
+            }
+        }
+
         struct Builder
         {
             std::vector<std::pair<juce::String, float>> v;
@@ -527,12 +559,30 @@ namespace presets
                 }
                 {
                     // measured: every preset as loud as the others (a C major chord, 100 velocity)
-                    static const float trims[320] = { -0.9f, 1.9f, 2.0f, 9.4f, -0.2f, -5.9f, 1.3f, 0.5f, 1.1f, -2.6f, 6.1f, 0.9f, 1.1f, 9.5f, -2.3f, -3.9f, -2.0f, -5.4f, -5.3f, -6.7f, 2.5f, -10.6f, -4.6f, 3.4f, 5.0f, 0.5f, -2.6f, -2.2f, -2.8f, -0.2f, 8.0f, 24.0f, 22.3f, 9.7f, 17.6f, 12.5f, 1.1f, 18.0f, 18.0f, -3.0f, 9.3f, -3.1f, 7.9f, 6.1f, 3.8f, -2.7f, -3.1f, -4.9f, -4.5f, 0.6f, -5.3f, 1.5f, -2.9f, 0.3f, -4.9f, 14.1f, 18.0f, 18.0f, 5.9f, 15.8f, 9.2f, 4.4f, 4.2f, 7.8f, 10.9f, 11.0f, 11.2f, 12.1f, 5.6f, 12.7f, 1.2f, 3.8f, 8.8f, 5.5f, -3.0f, -3.2f, 2.4f, 2.5f, -0.9f, -1.7f, 8.4f, 4.8f, 4.3f, 5.8f, 7.9f, -12.0f, -12.0f, -12.0f, -10.4f, -8.4f, 0.2f, 6.6f, 5.8f, 6.5f, 11.0f, 6.7f, 7.4f, 4.9f, 4.2f, 8.7f, 3.1f, 2.8f, 1.4f, 4.1f, 4.4f, 0.5f, 2.1f, 3.2f, 1.8f, 4.4f, 4.1f, 2.1f, -0.1f, 0.3f, 0.4f, 11.3f, 9.6f, 10.7f, 4.9f, 14.6f, 4.8f, 4.8f, 5.3f, 5.9f, 6.7f, 13.5f, 10.8f, 15.7f, 9.8f, 14.5f, 17.5f, 14.8f, 18.0f, 10.5f, 18.4f, 6.8f, 5.6f, 6.4f, 2.5f, 6.5f, 8.8f, 7.1f, 6.1f, 0.3f, 7.0f, -7.0f, -4.9f, 4.8f, -0.4f, -3.5f, 4.0f, 5.3f, 4.5f, 4.8f, 4.8f, -1.6f, -1.8f, -12.0f, 0.1f, -4.0f, -6.6f, -0.9f, -1.6f, -2.3f, 0.3f, -2.8f, -3.6f, -3.0f, -4.4f, -2.0f, -5.2f, -5.1f, -4.9f, -3.8f, -3.0f, -4.0f, -4.7f, -4.6f, -3.9f, -2.7f, -6.6f, -6.1f, -7.7f, -7.2f, -5.6f, 1.7f, 3.0f, 4.7f, 21.7f, 13.0f, 1.3f, 2.3f, -1.8f, -2.1f, 2.6f, 6.1f, 3.8f, 6.4f, -1.7f, -4.4f, -1.0f, 11.8f, 13.2f, 16.5f, 12.0f, 10.8f, 0.2f, -4.7f, 5.0f, 3.3f, 5.8f, 6.0f, 9.3f, -1.6f, 4.5f, -7.7f, -4.0f, -3.0f, -3.8f, -4.1f, -5.0f, -4.8f, -6.3f, -4.7f, -6.9f, -6.8f, -12.0f, -12.0f, -12.0f, -7.0f, -6.0f, 9.5f, 10.0f, 2.1f, 11.6f, 0.8f, -0.2f, 1.5f, 0.2f, 1.9f, -7.5f, -7.4f, -4.4f, -5.5f, 4.4f, 6.4f, 8.5f, 4.4f, 9.4f, 11.4f, -5.0f, -3.3f, -5.2f, -6.2f, -1.2f, -3.5f, -2.0f, -6.2f, -4.9f, -6.8f, -4.6f, -3.9f, -4.7f, -6.8f, 0.7f, -2.8f, -4.0f, -7.4f, -5.6f, -2.6f, -4.7f, -1.7f, 0.4f, 0.4f, 0.5f, 3.9f, 9.0f, 3.8f, 4.5f, 7.6f, -4.2f, -2.0f, -5.7f, -2.1f, -0.4f, 4.1f, 1.7f, -3.9f, -2.6f, -4.3f, -1.0f, -2.4f, 11.1f, -3.8f, 6.0f, 5.1f, 1.9f, 1.1f, 0.6f, 5.5f, -2.8f, -5.5f, 5.1f, 3.5f, -2.9f, 2.8f, 2.1f, 3.8f, 2.9f, 1.7f, -5.7f, -6.8f, -1.1f, -6.7f, -5.6f, -7.4f, -7.0f, 9.6f, 4.5f, 3.9f };
+                    static const float trims[320] = { -0.9f, 1.9f, 2.0f, 9.4f, -0.2f, -5.3f, 1.3f, 0.5f, 1.1f, -2.6f, 6.1f, 0.9f, 1.1f, 9.5f, -2.3f, -3.9f, -2.0f, -5.4f, -5.3f, -6.7f, 2.5f, -6.0f, -0.7f, 3.4f, 5.0f, 0.5f, -2.6f, -2.2f, -2.8f, -0.2f, 8.0f, 24.0f, 22.3f, 9.7f, 17.6f, 12.5f, 1.1f, 17.1f, 16.7f, -3.0f, 9.3f, -3.1f, 7.9f, 6.1f, 3.8f, -2.7f, -3.1f, -4.9f, -4.5f, 0.6f, -5.3f, 1.5f, -2.9f, 0.3f, -4.9f, 14.1f, 18.0f, 18.0f, 5.9f, 12.8f, 9.2f, 4.4f, 4.2f, 7.8f, 10.9f, 11.0f, 11.2f, 12.1f, 5.6f, 12.7f, 1.2f, 3.8f, 8.8f, 5.5f, -3.0f, -3.2f, 2.4f, 2.5f, -0.9f, -1.7f, 8.4f, 4.8f, 4.3f, 5.8f, 7.9f, -12.0f, -12.0f, -12.0f, -10.4f, -8.4f, 0.2f, 6.6f, 5.8f, 6.5f, 11.0f, 6.7f, 7.4f, 4.9f, 4.2f, 8.7f, 3.1f, 2.8f, 1.4f, 4.1f, 4.4f, 0.5f, 2.1f, 3.2f, 1.8f, 4.4f, 4.1f, 2.1f, -0.1f, 0.3f, 0.4f, 11.3f, 9.6f, 10.7f, 4.9f, 14.6f, 4.8f, 4.8f, 5.3f, 5.9f, 6.7f, 13.5f, 10.8f, 15.7f, 9.8f, 14.5f, 17.5f, 14.8f, 18.0f, 10.5f, 18.4f, 6.8f, 5.6f, 6.4f, 2.5f, 6.5f, 8.8f, 7.1f, 6.1f, 0.3f, 7.0f, -7.0f, -4.9f, 4.8f, -0.4f, -3.5f, 4.0f, 5.3f, 4.5f, 4.8f, 4.8f, -1.6f, -1.8f, -12.0f, 0.1f, -4.0f, -6.6f, -0.9f, -1.6f, -2.3f, 0.3f, -2.8f, -3.6f, -3.0f, -4.4f, -2.0f, -5.2f, -5.1f, -4.9f, -3.8f, -3.0f, -4.0f, -4.7f, -4.6f, -3.9f, -2.7f, -6.6f, -6.1f, -7.7f, -7.2f, -5.6f, 1.7f, 3.0f, 4.7f, 21.7f, 13.0f, 1.3f, 2.3f, -1.8f, -2.1f, 2.6f, 6.1f, 3.8f, 6.4f, -1.7f, -4.4f, -1.0f, 11.8f, 13.2f, 16.5f, 12.0f, 10.8f, 0.2f, -4.7f, 5.0f, 3.3f, 5.8f, 6.0f, 9.3f, -1.6f, 4.5f, -7.7f, -4.0f, -3.0f, -3.8f, -4.1f, -5.0f, -4.8f, -6.3f, -4.7f, -6.9f, -6.8f, -12.0f, -12.0f, -12.0f, -7.0f, -6.0f, 9.5f, 10.0f, 2.1f, 11.6f, 0.8f, -0.2f, 1.5f, 0.2f, 1.9f, -7.5f, -7.4f, -4.4f, -5.5f, 4.4f, 6.4f, 8.5f, 4.4f, 9.4f, 11.4f, -5.0f, -3.3f, -5.2f, -6.2f, -1.2f, -3.5f, -2.0f, -6.2f, -4.9f, -6.8f, -4.6f, -3.9f, -4.7f, -6.8f, 0.7f, -2.8f, -4.0f, -7.4f, -5.6f, -2.6f, -4.7f, -1.7f, 0.4f, 0.4f, 0.5f, 3.9f, 9.0f, 3.8f, 4.5f, 7.6f, -4.2f, -2.0f, -5.7f, -2.1f, -0.4f, 4.1f, 1.7f, -3.9f, -2.6f, -4.3f, -1.0f, -2.4f, 11.1f, -3.8f, 6.0f, 5.1f, 1.9f, 1.1f, 0.6f, 5.5f, -2.8f, -5.5f, 5.1f, 3.5f, -2.9f, 2.8f, 2.1f, 3.8f, 2.9f, 1.7f, -5.7f, -6.8f, -1.1f, -6.7f, -5.6f, -7.4f, -5.3f, 9.6f, 4.5f, 3.9f };
                     b.set ("presetTrim", trims[c * 40 + i]);
                     // HARP TYPE: every preset plays like one instrument (its strum, its flourish, its touch)
                     // harp archetypes: steel, glass, razor, obsidian, bowed, neon, monolith, ion
                     static const int harpMain[8] = { 0, 6, 1, 8, 4, 5, 2, 7 }, harpAlt[8] = { 6, 4, 3, 8, 0, 7, 8, 5 };
                     b.set ("harpType", (float) (c == 0 ? ((i % 5) < 3 ? harpMain[i / 5] : harpAlt[i / 5]) : (i * 7 + c * 4) % 9));
+                }
+                {
+                    // TAILS: measured after the key goes up; every preset stops in a time that suits its kind
+                    // (plucks 1.5 s, keys 2 s, harps 2.5 s, bells 3 s, pads and textures 3.5 s, cinematic 4 s)
+                    static const int tailLevel[320] = { 0, 0, 0, 0, 0, 3, 3, 2, 3, 3, 0, 0, 0, 0, 0, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 1, 1, 2, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 1, 1, 0, 0, 0, 3, 0, 0, 1, 0, 3, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, 2, 1, 0, 0, 1, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 1, 0, 2, 1, 2, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 2, 1, 1, 0, 1, 0, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 3, 2, 3, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0 };
+                    tame (b.v, tailLevel[c * 40 + i]);
+                    // seven presets that sounded like a neighbour: each gets its own colour
+                    switch (c * 40 + i)
+                    {
+                        case 11:  b.set ("harpOctave", 1.0f); b.set ("harpTone", 0.9f); b.set ("harpType", 7.0f); break;     // Edge of Steel: high, bright, chromatic
+                        case 18:  b.set ("harpOctave", -1.0f); b.set ("drive", 0.45f); b.set ("harpType", 8.0f); break;    // Tectonic: thunder low and driven
+                        case 133: b.set ("harpVoice", 7.0f); b.set ("harpTone", 0.82f); b.set ("strBuzz", 0.35f); break;    // Gilded Wire: steel that buzzes
+                        case 172: b.set ("harpOctave", -1.0f); b.set ("harpTone", 0.3f); break;                             // Voices Below: low and dark
+                        case 191: b.set ("harpAttack", 0.6f); b.set ("filtLfoAmt", 0.55f); break;                           // Inhale Pad: breathes in, filter moves
+                        case 262: b.set ("harpType", 8.0f); b.set ("strBuzz", 0.55f); b.set ("harpTone", 0.6f); break;       // Low End Harp: rattling thunder
+                        case 314: b.set ("harpOctave", 1.0f); b.set ("harpAttack", 0.8f); b.set ("harpTone", 0.85f); break;  // Last Light: high, slow, glowing
+                        default: break;
+                    }
                 }
                 p.values = std::move (b.v);
                 out.push_back (std::move (p));

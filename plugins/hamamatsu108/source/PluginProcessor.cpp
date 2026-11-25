@@ -891,6 +891,7 @@ void Hamamatsu108Processor::cutSound()
     numEvents = 0;
     numReleases = 0;
     numPendingOffs = 0;
+    holdChord = -1;   // a chord held from the old preset does not carry on into the new one
     for (auto& u : fxUnits) u.reset();
     for (auto& u : switchFx) u.reset();
     dreamReverb.reset();
@@ -977,7 +978,7 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
         const int n = m.getNoteNumber();
         if (m.isNoteOn()) schedulePitch (samplePos, n, m.getFloatVelocity());
         else if (const float rel = noteRelease(); rel > 0.0f && numReleases < (int) releases.size())
-            releases[(size_t) numReleases++] = { samplePos, n, rel };
+            releases[(size_t) numReleases++] = { samplePos, juce::jlimit (0, 127, n + 12 * juce::roundToInt (param (apvts, "harpOctave"))), rel };
         return;
     }
 
@@ -1107,8 +1108,9 @@ void Hamamatsu108Processor::handleMidi (const juce::MidiMessage& m, int samplePo
         {
             const int kp = juce::roundToInt (param (apvts, "keysPlay"));
             // RELEASE: the sound ends when the key goes up (Notes: that note, Flourish: the whole run)
+            // the voice sounds at the note shifted by OCTAVE: release that one (a preset with Octave -1 rang for ever)
             if (kp == 0 && ! (chordZones.load() && n <= typeZoneHigh()))
-                releases[(size_t) numReleases++] = { samplePos, n, rel };
+                releases[(size_t) numReleases++] = { samplePos, juce::jlimit (0, 127, n + 12 * juce::roundToInt (param (apvts, "harpOctave"))), rel };
             else if (kp >= 4 && heldMelodicCount <= 1)   // the run ends when the last key goes up
                 releases[(size_t) numReleases++] = { samplePos, -1, rel };
         }
