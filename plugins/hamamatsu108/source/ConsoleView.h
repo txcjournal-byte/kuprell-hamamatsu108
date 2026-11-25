@@ -65,7 +65,9 @@ namespace hama
         std::array<float, Hamamatsu108Processor::numStrings> glow {};
         float phase = 0.0f;
         int bedLayer = 0;          // 0 = TONE (bottom) / BEND (top), 1 = TIME (bottom) / LEVEL (top)
-        bool keysView = false;
+        bool keysView = true;     // the keyboard is the main view; the strings open with TONE | BEND and TIME | LEVEL
+        int keyBase = 36;         // the lowest C of the keyboard (OCT - / OCT + shift it)
+        float heldVel = 0.75f;
         int dragHandle = -1, heldKey = -1;
         float lastStrumX = -1.0f;
         juce::int64 lastSig = 0;

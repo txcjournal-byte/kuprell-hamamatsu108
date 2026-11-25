@@ -354,8 +354,8 @@ namespace hama
         if (auto* c = find ("STRINGS", "Keys", "button"))
         {
             c->lit = [this] { return keysView; };
-            c->press = [this] { if (heldKey >= 0) processor.keyboardState.noteOff (1, heldKey, 0.0f); heldKey = -1; keysView = ! keysView; };
-            c->tip = "KEYS: a keyboard instead of the strings";
+            c->press = [this] { if (heldKey >= 0) processor.keyboardState.noteOff (1, heldKey, 0.0f); heldKey = -1; keysView = true; };
+            c->tip = "KEYS: the keyboard (TONE | BEND and TIME | LEVEL open the strings, FLOURISH the steps)";
         }
         if (auto* c = find ("STRINGS", "Rec", "button"))
         {
@@ -623,6 +623,19 @@ namespace hama
         }
         paintValueBubble (g);
         // RESET: the strings back to clean
+        if (keysView)   // OCT - / OCT +: the keyboard shifts by an octave
+        {
+            for (int i = 0; i < 2; ++i)
+            {
+                auto k = i == 0 ? fxRandomKey() : resetKey();
+                g.setColour (juce::Colours::black.withAlpha (0.35f));
+                g.fillRoundedRectangle (k, 3.0f);
+                g.setColour (bone.withAlpha (0.7f));
+                g.drawRoundedRectangle (k.reduced (0.5f), 3.0f, 1.0f);
+                g.setFont (ui (10.0f));
+                g.drawText (i == 0 ? "OCT +" : "OCT -", k, juce::Justification::centred, false);
+            }
+        }
         if (! keysView)
         {
             auto k = resetKey();
@@ -900,60 +913,113 @@ namespace hama
         }
     }
 
-    // KEYS: C2 .. C7 in the same bed
-    namespace { constexpr int keyLo = 36, keyHi = 96; bool isBlack (int n) { const int k = n % 12; return k == 1 || k == 3 || k == 6 || k == 8 || k == 10; } }
+    // KEYBOARD: five octaves and a C (61 keys) in the bed, shifted by OCT - / OCT +
+    namespace { constexpr int numKeys = 61; bool isBlack (int n) { const int k = n % 12; return k == 1 || k == 3 || k == 6 || k == 8 || k == 10; } }
     juce::Rectangle<float> ConsoleView::keyRect (int n) const
     {
-        auto a = bed().reduced (4.0f, 0.0f);
-        int whites = 0; for (int k = keyLo; k <= keyHi; ++k) if (! isBlack (k)) ++whites;
+        auto a = bed().withTrimmedTop (12.0f).reduced (6.0f, 0.0f);
+        const int lo = keyBase, hi = keyBase + numKeys - 1;
+        int whites = 0; for (int k = lo; k <= hi; ++k) if (! isBlack (k)) ++whites;
         const float w = a.getWidth() / (float) whites;
-        int wi = 0; for (int k = keyLo; k < n; ++k) if (! isBlack (k)) ++wi;
+        int wi = 0; for (int k = lo; k < n; ++k) if (! isBlack (k)) ++wi;
         if (! isBlack (n)) return { a.getX() + (float) wi * w, a.getY(), w, a.getHeight() };
-        return { a.getX() + (float) wi * w - w * 0.3f, a.getY(), w * 0.6f, a.getHeight() * 0.6f };
+        // black keys sit a little off centre like on a real keyboard (C# and F# lean left, A# and D# right)
+        const int pc = n % 12;
+        const float lean = (pc == 1 || pc == 6) ? -0.1f : (pc == 3 || pc == 10) ? 0.1f : 0.0f;
+        const float bw = w * 0.58f;
+        return { a.getX() + (float) wi * w - bw * 0.5f + lean * w, a.getY(), bw, a.getHeight() * 0.62f };
     }
     int ConsoleView::keyAt (juce::Point<float> p) const
     {
-        for (int n = keyLo; n <= keyHi; ++n) if (isBlack (n) && keyRect (n).contains (p)) return n;
-        for (int n = keyLo; n <= keyHi; ++n) if (! isBlack (n) && keyRect (n).contains (p)) return n;
+        const int lo = keyBase, hi = keyBase + numKeys - 1;
+        for (int n = lo; n <= hi; ++n) if (isBlack (n) && keyRect (n).contains (p)) return n;
+        for (int n = lo; n <= hi; ++n) if (! isBlack (n) && keyRect (n).contains (p)) return n;
         return -1;
     }
     void ConsoleView::paintKeys (juce::Graphics& g)
     {
         auto& ks = processor.keyboardState;
-        for (int pass = 0; pass < 2; ++pass)
-            for (int n = keyLo; n <= keyHi; ++n)
+        const int lo = keyBase, hi = keyBase + numKeys - 1;
+        const auto b = bed();
+        // the key bed and the red felt the keys rest under
+        auto well = b.withTrimmedTop (2.0f).reduced (2.0f, 0.0f);
+        g.setColour (juce::Colour (0xff080808));
+        g.fillRoundedRectangle (well, 3.0f);
+        auto felt = juce::Rectangle<float> (well.getX() + 4.0f, well.getY() + 3.0f, well.getWidth() - 8.0f, 8.0f);
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff6b1a1f), 0.0f, felt.getY(), juce::Colour (0xff3a0c10), 0.0f, felt.getBottom(), false));
+        g.fillRect (felt);
+        g.setColour (juce::Colours::black.withAlpha (0.5f));
+        g.fillRect (felt.withY (felt.getBottom()).withHeight (2.0f));
+
+        // white keys: ivory, a bevel on both sides, a front lip that goes down when the key is pressed
+        for (int n = lo; n <= hi; ++n)
+        {
+            if (isBlack (n)) continue;
+            const bool on = ks.isNoteOnForChannels (0xffff, n);
+            auto k = keyRect (n).reduced (0.75f, 0.0f);
+            const float lip = on ? 2.0f : 7.0f;
+            auto top = k.withTrimmedBottom (lip);
+            g.setGradientFill (juce::ColourGradient (on ? juce::Colour (0xffd9d6cd) : juce::Colour (0xfff6f3ea), 0.0f, top.getY(),
+                                                     on ? juce::Colour (0xffc4c0b6) : juce::Colour (0xffe2ded3), 0.0f, top.getBottom(), false));
+            g.fillRect (top);
+            // the shadow of the felt rail and, when pressed, a deeper key
+            g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (on ? 0.45f : 0.3f), 0.0f, top.getY(), juce::Colours::transparentBlack, 0.0f, top.getY() + (on ? 22.0f : 12.0f), false));
+            g.fillRect (top.withHeight (on ? 22.0f : 12.0f));
+            g.setColour (juce::Colours::white.withAlpha (0.6f));
+            g.fillRect (top.getX(), top.getY(), 1.0f, top.getHeight());
+            g.setColour (juce::Colours::black.withAlpha (0.28f));
+            g.fillRect (top.getRight() - 1.0f, top.getY(), 1.0f, top.getHeight());
+            // the front lip
+            auto front = k.withTop (top.getBottom());
+            g.setGradientFill (juce::ColourGradient (juce::Colour (0xffcfcbc0), 0.0f, front.getY(), juce::Colour (0xff8f8b82), 0.0f, front.getBottom(), false));
+            g.fillRoundedRectangle (front, 2.0f);
+            if (on)
             {
-                if (isBlack (n) != (pass == 1)) continue;
-                auto k = keyRect (n);
-                const bool on = ks.isNoteOnForChannels (0xffff, n);
-                if (pass == 0)
-                {
-                    auto body = k.reduced (1.0f, 0.0f);
-                    juce::ColourGradient cg (juce::Colour (0xffeeebe3), 0.0f, body.getY(), juce::Colour (0xffb5b2a9), 0.0f, body.getBottom(), false);
-                    g.setGradientFill (cg);
-                    g.fillRoundedRectangle (body, 3.0f);
-                    if (on) { g.setColour (mint.withAlpha (0.6f)); g.fillRoundedRectangle (body, 3.0f); }
-                    g.setColour (juce::Colours::black.withAlpha (0.35f));
-                    g.fillRect (body.withHeight (5.0f));
-                    if (n % 12 == 0)
-                    {
-                        g.setFont (ui (9.0f));
-                        g.setColour (juce::Colour (0xff3a3a38));
-                        g.drawText ("C" + juce::String (n / 12 - 1), body.withTrimmedTop (body.getHeight() - 16.0f), juce::Justification::centred, false);
-                    }
-                }
-                else
-                {
-                    g.setColour (juce::Colours::black.withAlpha (0.55f));
-                    g.fillRoundedRectangle (k.translated (2.0f, 3.0f), 2.0f);
-                    juce::ColourGradient cg (juce::Colour (0xff3c3c3c), 0.0f, k.getY(), juce::Colour (0xff0a0a0a), 0.0f, k.getBottom(), false);
-                    g.setGradientFill (cg);
-                    g.fillRoundedRectangle (k, 2.0f);
-                    g.setColour (juce::Colours::white.withAlpha (0.12f));
-                    g.fillRoundedRectangle (k.reduced (2.0f).withTrimmedTop (k.getHeight() - 12.0f), 1.5f);
-                    if (on) { g.setColour (mint.withAlpha (0.8f)); g.fillRoundedRectangle (k.reduced (1.0f), 2.0f); }
-                }
+                g.setColour (mint.withAlpha (0.85f));
+                g.fillRect (top.withTop (top.getBottom() - 3.0f).reduced (2.0f, 0.0f));
+                g.setColour (mint.withAlpha (0.12f));
+                g.fillRect (top);
             }
+            if (n % 12 == 0)
+            {
+                g.setFont (ui (9.0f, n == 60));   // C5 = MIDI 60 (FL Studio naming, the same as the flourish editor)
+                g.setColour (juce::Colour (0xff55534e));
+                g.drawText ("C" + juce::String (n / 12), top.withTrimmedTop (top.getHeight() - 18.0f), juce::Justification::centred, false);
+            }
+        }
+        // black keys: a soft shadow on the ivory, a body, a lighter top face, a short front slope
+        for (int n = lo; n <= hi; ++n)
+        {
+            if (! isBlack (n)) continue;
+            const bool on = ks.isNoteOnForChannels (0xffff, n);
+            auto k = keyRect (n);
+            g.setColour (juce::Colours::black.withAlpha (0.35f));
+            g.fillRoundedRectangle (k.translated (2.5f, 0.0f).withTrimmedTop (4.0f).expanded (1.0f, 3.0f), 3.0f);
+            g.setColour (juce::Colours::black.withAlpha (0.25f));
+            g.fillRoundedRectangle (k.translated (4.5f, 0.0f).withTrimmedTop (8.0f).expanded (2.0f, 6.0f), 4.0f);
+            g.setColour (juce::Colour (0xff050505));
+            g.fillRoundedRectangle (k, 2.0f);
+            const float slope = on ? 4.0f : 11.0f;
+            auto face = k.reduced (2.2f, 0.0f).withTrimmedBottom (slope).withTrimmedTop (1.0f);
+            g.setGradientFill (juce::ColourGradient (on ? juce::Colour (0xff1c1c1c) : juce::Colour (0xff2d2d2e), 0.0f, face.getY(),
+                                                     on ? juce::Colour (0xff141414) : juce::Colour (0xff1a1a1b), 0.0f, face.getBottom(), false));
+            g.fillRoundedRectangle (face, 1.5f);
+            auto front = k.reduced (1.0f, 0.0f).withTop (face.getBottom()).withTrimmedBottom (1.0f);
+            g.setGradientFill (juce::ColourGradient (juce::Colour (0xff4a4a4b), 0.0f, front.getY(), juce::Colour (0xff111111), 0.0f, front.getBottom(), false));
+            g.fillRoundedRectangle (front, 1.5f);
+            g.setColour (juce::Colours::white.withAlpha (on ? 0.05f : 0.16f));   // the gloss along the top face
+            g.fillRect (face.getX() + 1.0f, face.getY() + 2.0f, 1.2f, face.getHeight() - 6.0f);
+            if (on)
+            {
+                g.setColour (mint.withAlpha (0.9f));
+                g.fillRect (face.withTop (face.getBottom() - 3.0f).reduced (1.0f, 0.0f));
+            }
+        }
+        // the range of the keyboard
+        g.setColour (mint.withAlpha (0.7f));
+        g.setFont (ui (9.0f));
+        g.drawText (juce::MidiMessage::getMidiNoteName (lo, true, true, 5) + " - " + juce::MidiMessage::getMidiNoteName (hi, true, true, 5),
+                    b.withHeight (12.0f).translated (0.0f, -14.0f), juce::Justification::centredRight, false);
     }
 
     //==============================================================================
@@ -1242,8 +1308,8 @@ namespace hama
             }
         if (flourishKey().contains (d))
         {
-            keysView = false;
-            bedLayer = bedLayer == 2 ? 0 : 2;
+            if (stepsView()) { keysView = true; bedLayer = 0; }   // FLOURISH again: back to the keyboard
+            else { keysView = false; bedLayer = 2; }
             if (onStatus && bedLayer == 2) onStatus ("FLOURISH STEPS", "Step 1 is the key you play. Drag a step up or down, click to switch it off, Shift-drag for its level");
             repaint(); return;
         }
@@ -1271,6 +1337,14 @@ namespace hama
             }
         }
 
+        if (keysView && (resetKey().contains (d) || fxRandomKey().contains (d)))
+        {
+            for (int n = 0; n < 128; ++n) if (processor.keyboardState.isNoteOn (1, n) && n == heldKey) processor.keyboardState.noteOff (1, n, 0.0f);
+            heldKey = -1;
+            keyBase = juce::jlimit (12, 60, keyBase + (fxRandomKey().contains (d) ? 12 : -12));
+            if (onStatus) onStatus ("KEYBOARD", juce::MidiMessage::getMidiNoteName (keyBase, true, true, 5) + " - " + juce::MidiMessage::getMidiNoteName (keyBase + numKeys - 1, true, true, 5));
+            repaint(); return;
+        }
         if (! keysView && resetKey().contains (d)) { resetMenu(); return; }
         if (! keysView && fxRandomKey().contains (d)) { if (e.mods.isPopupMenu()) fxMenu (-1); else fxRandom(); return; }
         if (const int s = fxPadAt (d); s >= 0)
@@ -1322,7 +1396,8 @@ namespace hama
                 if (n >= 0)
                 {
                     auto k = keyRect (n);
-                    processor.keyboardState.noteOn (1, n, juce::jlimit (0.25f, 1.0f, 0.35f + 0.65f * (d.y - k.getY()) / k.getHeight()));
+                    heldVel = juce::jlimit (0.25f, 1.0f, 0.3f + 0.7f * (d.y - k.getY()) / k.getHeight());   // lower on the key = harder
+                    processor.keyboardState.noteOn (1, n, heldVel);
                     heldKey = n;
                 }
                 repaint(); return;
@@ -1387,7 +1462,7 @@ namespace hama
             if (n >= 0 && n != heldKey)
             {
                 if (heldKey >= 0) processor.keyboardState.noteOff (1, heldKey, 0.0f);
-                processor.keyboardState.noteOn (1, n, 0.75f);
+                processor.keyboardState.noteOn (1, n, heldVel);   // a glissando keeps the touch
                 heldKey = n;
                 repaint();
             }
@@ -1522,7 +1597,7 @@ namespace hama
             if (c->selected) mix (c->selected());
         }
         mix (processor.presetManager->currentName().hashCode64());
-        mix (processor.activeChord.load()); mix (processor.detectedChord.load()); mix (keysView ? 1 : 0); mix (bedLayer); mix (processor.harpType()); mix (processor.flAuto.load() ? 1 : 0); mix (processor.flSteps.load());
+        mix (processor.activeChord.load()); mix (processor.detectedChord.load()); mix (keysView ? 1 : 0); mix (keyBase); mix (bedLayer); mix (processor.harpType()); mix (processor.flAuto.load() ? 1 : 0); mix (processor.flSteps.load());
         mix (processor.stringsMode.load()); mix ((juce::int64) processor.plMute.load());
         if (sig != lastSig) { lastSig = sig; repaint(); }
         else if (any || keysView)
