@@ -137,6 +137,11 @@ namespace hama
             for (auto& l : lines) { l.buf.assign ((size_t) (sr * 0.08f) + 4, 0.0f); l.w = 0; l.lp = 0.0f; }
             hpL = hpR = hpInL = hpInR = 0.0f;
         }
+        void reset()
+        {
+            for (auto& l : lines) { std::fill (l.buf.begin(), l.buf.end(), 0.0f); l.lp = 0.0f; }
+            hpL = hpR = hpInL = hpInR = 0.0f;
+        }
         // size 0.5..1.3, decay seconds, dark 0..1 (damping), returns wet only
         void configure (float size, float decay, float dark)
         {

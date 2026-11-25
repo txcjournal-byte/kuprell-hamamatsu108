@@ -489,6 +489,7 @@ Hamamatsu108Processor::Hamamatsu108Processor()
     loadUserDefaults();
     startTimerHz (30);
     presetManager = std::make_unique<presets::Manager> (apvts);
+    presetManager->onLoadStart = [this] { cutRequest.store (true); };
     presetManager->load (0);   // start with "Paper Lanterns"
     undoManager.clearUndoHistory();
     tones.reserve (64);
@@ -877,6 +878,31 @@ void Hamamatsu108Processor::prepareToPlay (double sampleRate, int samplesPerBloc
     for (auto* s : { &masterGain })
         s->reset (sampleRate, 0.05);
     masterGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (param (apvts, "master") + param (apvts, "presetTrim")));
+}
+
+// A NEW PRESET: every voice of the old sound fades in 5 ms, every echo, room and resonance is emptied,
+// and the output glides to the new sound without a click
+void Hamamatsu108Processor::cutSound()
+{
+    for (auto& v : voices) if (v.isActive()) v.release (0.005f);
+    for (auto& v : chordVoices) v.kill();
+    for (auto& v : bassVoices) v.kill();
+    layerChord = bassChord = -2;
+    numEvents = 0;
+    numReleases = 0;
+    numPendingOffs = 0;
+    for (auto& u : fxUnits) u.reset();
+    for (auto& u : switchFx) u.reset();
+    dreamReverb.reset();
+    modelChorusL.clear(); modelChorusR.clear();
+    soundboard.reset();
+    space.reset();
+    sympathetic.reset();
+    std::fill (dreamL.begin(), dreamL.end(), 0.0f);
+    std::fill (dreamR.begin(), dreamR.end(), 0.0f);
+    limDelL.fill (0.0f); limDelR.fill (0.0f);
+    declickLen = juce::jmax (16, (int) (0.004 * sr));
+    declickLeft = declickLen;
 }
 
 bool Hamamatsu108Processor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -2008,6 +2034,7 @@ void Hamamatsu108Processor::processBlock (juce::AudioBuffer<float>& buffer, juce
     buffer.clear();
     const int numSamples = buffer.getNumSamples();
     blockSamples = numSamples;
+    if (cutRequest.exchange (false)) cutSound();   // a new preset: the old one stops now, tails included
     // a preset with another harp type brings that type's flourish, unless you shaped your own steps
     if (const int ht = harpType(); ht != lastHarpType.load())
     {

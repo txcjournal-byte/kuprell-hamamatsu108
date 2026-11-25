@@ -407,6 +407,8 @@ private:
     int limLook = 64, limPos = 0;
     // de-click when the sound is switched (preset, model, voice, FX type): glide from the last sample for 3 ms
     std::uint64_t soundSignature = 0;
+    std::atomic<bool> cutRequest { false };   // set when a preset loads: the next block silences the old sound and its tails
+    void cutSound();
     hama::Soundboard soundboard;
     int boardModel = -1;
     int declickLeft = 0, declickLen = 132;

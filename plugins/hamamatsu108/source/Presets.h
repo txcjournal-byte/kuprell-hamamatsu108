@@ -58,6 +58,7 @@ namespace presets
 
         static juce::File userFolder();
         std::function<void()> onChange;   // preset loaded / list changed / modified flag changed
+        std::function<void()> onLoadStart; // a new preset is coming: the old sound must stop at once
 
         void markClean() { modified.store (false); }
         void restoreCurrent (const juce::String& key, bool wasModified);

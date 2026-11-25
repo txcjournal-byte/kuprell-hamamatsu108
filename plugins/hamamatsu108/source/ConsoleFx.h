@@ -32,6 +32,14 @@ namespace hama::consolefx
             reverb.reset();
             prePos = revPos = modPos = 0; duckEnv = 0.0f; silent = 0.0f; tailGain = 1.0f;
         }
+        void reset()
+        {
+            reverb.reset();
+            std::fill (pre.begin(), pre.end(), std::array<float, 2> {});
+            std::fill (rev.begin(), rev.end(), std::array<float, 2> {});
+            std::fill (mod.begin(), mod.end(), std::array<float, 2> {});
+            duckEnv = 0.0f; silent = 0.0f; tailGain = 1.0f;
+        }
 
         void process (float* L, float* R, int n, const Settings& s)
         {
@@ -152,6 +160,7 @@ namespace hama::consolefx
         std::array<Res, 12> res;
         std::array<int, 12> notes {};
         int num = 0;
+        void reset() { for (auto& r : res) { r.ic1 = 0.0f; r.ic2 = 0.0f; } }
         void tune (const std::vector<int>& tones, float sr)
         {
             num = 0;

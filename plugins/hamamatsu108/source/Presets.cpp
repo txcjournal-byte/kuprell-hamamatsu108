@@ -597,6 +597,7 @@ namespace presets
     {
         if (index < 0 || index >= (int) list.size()) return;
         const auto& p = list[(size_t) index];
+        if (onLoadStart) onLoadStart();
         loading = true;
 
         auto apply = [this] (const juce::String& id, float plainValue)
